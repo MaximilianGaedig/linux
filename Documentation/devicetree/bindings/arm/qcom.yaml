@@ -26,6 +26,7 @@ description: |
 
         apq8016
         apq8026
+        apq8064
         apq8074
         apq8084
         apq8096
@@ -160,6 +161,7 @@ properties:
           - enum:
               - asus,nexus7-flo
               - lg,nexus4-mako
+              - samsung,jflte
               - samsung,jfvelte
               - sony,xperia-yuga
               - qcom,apq8064-cm-qs600
