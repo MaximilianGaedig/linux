@@ -1,0 +1,4 @@
+arch/arm/boot/dts/arm/vexpress-v2p-ca5s.dtb
+arch/arm/boot/dts/arm/vexpress-v2p-ca9.dtb
+arch/arm/boot/dts/arm/vexpress-v2p-ca15-tc1.dtb
+arch/arm/boot/dts/arm/vexpress-v2p-ca15_a7.dtb
