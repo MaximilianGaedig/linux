@@ -839,9 +839,12 @@ static int pm8xxx_nldo_set_voltage(struct regulator_dev *rdev, int min_uV,
 
 	mutex_lock(&vreg->pc_lock);
 
+
+
 	/* Write fine step. */
 	prev_reg = vreg->test_reg[2];
 	rc = pm8xxx_vreg_masked_write(vreg, vreg->test_addr,
+			// fine_step_reg | 0xfa
 			fine_step_reg | REGULATOR_BANK_SEL(2)
 			 | REGULATOR_BANK_WRITE | LDO_TEST_VPROG_UPDATE_MASK,
 			LDO_TEST_FINE_STEP_MASK | REGULATOR_BANK_MASK
@@ -858,7 +861,8 @@ static int pm8xxx_nldo_set_voltage(struct regulator_dev *rdev, int min_uV,
 		 * value is written into the control register.
 		 */
 		rc = pm8xxx_vreg_masked_write_forced(vreg, vreg->ctrl_addr,
-			vprog, LDO_CTRL_VPROG_MASK, &vreg->ctrl_reg);
+			 //                    0x1F
+				       vprog, LDO_CTRL_VPROG_MASK, &vreg->ctrl_reg);
 	} else {
 		/* Only write to control register if new value is different. */
 		rc = pm8xxx_vreg_masked_write(vreg, vreg->ctrl_addr, vprog,

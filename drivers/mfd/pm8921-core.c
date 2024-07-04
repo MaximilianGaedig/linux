@@ -382,61 +382,73 @@ static struct mfd_cell vibrator_cell __devinitdata = {
 
 static struct pm8xxx_vreg regulator_data[] = {
 	/*   name	     pc_name	    ctrl   test   hpm_min */
-	NLDO("8921_l1",      "8921_l1_pc",  0x0AE, 0x0AF, LDO_150),
-	NLDO("8921_l2",      "8921_l2_pc",  0x0B0, 0x0B1, LDO_150),
-	PLDO("8921_l3",      "8921_l3_pc",  0x0B2, 0x0B3, LDO_150),
-	PLDO("8921_l4",      "8921_l4_pc",  0x0B4, 0x0B5, LDO_50),
-	PLDO("8921_l5",      "8921_l5_pc",  0x0B6, 0x0B7, LDO_300),
-	PLDO("8921_l6",      "8921_l6_pc",  0x0B8, 0x0B9, LDO_600),
-	PLDO("8921_l7",      "8921_l7_pc",  0x0BA, 0x0BB, LDO_150),
-	PLDO("8921_l8",      "8921_l8_pc",  0x0BC, 0x0BD, LDO_300),
-	PLDO("8921_l9",      "8921_l9_pc",  0x0BE, 0x0BF, LDO_300),
-	PLDO("8921_l10",     "8921_l10_pc", 0x0C0, 0x0C1, LDO_600),
-	PLDO("8921_l11",     "8921_l11_pc", 0x0C2, 0x0C3, LDO_150),
-	NLDO("8921_l12",     "8921_l12_pc", 0x0C4, 0x0C5, LDO_150),
-	PLDO("8921_l14",     "8921_l14_pc", 0x0C8, 0x0C9, LDO_50),
-	PLDO("8921_l15",     "8921_l15_pc", 0x0CA, 0x0CB, LDO_150),
-	PLDO("8921_l16",     "8921_l16_pc", 0x0CC, 0x0CD, LDO_300),
-	PLDO("8921_l17",     "8921_l17_pc", 0x0CE, 0x0CF, LDO_150),
-	NLDO("8921_l18",     "8921_l18_pc", 0x0D0, 0x0D1, LDO_150),
-	PLDO("8921_l21",     "8921_l21_pc", 0x0D6, 0x0D7, LDO_150),
-	PLDO("8921_l22",     "8921_l22_pc", 0x0D8, 0x0D9, LDO_150),
-	PLDO("8921_l23",     "8921_l23_pc", 0x0DA, 0x0DB, LDO_150),
-	NLDO1200("8921_l24",		    0x0DC, 0x0DD, LDO_1200),
-	NLDO1200("8921_l25",		    0x0DE, 0x0DF, LDO_1200),
-	NLDO1200("8921_l26",		    0x0E0, 0x0E1, LDO_1200),
-	NLDO1200("8921_l27",		    0x0E2, 0x0E3, LDO_1200),
-	NLDO1200("8921_l28",		    0x0E4, 0x0E5, LDO_1200),
-	PLDO("8921_l29",     "8921_l29_pc", 0x0E6, 0x0E7, LDO_150),
+	NLDO("8921_l1",      "8921_l1_pc",  174, 175, LDO_150),
+	NLDO("8921_l2",      "8921_l2_pc",  176, 177, LDO_150),
+	PLDO("8921_l3",      "8921_l3_pc",  178, 179, LDO_150),
+	PLDO("8921_l4",      "8921_l4_pc",  180, 181, LDO_50),
+	PLDO("8921_l5",      "8921_l5_pc",  182, 183, LDO_300),
+	PLDO("8921_l6",      "8921_l6_pc",  184, 185, LDO_600),
+	PLDO("8921_l7",      "8921_l7_pc",  186, 187, LDO_150),
+	PLDO("8921_l8",      "8921_l8_pc",  188, 189, LDO_300),
+	PLDO("8921_l9",      "8921_l9_pc",  190, 191, LDO_300),
+	PLDO("8921_l10",     "8921_l10_pc", 192, 193, LDO_600),
+	PLDO("8921_l11",     "8921_l11_pc", 194, 195, LDO_150),
+	NLDO("8921_l12",     "8921_l12_pc", 196, 197, LDO_150),
+	PLDO("8921_l14",     "8921_l14_pc", 200, 201, LDO_50),
+	PLDO("8921_l15",     "8921_l15_pc", 202, 203, LDO_150),
+	PLDO("8921_l16",     "8921_l16_pc", 204, 205, LDO_300),
+	PLDO("8921_l17",     "8921_l17_pc", 206, 207, LDO_150),
+	NLDO("8921_l18",     "8921_l18_pc", 208, 209, LDO_150),
+	PLDO("8921_l21",     "8921_l21_pc", 214, 215, LDO_150),
+	PLDO("8921_l22",     "8921_l22_pc", 216, 217, LDO_150),
+	PLDO("8921_l23",     "8921_l23_pc", 218, 219, LDO_150),
+	NLDO1200("8921_l24",		    220, 221, LDO_1200),
+	NLDO1200("8921_l25",		    222, 223, LDO_1200),
+	NLDO1200("8921_l26",		    224, 225, LDO_1200),
+	NLDO1200("8921_l27",		    226, 227, LDO_1200),
+	NLDO1200("8921_l28",		    228, 229, LDO_1200),
+	PLDO("8921_l29",     "8921_l29_pc", 230, 231, LDO_150),
 
 	/*   name	pc_name       ctrl   test2  clk    sleep  hpm_min */
-	SMPS("8921_s1", "8921_s1_pc", 0x1D0, 0x1D5, 0x009, 0x1D2, SMPS_1500),
-	SMPS("8921_s2", "8921_s2_pc", 0x1D8, 0x1DD, 0x00A, 0x1DA, SMPS_1500),
-	SMPS("8921_s3", "8921_s3_pc", 0x1E0, 0x1E5, 0x00B, 0x1E2, SMPS_1500),
-	SMPS("8921_s4", "8921_s4_pc", 0x1E8, 0x1ED, 0x011, 0x1EA, SMPS_1500),
+	SMPS("8921_s1", "8921_s1_pc", 464, 469, 9, 466, SMPS_1500),
+	SMPS("8921_s2", "8921_s2_pc", 472, 477, 10, 474, SMPS_1500),
+	SMPS("8921_s3", "8921_s3_pc", 480, 485, 11, 482, SMPS_1500),
+	SMPS("8921_s4", "8921_s4_pc", 488, 493, 17, 490, SMPS_1500),
 
 	/*     name	  ctrl fts_cnfg1 pfm  pwr_cnfg  hpm_min */
-	FTSMPS("8921_s5", 0x025, 0x02E, 0x026, 0x032, SMPS_2000),
-	FTSMPS("8921_s6", 0x036, 0x03F, 0x037, 0x043, SMPS_2000),
+	FTSMPS("8921_s5", 37, 46, 38, 50, SMPS_2000),
+	FTSMPS("8921_s6", 54, 63, 55, 67, SMPS_2000),
 
 	/*   name	pc_name       ctrl   test2  clk    sleep  hpm_min */
-	SMPS("8921_s7", "8921_s7_pc", 0x1F0, 0x1F5, 0x012, 0x1F2, SMPS_1500),
-	SMPS("8921_s8", "8921_s8_pc", 0x1F8, 0x1FD, 0x013, 0x1FA, SMPS_1500),
+	SMPS("8921_s7", "8921_s7_pc", 496, 501, 18, 498, SMPS_1500),
+	SMPS("8921_s8", "8921_s8_pc", 504, 509, 19, 506, SMPS_1500),
 
 	/* name		       pc_name	       ctrl   test */
-	VS("8921_lvs1",        "8921_lvs1_pc", 0x060, 0x061),
-	VS300("8921_lvs2",		       0x062, 0x063),
-	VS("8921_lvs3",        "8921_lvs3_pc", 0x064, 0x065),
-	VS("8921_lvs4",        "8921_lvs4_pc", 0x066, 0x067),
-	VS("8921_lvs5",        "8921_lvs5_pc", 0x068, 0x069),
-	VS("8921_lvs6",        "8921_lvs6_pc", 0x06A, 0x06B),
-	VS("8921_lvs7",        "8921_lvs7_pc", 0x06C, 0x06D),
-	VS300("8921_usb_otg",		       0x06E, 0x06F),
-	VS300("8921_hdmi_mvs",		       0x070, 0x071),
+	VS("8921_lvs1",        "8921_lvs1_pc", 96, 97),
+	VS300("8921_lvs2",		       98, 99),
+	VS("8921_lvs3",        "8921_lvs3_pc", 100, 101),
+	VS("8921_lvs4",        "8921_lvs4_pc", 102, 103),
+	VS("8921_lvs5",        "8921_lvs5_pc", 104, 105),
+	VS("8921_lvs6",        "8921_lvs6_pc", 106, 107),
+	VS("8921_lvs7",        "8921_lvs7_pc", 108, 109),
+	VS300("8921_usb_otg",		       110, 111),
+	VS300("8921_hdmi_mvs",		       112, 113),
 
 	/*  name	ctrl */
-	NCP("8921_ncp", 0x090),
+	NCP("8921_ncp", 144),
 };
+/* CTRL register */
+#define LDO_ENABLE_MASK			0x80
+#define LDO_DISABLE			0x00
+#define LDO_ENABLE			0x80
+#define LDO_PULL_DOWN_ENABLE_MASK	0x40
+#define LDO_PULL_DOWN_ENABLE		0x40
+
+#define LDO_CTRL_PM_MASK		0x20
+#define LDO_CTRL_PM_HPM			0x00
+#define LDO_CTRL_PM_LPM			0x20
+
+#define LDO_CTRL_VPROG_MASK		0x1F
 
 /*
  * PM8917 adds 6 LDOs and a boost regulator beyond those available on PM8921.
@@ -444,16 +456,16 @@ static struct pm8xxx_vreg regulator_data[] = {
  */
 static struct pm8xxx_vreg pm8917_regulator_data[] = {
 	/*   name	     pc_name	    ctrl   test   hpm_min */
-	PLDO("8917_l30",     "8917_l30_pc", 0x0A3, 0x0A4, LDO_150),
-	PLDO("8917_l31",     "8917_l31_pc", 0x0A5, 0x0A6, LDO_150),
-	PLDO("8917_l32",     "8917_l32_pc", 0x0A7, 0x0A8, LDO_150),
-	PLDO("8917_l33",     "8917_l33_pc", 0x0C6, 0x0C7, LDO_150),
-	PLDO("8917_l34",     "8917_l34_pc", 0x0D2, 0x0D3, LDO_150),
-	PLDO("8917_l35",     "8917_l35_pc", 0x0D4, 0x0D5, LDO_300),
-	PLDO("8917_l36",     "8917_l36_pc", 0x0A9, 0x0AA, LDO_50),
+	PLDO("8917_l30",     "8917_l30_pc", 163, 164, LDO_150),
+	PLDO("8917_l31",     "8917_l31_pc", 165, 166, LDO_150),
+	PLDO("8917_l32",     "8917_l32_pc", 167, 168, LDO_150),
+	PLDO("8917_l33",     "8917_l33_pc", 198, 199, LDO_150),
+	PLDO("8917_l34",     "8917_l34_pc", 210, 211, LDO_150),
+	PLDO("8917_l35",     "8917_l35_pc", 212, 213, LDO_300),
+	PLDO("8917_l36",     "8917_l36_pc", 169, 170, LDO_50),
 
 	/*    name          ctrl */
-	BOOST("8917_boost", 0x04B),
+	BOOST("8917_boost", 75),
 };
 
 #define MAX_NAME_COMPARISON_LEN 32

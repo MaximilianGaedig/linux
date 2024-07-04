@@ -247,14 +247,14 @@ void __init S5000_tsp_input_init(int version)
 	int touch_type, el_type;
 	printk(KERN_DEBUG "[TSP]START %s\n", __func__);
 
-	touch_type = (version >> 12) & 0xF;
-	el_type = (version >> 8) & 0x1;
+	touch_type = (version >> 12) & 0xF; // 8
+	el_type = (version >> 8) & 0x1; // 0
 
 	/* IF TSP IS is A1, B0 version : ID2 value is 40
 	 * IF TSP IS is B0 version : ID2 value is more than 40
 	 */
 	if ((touch_type << 4 | el_type) > 0x40)
-		touch_sleep_time = SYNAPTICS_HW_RESET_TIME_B0;
+		touch_sleep_time = SYNAPTICS_HW_RESET_TIME_B0; // this
 	else
 		touch_sleep_time = SYNAPTICS_HW_RESET_TIME;
 
@@ -266,7 +266,7 @@ void __init S5000_tsp_input_init(int version)
 	} else if (touch_type < 8 && touch_type >= 5) {
 		rmi4_platformdata.panel_revision = OCTA_PANEL_REVISION_43;
 	} else {
-		rmi4_platformdata.panel_revision = OCTA_PANEL_REVISION_51;
+		rmi4_platformdata.panel_revision = OCTA_PANEL_REVISION_51; // this
 	}
 
 	rmi4_platformdata.panel_touch_type = touch_type;
