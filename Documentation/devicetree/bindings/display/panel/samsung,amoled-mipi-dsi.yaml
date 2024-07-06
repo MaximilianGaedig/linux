@@ -28,6 +28,8 @@ properties:
     enum:
         # Samsung S6E63J0X03 1.63" 320x320 AMOLED panel
       - samsung,s6e63j0x03
+        # Samsung S6E8FA0 5.0" 1920x1080 AMOLED panel
+      - samsung,s6e8fa0
         # Samsung S6E3HA2 5.7" 1440x2560 AMOLED panel
       - samsung,s6e3ha2
         # Samsung S6E3HF2 5.65" 1600x2560 AMOLED panel
