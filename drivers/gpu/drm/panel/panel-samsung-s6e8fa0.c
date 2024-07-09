@@ -10,10 +10,12 @@
  * published by the Free Software Foundation.
 */
 
-#include <drm/drmP.h>
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_panel.h>
+#include <drm/drm_modes.h>
+#include <drm/drm_print.h>
 
+#include <linux/delay.h>
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
 
@@ -367,9 +369,9 @@ static int s6e8fa0_enable(struct drm_panel *panel)
 	return 0;
 }
 
-static int s6e8fa0_get_modes(struct drm_panel *panel)
+static int s6e8fa0_get_modes(struct drm_panel *panel,
+			     struct drm_connector *connector)
 {
-	struct drm_connector *connector = panel->connector;
 	struct s6e8fa0 *ctx = panel_to_s6e8fa0(panel);
 	struct drm_display_mode *mode;
 
@@ -427,9 +429,6 @@ static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 	struct s6e8fa0 *ctx;
 	int ret;
 
-	if (!drm_panel_connected("s6e8fa0"))
-		return -ENODEV;
-
 	ctx = devm_kzalloc(dev, sizeof(struct s6e8fa0), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
@@ -437,13 +436,16 @@ static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 	mipi_dsi_set_drvdata(dsi, ctx);
 
 	ctx->dev = dev;
+	// maybe add this in
+	// ctx->desc = of_device_get_match_data(dev);
 
 	ctx->is_power_on = false;
 	dsi->lanes = 4;
 	dsi->format = MIPI_DSI_FMT_RGB888;
-	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
-			  MIPI_DSI_MODE_VIDEO_HFP | MIPI_DSI_MODE_VIDEO_HBP |
-			  MIPI_DSI_MODE_VIDEO_HSA | MIPI_DSI_MODE_VSYNC_FLUSH;
+	dsi->mode_flags =
+		MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
+		MIPI_DSI_MODE_VIDEO_NO_HFP | MIPI_DSI_MODE_VIDEO_NO_HBP |
+		MIPI_DSI_MODE_VIDEO_NO_HSA | MIPI_DSI_MODE_VSYNC_FLUSH;
 
 	ret = s6e8fa0_parse_dt(ctx);
 	if (ret < 0)
@@ -479,15 +481,10 @@ static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 	ctx->bl_dev->props.brightness = DEFAULT_BRIGHTNESS;
 	ctx->bl_dev->props.power = FB_BLANK_POWERDOWN;
 
-	drm_panel_init(&ctx->panel);
-	ctx->panel.dev = dev;
-	ctx->panel.funcs = &s6e8fa0_drm_funcs;
+	drm_panel_init(&ctx->panel, dev, &s6e8fa0_drm_funcs,
+		       DRM_MODE_CONNECTOR_DSI);
 
-	ret = drm_panel_add(&ctx->panel);
-	if (ret < 0) {
-		backlight_device_unregister(ctx->bl_dev);
-		return ret;
-	}
+	drm_panel_add(&ctx->panel);
 
 	ret = mipi_dsi_attach(dsi);
 	if (ret < 0) {
@@ -498,7 +495,7 @@ static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 	return ret;
 }
 
-static int s6e8fa0_remove(struct mipi_dsi_device *dsi)
+static void s6e8fa0_remove(struct mipi_dsi_device *dsi)
 {
 	struct s6e8fa0 *ctx = mipi_dsi_get_drvdata(dsi);
 
@@ -506,8 +503,6 @@ static int s6e8fa0_remove(struct mipi_dsi_device *dsi)
 	drm_panel_remove(&ctx->panel);
 	backlight_device_unregister(ctx->bl_dev);
 	s6e8fa0_power_off(ctx);
-
-	return 0;
 }
 
 static void s6e8fa0_shutdown(struct mipi_dsi_device *dsi)
