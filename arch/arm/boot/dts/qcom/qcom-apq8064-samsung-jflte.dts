@@ -3,18 +3,64 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+
 / {
-	model = "Samsung Galaxy S4 Value Edition";
-	compatible = "samsung,jfvelte", "qcom,apq8064";
+	model = "Samsung Galaxy S4";
+	compatible = "samsung,jflte", "qcom,apq8064";
 
 	aliases {
 		serial0 = &gsbi7_serial;
 		serial1 = &gsbi6_serial;
+
+		// display0 = &framebuffer0;
 	};
 
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
+
+
+	// chosen {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	stdout-path = "display0";
+	//
+	// 	// framebuffer0: framebuffer@3200000 {
+	// 	// 	compatible = "simple-framebuffer";
+	// 	// 	reg = <0x03200000 0x800000>;
+	// 	// 	width = <1920>;
+	// 	// 	height = <1080>;
+	// 	// 	stride = <(1920 * 3)>;
+	// 	// 	format = "r8g8b8";
+	// 	// };
+	// };
+	
+	// leds {
+	// 	compatible = "gpio-leds";
+	// 	pinctrl-names = "default";
+	// 	pinctrl-0 = <&notify_led>;
+	//
+	// 	led-user {
+	// 		label = "user0";
+	// 		color = <LED_COLOR_ID_GREEN>;
+	// 		gpios = <&pm8921_gpio 18 GPIO_ACTIVE_HIGH>;
+	// 		default-state = "on";
+	// 	};
+	// };
+
+	// reserved-memory {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	framebuffer@3200000 {
+	// 		reg = <0x03200000 0x800000>;
+	// 		no-map;
+	// 	};
+	//
+	// };
 
 	// reserved-memory {
 	// 	#address-cells = <1>;
@@ -138,12 +184,15 @@
 					regulator-max-microvolt = <2950000>;
 				};
 
+				
+				// won't hurt to allow it to go to lower voltages, but the downstream kernel says min:3300000, max:3300000
 				/* wcnss_wlan.0-iris_vddpa */
 				l10 {
 					regulator-min-microvolt = <2900000>;
 					regulator-max-microvolt = <3300000>;
 				};
 
+				// ok
 				/* mipi_dsi.1-dsi1_avdd */
 				l11 {
 					regulator-min-microvolt = <3300000>;
@@ -152,13 +201,14 @@
 					regulator-always-on;
 				};
 
-				/* pwm_power for backlight */
+				/* pwm_power for backlight */ // there is no backlight?
 				l17 {
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
 					regulator-always-on;
 				};
 
+				// ok
 				/* camera, qdsp6 */
 				l23 {
 					regulator-min-microvolt = <1800000>;
@@ -181,6 +231,15 @@
 					regulator-max-microvolt = <1250000>;
 					bias-pull-down;
 				};
+
+
+				/* lcd 3.0V */
+				l30 {
+					regulator-min-microvolt = <3000000>;
+					regulator-max-microvolt = <3000000>;
+					bias-pull-down;
+				};
+
 
 				/* wcnss_wlan.0-iris_vddio */
 				lvs1 {
@@ -221,22 +280,52 @@
 	};
 };
 
-// &mdp {
-// 	status = "okay";
-// };
-//
-// &dsi0 {
-// 	status = "okay";
-// 	vdda-supply = <&pm8921_l2>; /*VDD_MIPI1 to 4*/
-// 	vdd-supply = <&pm8921_l8>;
-// 	vddio-supply = <&pm8921_lvs7>;
-// 	avdd-supply = <&pm8921_l11>;
-// };
-//
-// &dsi0_phy {
-// 	status = "okay";
-// 	vddio-supply = <&pm8921_lvs7>; /*VDD_PLL2_1 to 7*/
-// };
+&mdp {
+	status = "okay";
+};
+
+&mdp_dsi1_out {
+    remote-endpoint = <&dsi0_in>;
+};
+
+
+&dsi0 {
+	status = "okay";
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+	panel@0 {
+	    compatible = "samsung,s6e8fa0";
+	    reg = <0>;
+
+	    vdd3-supply = <&pm8921_l16>;  //TSP_VDD_3.0V
+	    vci-supply = <&pm8921_l30>; // VCC_3.0V_LCD (LDO)
+
+	    enable-gpios = <&pm8921_gpio 4 GPIO_ACTIVE_HIGH>; // LCD_1.8V_EN
+	    reset-gpios = <&pm8921_mpps 2 GPIO_ACTIVE_LOW>; // MLCD_RST
+
+	   port {
+		    panel_in: endpoint {
+				remote-endpoint = <&dsi0_out>;
+		    };
+		};
+	   };
+
+};
+
+
+&dsi0_in {
+    remote-endpoint = <&mdp_dsi1_out>;
+};
+
+&dsi0_out {
+    remote-endpoint = <&panel_in>;
+    data-lanes = <0 1 2 3>;
+};
+
+&dsi0_phy {
+	status = "okay";
+};
 
 &gsbi6 {
 	status = "okay";
@@ -259,21 +348,21 @@
 	status = "okay";
 };
 
-// /* OTG */
-// &usb1 {
-// 	status = "okay";
-// 	dr_mode = "otg";
-// 	ulpi {
-// 		phy {
-// 			v3p3-supply = <&pm8921_l3>;
-// 			v1p8-supply = <&pm8921_l4>;
-// 		};
-// 	};
-// };
-//
-// /* eMMC */
-// &sdcc1 {
-// 	status = "okay";
-// 	vmmc-supply = <&pm8921_l5>;
-// 	vqmmc-supply = <&pm8921_s4>;
-// };
+/* OTG */
+&usb1 {
+	status = "okay";
+	dr_mode = "otg";
+	ulpi {
+		phy {
+			v3p3-supply = <&pm8921_l3>;
+			v1p8-supply = <&pm8921_l4>;
+		};
+	};
+};
+
+/* eMMC */
+&sdcc1 {
+	status = "okay";
+	vmmc-supply = <&pm8921_l5>;
+	vqmmc-supply = <&pm8921_s4>;
+};
