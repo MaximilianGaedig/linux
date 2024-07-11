@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-#include "qcom-apq8064-v2.0.dtsi"
+#include "qcom-apq8064-pm8921.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/mfd/qcom-rpm.h>
@@ -26,28 +26,28 @@
 
 		key-camera-focus {
 			label = "camera_focus";
-			gpios = <&pm8921_gpio 3 GPIO_ACTIVE_LOW>;
+			gpios = <&pmic_gpio 3 GPIO_ACTIVE_LOW>;
 			linux,input-type = <1>;
 			linux,code = <KEY_CAMERA_FOCUS>;
 		};
 
 		key-camera-snapshot {
 			label = "camera_snapshot";
-			gpios = <&pm8921_gpio 4 GPIO_ACTIVE_LOW>;
+			gpios = <&pmic_gpio 4 GPIO_ACTIVE_LOW>;
 			linux,input-type = <1>;
 			linux,code = <KEY_CAMERA>;
 		};
 
 		key-volume-down {
 			label = "volume_down";
-			gpios = <&pm8921_gpio 29 GPIO_ACTIVE_LOW>;
+			gpios = <&pmic_gpio 29 GPIO_ACTIVE_LOW>;
 			linux,input-type = <1>;
 			linux,code = <KEY_VOLUMEDOWN>;
 		};
 
 		key-volume-up {
 			label = "volume_up";
-			gpios = <&pm8921_gpio 35 GPIO_ACTIVE_LOW>;
+			gpios = <&pmic_gpio 35 GPIO_ACTIVE_LOW>;
 			linux,input-type = <1>;
 			linux,code = <KEY_VOLUMEUP>;
 		};
@@ -65,7 +65,7 @@
 	status = "okay";
 };
 
-&pm8921_gpio {
+&pmic_gpio {
 	gpio_keys_pin_a: gpio-keys-active-state {
 		pins = "gpio3", "gpio4", "gpio29", "gpio35";
 		function = "normal";
@@ -87,15 +87,15 @@
 
 &rpm {
 	regulators {
-		vin_l1_l2_l12_l18-supply = <&pm8921_s4>;
-		vin_lvs_1_3_6-supply = <&pm8921_s4>;
-		vin_lvs_4_5_7-supply = <&pm8921_s4>;
-		vin_ncp-supply = <&pm8921_l6>;
-		vin_lvs2-supply = <&pm8921_s4>;
-		vin_l24-supply = <&pm8921_s1>;
-		vin_l25-supply = <&pm8921_s1>;
-		vin_l27-supply = <&pm8921_s7>;
-		vin_l28-supply = <&pm8921_s7>;
+		vin_l1_l2_l12_l18-supply = <&pmic_s4>;
+		vin_lvs_1_3_6-supply = <&pmic_s4>;
+		vin_lvs_4_5_7-supply = <&pmic_s4>;
+		vin_ncp-supply = <&pmic_l6>;
+		vin_lvs2-supply = <&pmic_s4>;
+		vin_l24-supply = <&pmic_s1>;
+		vin_l25-supply = <&pmic_s1>;
+		vin_l27-supply = <&pmic_s7>;
+		vin_l28-supply = <&pmic_s7>;
 
 		/* Buck SMPS */
 		s1 {
@@ -338,8 +338,8 @@
 
 &mdp {
 	status = "okay";
-	// vdda-supply = <&pm8921_l2>; // FIXME this doesn't belong here
-	// vddio-supply = <&pm8921_lvs7>; // FIXME ^
+	// vdda-supply = <&pmic_l2>; // FIXME this doesn't belong here
+	// vddio-supply = <&pmic_lvs7>; // FIXME ^
 };
 
 &mdp_dsi1_out {
@@ -348,23 +348,23 @@
 
 &dsi0 {
 	status = "okay";
-	vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
-	//vdd-supply = <&pm8921_l8>;
-	vddio-supply = <&pm8921_l29>;
-	avdd-supply = <&pm8921_l11>;
+	vdda-supply = <&pmic_l2>;/*VDD_MIPI1 to 4*/
+	//vdd-supply = <&pmic_l8>;
+	vddio-supply = <&pmic_l29>;
+	avdd-supply = <&pmic_l11>;
 	//vcss-supply = <&ext_3p3v>;
 
 	panel@0 {
 		reg = <0>;
 		compatible = "jdc,mdy70";
 
-		//vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
-		vddp-supply = <&pm8921_l11>;
-		iovcc-supply = <&pm8921_l29>;
+		//vdda-supply = <&pmic_l2>;/*VDD_MIPI1 to 4*/
+		vddp-supply = <&pmic_l11>;
+		iovcc-supply = <&pmic_l29>;
 
-		//enable-gpios = <&pm8921_gpio 36 GPIO_ACTIVE_HIGH>;
-		reset-gpios = <&pm8921_gpio 25 GPIO_ACTIVE_LOW>;
-		dcdc-en-gpios = <&pm8921_gpio 24 GPIO_ACTIVE_HIGH>;
+		//enable-gpios = <&pmic_gpio 36 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pmic_gpio 25 GPIO_ACTIVE_LOW>;
+		dcdc-en-gpios = <&pmic_gpio 24 GPIO_ACTIVE_HIGH>;
 
 		port {
 			panel_in: endpoint {
@@ -385,17 +385,17 @@
 
 &dsi0_phy {
 	status = "okay";
-	vddio-supply = <&pm8921_lvs7>;/*VDD_PLL2_1 to 7*/
+	vddio-supply = <&pmic_lvs7>;/*VDD_PLL2_1 to 7*/
 };
 
 &sdcc1 {
-	vmmc-supply = <&pm8921_l5>;
-	vqmmc-supply = <&pm8921_s4>;
+	vmmc-supply = <&pmic_l5>;
+	vqmmc-supply = <&pmic_s4>;
 	status = "okay";
 };
 
 &sdcc3 {
-	vmmc-supply = <&pm8921_l6>;
+	vmmc-supply = <&pmic_l6>;
 	cd-gpios = <&tlmm_pinmux 26 GPIO_ACTIVE_LOW>;
 
 	pinctrl-names = "default";
@@ -432,8 +432,8 @@
 };
 
 &usb_hs1_phy {
-	v3p3-supply = <&pm8921_l3>;
-	v1p8-supply = <&pm8921_l4>;
+	v3p3-supply = <&pmic_l3>;
+	v1p8-supply = <&pmic_l4>;
 };
 
 &usb1 {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-#include "qcom-apq8064-v2.0.dtsi"
+#include "qcom-apq8064-pm8921.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
@@ -46,12 +46,12 @@
 		compatible = "gpio-keys";
 		key-volume-up {
 			label = "Volume Up";
-			gpios = <&pm8921_gpio 4 GPIO_ACTIVE_HIGH>;
+			gpios = <&pmic_gpio 4 GPIO_ACTIVE_HIGH>;
 			linux,code = <KEY_VOLUMEUP>;
 		};
 		key-volume-down {
 			label = "Volume Down";
-			gpios = <&pm8921_gpio 38 GPIO_ACTIVE_HIGH>;
+			gpios = <&pmic_gpio 38 GPIO_ACTIVE_HIGH>;
 			linux,code = <KEY_VOLUMEDOWN>;
 		};
 	};
@@ -74,22 +74,22 @@
 };
 
 &dsi0 {
-	vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
-	vdd-supply = <&pm8921_l8>;
-	vddio-supply = <&pm8921_lvs7>;
-	avdd-supply = <&pm8921_l11>;
+	vdda-supply = <&pmic_l2>;/*VDD_MIPI1 to 4*/
+	vdd-supply = <&pmic_l8>;
+	vddio-supply = <&pmic_lvs7>;
+	avdd-supply = <&pmic_l11>;
 	status = "okay";
 
 	panel@0 {
 		reg = <0>;
 		compatible = "jdi,lt070me05000";
 
-		vddp-supply = <&pm8921_l17>;
-		iovcc-supply = <&pm8921_lvs7>;
+		vddp-supply = <&pmic_l17>;
+		iovcc-supply = <&pmic_lvs7>;
 
-		enable-gpios = <&pm8921_gpio 36 GPIO_ACTIVE_HIGH>;
+		enable-gpios = <&pmic_gpio 36 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&tlmm_pinmux 54 GPIO_ACTIVE_LOW>;
-		dcdc-en-gpios = <&pm8921_gpio 23 GPIO_ACTIVE_HIGH>;
+		dcdc-en-gpios = <&pmic_gpio 23 GPIO_ACTIVE_HIGH>;
 
 		port {
 			panel_in: endpoint {
@@ -109,7 +109,7 @@
 };
 
 &dsi0_phy {
-	vddio-supply = <&pm8921_lvs7>;/*VDD_PLL2_1 to 7*/
+	vddio-supply = <&pmic_lvs7>;/*VDD_PLL2_1 to 7*/
 	status = "okay";
 };
 
@@ -182,8 +182,8 @@
 
 /* eMMC */
 &sdcc1 {
-	vmmc-supply = <&pm8921_l5>;
-	vqmmc-supply = <&pm8921_s4>;
+	vmmc-supply = <&pmic_l5>;
+	vqmmc-supply = <&pmic_s4>;
 	status = "okay";
 };
 
@@ -193,20 +193,20 @@
 
 &rpm {
 	regulators {
-		vdd_l1_l2_l12_l18-supply = <&pm8921_s4>;
-		vin_lvs1_3_6-supply = <&pm8921_s4>;
-		vin_lvs4_5_7-supply = <&pm8921_s4>;
+		vdd_l1_l2_l12_l18-supply = <&pmic_s4>;
+		vin_lvs1_3_6-supply = <&pmic_s4>;
+		vin_lvs4_5_7-supply = <&pmic_s4>;
 
 
-		vdd_l24-supply = <&pm8921_s1>;
-		vdd_l25-supply = <&pm8921_s1>;
-		vin_lvs2-supply = <&pm8921_s1>;
+		vdd_l24-supply = <&pmic_s1>;
+		vdd_l25-supply = <&pmic_s1>;
+		vin_lvs2-supply = <&pmic_s1>;
 
-		vdd_l26-supply = <&pm8921_s7>;
-		vdd_l27-supply = <&pm8921_s7>;
-		vdd_l28-supply = <&pm8921_s7>;
+		vdd_l26-supply = <&pmic_s7>;
+		vdd_l27-supply = <&pmic_s7>;
+		vdd_l28-supply = <&pmic_s7>;
 
-		vdd_ncp-supply = <&pm8921_l6>;
+		vdd_ncp-supply = <&pmic_l6>;
 
 		/* Buck SMPS */
 		s1 {
@@ -347,8 +347,8 @@
 };
 
 &usb_hs1_phy {
-	v3p3-supply = <&pm8921_l3>;
-	v1p8-supply = <&pm8921_l4>;
+	v3p3-supply = <&pmic_l3>;
+	v1p8-supply = <&pmic_l4>;
 };
 
 /* OTG */

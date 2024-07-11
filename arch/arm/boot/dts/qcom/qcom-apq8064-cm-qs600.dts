@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-#include "qcom-apq8064-v2.0.dtsi"
+#include "qcom-apq8064-pm8921.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
 
@@ -19,7 +19,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&wlan_default_gpios>;
 		compatible = "mmc-pwrseq-simple";
-		reset-gpios = <&pm8921_gpio 43 GPIO_ACTIVE_LOW>;
+		reset-gpios = <&pmic_gpio 43 GPIO_ACTIVE_LOW>;
 	};
 
 	/* on board fixed 3.3v supply */
@@ -60,8 +60,8 @@
 };
 
 &pcie {
-	vdda-supply = <&pm8921_s3>;
-	vdda_phy-supply = <&pm8921_lvs6>;
+	vdda-supply = <&pmic_s3>;
+	vdda_phy-supply = <&pmic_lvs6>;
 	vdda_refclk-supply = <&v3p3_fixed>;
 	pinctrl-0 = <&pcie_pins>;
 	pinctrl-names = "default";
@@ -69,7 +69,7 @@
 	status = "okay";
 };
 
-&pm8921_gpio {
+&pmic_gpio {
 	wlan_default_gpios: wlan-gpios-state {
 		pinconf {
 			pins = "gpio43";
@@ -82,16 +82,16 @@
 
 &rpm {
 	regulators {
-		vin_lvs1_3_6-supply = <&pm8921_s4>;
-		vin_lvs2-supply = <&pm8921_s1>;
-		vin_lvs4_5_7-supply = <&pm8921_s4>;
+		vin_lvs1_3_6-supply = <&pmic_s4>;
+		vin_lvs2-supply = <&pmic_s1>;
+		vin_lvs4_5_7-supply = <&pmic_s4>;
 
-		vdd_l1_l2_l12_l18-supply = <&pm8921_s4>;
-		vdd_l24-supply = <&pm8921_s1>;
-		vdd_l25-supply = <&pm8921_s1>;
-		vdd_l26-supply = <&pm8921_s7>;
-		vdd_l27-supply = <&pm8921_s7>;
-		vdd_l28-supply = <&pm8921_s7>;
+		vdd_l1_l2_l12_l18-supply = <&pmic_s4>;
+		vdd_l24-supply = <&pmic_s1>;
+		vdd_l25-supply = <&pmic_s1>;
+		vdd_l26-supply = <&pmic_s7>;
+		vdd_l27-supply = <&pmic_s7>;
+		vdd_l28-supply = <&pmic_s7>;
 
 
 		/* Buck SMPS */
@@ -154,8 +154,8 @@
 
 /* eMMC */
 &sdcc1 {
-	vmmc-supply = <&pm8921_l5>;
-	vqmmc-supply = <&pm8921_s4>;
+	vmmc-supply = <&pmic_l5>;
+	vqmmc-supply = <&pmic_s4>;
 	status = "okay";
 };
 
@@ -199,18 +199,18 @@
 };
 
 &usb_hs1_phy {
-	v3p3-supply = <&pm8921_l3>;
-	v1p8-supply = <&pm8921_l4>;
+	v3p3-supply = <&pmic_l3>;
+	v1p8-supply = <&pmic_l4>;
 };
 
 &usb_hs3_phy {
-	v3p3-supply = <&pm8921_l3>;
-	v1p8-supply = <&pm8921_l23>;
+	v3p3-supply = <&pmic_l3>;
+	v1p8-supply = <&pmic_l23>;
 };
 
 &usb_hs4_phy {
-	v3p3-supply = <&pm8921_l3>;
-	v1p8-supply = <&pm8921_l23>;
+	v3p3-supply = <&pmic_l3>;
+	v1p8-supply = <&pmic_l23>;
 };
 
 /* OTG */

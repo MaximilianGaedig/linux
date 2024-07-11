@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-#include "qcom-apq8064-v2.0.dtsi"
+#include "qcom-apq8064-pm8921.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/mfd/qcom-rpm.h>
@@ -53,17 +53,17 @@
 	soc {
 		rpm@108000 {
 			regulators {
-				vdd_l1_l2_l12_l18-supply = <&pm8921_s4>;
-				vin_lvs1_3_6-supply = <&pm8921_s4>;
-				vin_lvs4_5_7-supply = <&pm8921_s4>;
+				vdd_l1_l2_l12_l18-supply = <&pmic_s4>;
+				vin_lvs1_3_6-supply = <&pmic_s4>;
+				vin_lvs4_5_7-supply = <&pmic_s4>;
 
-				vdd_l24-supply = <&pm8921_s1>;
-				vdd_l25-supply = <&pm8921_s1>;
-				vin_lvs2-supply = <&pm8921_s1>;
+				vdd_l24-supply = <&pmic_s1>;
+				vdd_l25-supply = <&pmic_s1>;
+				vin_lvs2-supply = <&pmic_s1>;
 
-				vdd_l26-supply = <&pm8921_s7>;
-				vdd_l27-supply = <&pm8921_s7>;
-				vdd_l28-supply = <&pm8921_s7>;
+				vdd_l26-supply = <&pmic_s7>;
+				vdd_l27-supply = <&pmic_s7>;
+				vdd_l28-supply = <&pmic_s7>;
 
 				/* Buck SMPS */
 				s1 {
@@ -300,7 +300,7 @@
 
 &pmicintc {
 	keypad@148 {
-		compatible = "qcom,pm8921-keypad";
+		compatible = "qcom,pmic-keypad";
 		reg = <0x148>;
 		interrupt-parent = <&pmicintc>;
 		interrupts = <74 1>, <75 1>;
@@ -327,22 +327,22 @@
 
 &dsi0 {
     status = "disabled";
-    vdda-supply = <&pm8921_l2>;/*VDD_MIPI1 to 4*/
-    // vdd-supply = <&pm8921_l8>; // DRIVER DOESN'T USE IT (David)
-    vddio-supply = <&pm8921_lvs6>;
-    avdd-supply = <&pm8921_l8>;
+    vdda-supply = <&pmic_l2>;/*VDD_MIPI1 to 4*/
+    // vdd-supply = <&pmic_l8>; // DRIVER DOESN'T USE IT (David)
+    vddio-supply = <&pmic_lvs6>;
+    avdd-supply = <&pmic_l8>;
     // vcss-supply = <&ext_dsv_load>; // DOESN'T EXIST (David)
 
     panel@0 {
         reg = <0>;
         compatible = "lg,lh467wx1-sd01";
 
-        vci-supply = <&pm8921_l8>;
-        iovcc-supply = <&pm8921_lvs7>;
+        vci-supply = <&pmic_l8>;
+        iovcc-supply = <&pmic_lvs7>;
 
-//              enable-gpios = <&pm8921_gpio 36 GPIO_ACTIVE_HIGH>;
+//              enable-gpios = <&pmic_gpio 36 GPIO_ACTIVE_HIGH>;
         reset-gpios = <&tlmm_pinmux 54 GPIO_ACTIVE_LOW>;
-//              dcdc-en-gpios = <&pm8921_gpio 23 GPIO_ACTIVE_HIGH>;
+//              dcdc-en-gpios = <&pmic_gpio 23 GPIO_ACTIVE_HIGH>;
 
         port {
             panel_in: endpoint {
@@ -377,7 +377,7 @@
 	compatible = "backlight,lm3530";
 	status = "okay";
 	reg = <0x38>;
-	enable-gpios = <&pm8921_gpio 24 GPIO_ACTIVE_HIGH>;
+	enable-gpios = <&pmic_gpio 24 GPIO_ACTIVE_HIGH>;
 	ti,current-limit = /bits/ 8 <0x17>;
 	default-brightness = /bits/ 8 <0x10>;
 	max-brightness = /bits/ 8 <0x72>;
@@ -403,8 +403,8 @@
 /* eMMC */
 &sdcc1 {
     status = "okay";
-    vmmc-supply = <&pm8921_l5>;
-    vqmmc-supply = <&pm8921_s4>;
+    vmmc-supply = <&pmic_l5>;
+    vqmmc-supply = <&pmic_s4>;
 };
 
 &riva {
