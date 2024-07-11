@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-2.0
+/dts-v1/;
+
+#include "qcom-apq8064-v2.0.dtsi"
+/ {
+	soc {
+		ssbi@500000 {
+			pmic {
+				compatible = "qcom,pm8921";
+				gpio@150 {
+					compatible = "qcom,pm8921-gpio",
+						     "qcom,ssbi-gpio";
+
+				};
+
+				mpps@50 {
+					compatible = "qcom,pm8917-mpp",
+						     "qcom,ssbi-mpp";
+				};
+
+				rtc@11d {
+					compatible = "qcom,pm8921-rtc";
+				};
+
+				pwrkey@1c {
+					compatible = "qcom,pm8921-pwrkey";
+				};
+
+				xoadc@197 {
+					compatible = "qcom,pm8921-adc";
+				};
+			};
+		};
+
+		rpm@108000 {
+			regulators {
+				compatible = "qcom,rpm-pm8917-regulators";
+
+				pmic_l30: l30 {};
+				pmic_l31: l31 {};
+				pmic_l32: l32 {};
+				pmic_l33: l33 {};
+				pmic_l34: l34 {};
+				pmic_l35: l35 {};
+				pmic_l36: l36 {};
+
+				// pmic_boost: boost {};
+			};
+		};
+
+	};
+};

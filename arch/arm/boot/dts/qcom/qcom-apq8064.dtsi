@@ -658,12 +658,119 @@
 			compatible = "qcom,ssbi";
 			reg = <0x00c00000 0x1000>;
 			qcom,controller-type = "pmic-arbiter";
+
+			pm8821: pmic {
+				interrupt-parent = <&tlmm_pinmux>;
+				interrupts = <76 IRQ_TYPE_LEVEL_LOW>;
+				#interrupt-cells = <2>;
+				interrupt-controller;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				pm8821_mpps: mpps@50 {
+					compatible = "qcom,pm8821-mpp", "qcom,ssbi-mpp";
+					reg = <0x50>;
+					interrupt-controller;
+					#interrupt-cells = <2>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					gpio-ranges = <&pm8821_mpps 0 0 4>;
+				};
+			};
 		};
 
 		ssbi: ssbi@500000 {
 			compatible = "qcom,ssbi";
 			reg = <0x00500000 0x1000>;
 			qcom,controller-type = "pmic-arbiter";
+
+			pmicintc: pmic {
+				interrupt-parent = <&tlmm_pinmux>;
+				interrupts = <74 8>;
+				#interrupt-cells = <2>;
+				interrupt-controller;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				pmic_gpio: gpio@150 {
+					reg = <0x150>;
+					interrupt-controller;
+					#interrupt-cells = <2>;
+					gpio-controller;
+					gpio-ranges = <&pmic_gpio 0 0 44>;
+					#gpio-cells = <2>;
+
+				};
+
+				pmic_mpps: mpps@50 {
+					reg = <0x50>;
+					gpio-controller;
+					#gpio-cells = <2>;
+					gpio-ranges = <&pmic_mpps 0 0 12>;
+					interrupt-controller;
+					#interrupt-cells = <2>;
+				};
+
+				rtc@11d {
+					interrupt-parent = <&pmicintc>;
+					interrupts = <39 1>;
+					reg = <0x11d>;
+					allow-set-time;
+				};
+
+				pwrkey@1c {
+					reg = <0x1c>;
+					interrupt-parent = <&pmicintc>;
+					interrupts = <50 1>, <51 1>;
+					debounce = <15625>;
+					pull-up;
+				};
+
+				xoadc: xoadc@197 {
+					reg = <197>;
+					interrupts-extended = <&pmicintc 78 IRQ_TYPE_EDGE_RISING>;
+					#address-cells = <2>;
+					#size-cells = <0>;
+					#io-channel-cells = <2>;
+
+					vcoin: adc-channel@0 {
+						reg = <0x00 0x00>;
+					};
+					vbat: adc-channel@1 {
+						reg = <0x00 0x01>;
+					};
+					dcin: adc-channel@2 {
+						reg = <0x00 0x02>;
+					};
+					vph_pwr: adc-channel@4 {
+						reg = <0x00 0x04>;
+					};
+					batt_therm: adc-channel@8 {
+						reg = <0x00 0x08>;
+					};
+					batt_id: adc-channel@9 {
+						reg = <0x00 0x09>;
+					};
+					usb_vbus: adc-channel@a {
+						reg = <0x00 0x0a>;
+					};
+					die_temp: adc-channel@b {
+						reg = <0x00 0x0b>;
+					};
+					ref_625mv: adc-channel@c {
+						reg = <0x00 0x0c>;
+					};
+					ref_1250mv: adc-channel@d {
+						reg = <0x00 0x0d>;
+					};
+					chg_temp: adc-channel@e {
+						reg = <0x00 0x0e>;
+					};
+					ref_muxoff: adc-channel@f {
+						reg = <0x00 0x0f>;
+					};
+				};
+			};
 		};
 
 		qfprom: qfprom@700000 {
@@ -775,64 +882,53 @@
 			};
 
 			regulators {
-				compatible = "qcom,rpm-pm8921-regulators";
+				pmic_s1: s1 {};
+				pmic_s2: s2 {};
+				pmic_s3: s3 {};
+				pmic_s4: s4 {};
+				pmic_s7: s7 {};
+				pmic_s8: s8 {};
 
-				pm8921_s1: s1 {};
-				pm8921_s2: s2 {};
-				pm8921_s3: s3 {};
-				pm8921_s4: s4 {};
-				pm8921_s7: s7 {};
-				pm8921_s8: s8 {};
+				pmic_l1: l1 {};
+				pmic_l2: l2 {};
+				pmic_l3: l3 {};
+				pmic_l4: l4 {};
+				pmic_l5: l5 {};
+				pmic_l6: l6 {};
+				pmic_l7: l7 {};
+				pmic_l8: l8 {};
+				pmic_l9: l9 {};
+				pmic_l10: l10 {};
+				pmic_l11: l11 {};
+				pmic_l12: l12 {};
+				pmic_l14: l14 {};
+				pmic_l15: l15 {};
+				pmic_l16: l16 {};
+				pmic_l17: l17 {};
+				pmic_l18: l18 {};
+				pmic_l21: l21 {};
+				pmic_l22: l22 {};
+				pmic_l23: l23 {};
+				pmic_l24: l24 {};
+				pmic_l25: l25 {};
+				pmic_l26: l26 {};
+				pmic_l27: l27 {};
+				pmic_l28: l28 {};
+				pmic_l29: l29 {};
 
-				pm8921_l1: l1 {};
-				pm8921_l2: l2 {};
-				pm8921_l3: l3 {};
-				pm8921_l4: l4 {};
-				pm8921_l5: l5 {};
-				pm8921_l6: l6 {};
-				pm8921_l7: l7 {};
-				pm8921_l8: l8 {};
-				pm8921_l9: l9 {};
-				pm8921_l10: l10 {};
-				pm8921_l11: l11 {};
-				pm8921_l12: l12 {};
-				pm8921_l14: l14 {};
-				pm8921_l15: l15 {};
-				pm8921_l16: l16 {};
-				pm8921_l17: l17 {};
-				pm8921_l18: l18 {};
-				pm8921_l21: l21 {};
-				pm8921_l22: l22 {};
-				pm8921_l23: l23 {};
-				pm8921_l24: l24 {};
-				pm8921_l25: l25 {};
-				pm8921_l26: l26 {};
-				pm8921_l27: l27 {};
-				pm8921_l28: l28 {};
-				pm8921_l29: l29 {};
-				pm8921_l30: l30 {};
-				pm8921_l31: l31 {};
-				pm8921_l32: l32 {};
-				pm8921_l33: l33 {};
-				pm8921_l34: l34 {};
-				pm8921_l35: l35 {};
-				pm8921_l36: l36 {};
+				pmic_lvs1: lvs1 {};
+				pmic_lvs2: lvs2 {};
+				pmic_lvs3: lvs3 {};
+				pmic_lvs4: lvs4 {};
+				pmic_lvs5: lvs5 {};
+				pmic_lvs6: lvs6 {};
+				pmic_lvs7: lvs7 {};
 
-				pm8921_lvs1: lvs1 {};
-				pm8921_lvs2: lvs2 {};
-				pm8921_lvs3: lvs3 {};
-				pm8921_lvs4: lvs4 {};
-				pm8921_lvs5: lvs5 {};
-				pm8921_lvs6: lvs6 {};
-				pm8921_lvs7: lvs7 {};
+				pmic_usb_switch: usb-switch {};
 
-				pm8921_usb_switch: usb-switch {};
-
-				pm8921_hdmi_switch: hdmi-switch {
+				pmic_hdmi_switch: hdmi-switch {
 					bias-pull-down;
 				};
-
-				pm8921_ncp: ncp {};
 			};
 		};
 
@@ -965,6 +1061,65 @@
 			ports-implemented = <0x1>;
 		};
 
+
+
+		sdcc1: mmc@12400000 {
+			status = "disabled";
+			compatible = "arm,pl18x", "arm,primecell";
+			pinctrl-names = "default";
+			pinctrl-0 = <&sdcc1_pins>;
+			arm,primecell-periphid = <0x00051180>;
+			reg = <0x12400000 0x2000>;
+			interrupts = <GIC_SPI 104 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&gcc SDC1_CLK>, <&gcc SDC1_H_CLK>;
+			clock-names = "mclk", "apb_pclk";
+			bus-width = <8>;
+			max-frequency = <104000000>;
+			non-removable;
+			cap-sd-highspeed;
+			cap-mmc-highspeed;
+			dmas = <&sdcc1bam 2>, <&sdcc1bam 1>;
+			dma-names = "tx", "rx";
+		};
+
+		sdcc1bam: dma-controller@12402000 {
+			compatible = "qcom,bam-v1.3.0";
+			reg = <0x12402000 0x8000>;
+			interrupts = <0 98 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&gcc SDC1_H_CLK>;
+			clock-names = "bam_clk";
+			#dma-cells = <1>;
+			qcom,ee = <0>;
+		};
+
+		sdcc2: mmc@12140000 {
+			status = "disabled";
+			compatible = "arm,pl18x", "arm,primecell";
+			pinctrl-names = "default";
+			pinctrl-0 = <&sdcc2_pins>;
+			arm,primecell-periphid = <0x00051180>;
+			reg = <0x12140000 0x2000>;
+			interrupts = <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&gcc SDC2_CLK>, <&gcc SDC2_H_CLK>;
+			clock-names = "mclk", "apb_pclk";
+			bus-width = <4>;
+			max-frequency = <104000000>;
+			cap-sd-highspeed;
+			cap-mmc-highspeed;
+			dmas = <&sdcc2bam 2>, <&sdcc2bam 1>;
+			dma-names = "tx", "rx";
+		};
+
+		sdcc2bam: dma-controller@12142000 {
+			compatible = "qcom,bam-v1.3.0";
+			reg = <0x12142000 0x8000>;
+			interrupts = <0 97 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&gcc SDC2_H_CLK>;
+			clock-names = "bam_clk";
+			#dma-cells = <1>;
+			qcom,ee = <0>;
+		};
+
 		sdcc3: mmc@12180000 {
 			compatible = "arm,pl18x", "arm,primecell";
 			arm,primecell-periphid = <0x00051180>;
@@ -1020,136 +1175,108 @@
 			qcom,ee = <0>;
 		};
 
-		sdcc1: mmc@12400000 {
-			status = "disabled";
-			compatible = "arm,pl18x", "arm,primecell";
-			pinctrl-names = "default";
-			pinctrl-0 = <&sdcc1_pins>;
-			arm,primecell-periphid = <0x00051180>;
-			reg = <0x12400000 0x2000>;
-			interrupts = <GIC_SPI 104 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&gcc SDC1_CLK>, <&gcc SDC1_H_CLK>;
-			clock-names = "mclk", "apb_pclk";
-			bus-width = <8>;
-			max-frequency = <96000000>;
-			non-removable;
-			cap-sd-highspeed;
-			cap-mmc-highspeed;
-			dmas = <&sdcc1bam 2>, <&sdcc1bam 1>;
-			dma-names = "tx", "rx";
-		};
-
-		sdcc1bam: dma-controller@12402000 {
-			compatible = "qcom,bam-v1.3.0";
-			reg = <0x12402000 0x8000>;
-			interrupts = <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&gcc SDC1_H_CLK>;
-			clock-names = "bam_clk";
-			#dma-cells = <1>;
-			qcom,ee = <0>;
-		};
 
 		tcsr: syscon@1a400000 {
 			compatible = "qcom,tcsr-apq8064", "syscon";
 			reg = <0x1a400000 0x100>;
 		};
 
-		gpu: adreno-3xx@4300000 {
-			compatible = "qcom,adreno-320.2", "qcom,adreno";
-			reg = <0x04300000 0x20000>;
-			reg-names = "kgsl_3d0_reg_memory";
-			interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
-			interrupt-names = "kgsl_3d0_irq";
-			clock-names =
-			    "core",
-			    "iface",
-			    "mem",
-			    "mem_iface";
-			clocks =
-			    <&mmcc GFX3D_CLK>,
-			    <&mmcc GFX3D_AHB_CLK>,
-			    <&mmcc GFX3D_AXI_CLK>,
-			    <&mmcc MMSS_IMEM_AHB_CLK>;
-
-			iommus = <&gfx3d 0
-				  &gfx3d 1
-				  &gfx3d 2
-				  &gfx3d 3
-				  &gfx3d 4
-				  &gfx3d 5
-				  &gfx3d 6
-				  &gfx3d 7
-				  &gfx3d 8
-				  &gfx3d 9
-				  &gfx3d 10
-				  &gfx3d 11
-				  &gfx3d 12
-				  &gfx3d 13
-				  &gfx3d 14
-				  &gfx3d 15
-				  &gfx3d 16
-				  &gfx3d 17
-				  &gfx3d 18
-				  &gfx3d 19
-				  &gfx3d 20
-				  &gfx3d 21
-				  &gfx3d 22
-				  &gfx3d 23
-				  &gfx3d 24
-				  &gfx3d 25
-				  &gfx3d 26
-				  &gfx3d 27
-				  &gfx3d 28
-				  &gfx3d 29
-				  &gfx3d 30
-				  &gfx3d 31
-				  &gfx3d1 0
-				  &gfx3d1 1
-				  &gfx3d1 2
-				  &gfx3d1 3
-				  &gfx3d1 4
-				  &gfx3d1 5
-				  &gfx3d1 6
-				  &gfx3d1 7
-				  &gfx3d1 8
-				  &gfx3d1 9
-				  &gfx3d1 10
-				  &gfx3d1 11
-				  &gfx3d1 12
-				  &gfx3d1 13
-				  &gfx3d1 14
-				  &gfx3d1 15
-				  &gfx3d1 16
-				  &gfx3d1 17
-				  &gfx3d1 18
-				  &gfx3d1 19
-				  &gfx3d1 20
-				  &gfx3d1 21
-				  &gfx3d1 22
-				  &gfx3d1 23
-				  &gfx3d1 24
-				  &gfx3d1 25
-				  &gfx3d1 26
-				  &gfx3d1 27
-				  &gfx3d1 28
-				  &gfx3d1 29
-				  &gfx3d1 30
-				  &gfx3d1 31>;
-
-			operating-points-v2 = <&gpu_opp_table>;
-
-			gpu_opp_table: opp-table {
-				compatible = "operating-points-v2";
-
-				opp-450000000 {
-					opp-hz = /bits/ 64 <450000000>;
-				};
-
-				opp-27000000 {
-					opp-hz = /bits/ 64 <27000000>;
-				};
-			};
-		};
+		// gpu: adreno-3xx@4300000 {
+		// 	compatible = "qcom,adreno-320.2", "qcom,adreno";
+		// 	reg = <0x04300000 0x20000>;
+		// 	reg-names = "kgsl_3d0_reg_memory";
+		// 	interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
+		// 	interrupt-names = "kgsl_3d0_irq";
+		// 	clock-names =
+		// 	    "core",
+		// 	    "iface",
+		// 	    "mem",
+		// 	    "mem_iface";
+		// 	clocks =
+		// 	    <&mmcc GFX3D_CLK>,
+		// 	    <&mmcc GFX3D_AHB_CLK>,
+		// 	    <&mmcc GFX3D_AXI_CLK>,
+		// 	    <&mmcc MMSS_IMEM_AHB_CLK>;
+		//
+		// 	iommus = <&gfx3d 0
+		// 		  &gfx3d 1
+		// 		  &gfx3d 2
+		// 		  &gfx3d 3
+		// 		  &gfx3d 4
+		// 		  &gfx3d 5
+		// 		  &gfx3d 6
+		// 		  &gfx3d 7
+		// 		  &gfx3d 8
+		// 		  &gfx3d 9
+		// 		  &gfx3d 10
+		// 		  &gfx3d 11
+		// 		  &gfx3d 12
+		// 		  &gfx3d 13
+		// 		  &gfx3d 14
+		// 		  &gfx3d 15
+		// 		  &gfx3d 16
+		// 		  &gfx3d 17
+		// 		  &gfx3d 18
+		// 		  &gfx3d 19
+		// 		  &gfx3d 20
+		// 		  &gfx3d 21
+		// 		  &gfx3d 22
+		// 		  &gfx3d 23
+		// 		  &gfx3d 24
+		// 		  &gfx3d 25
+		// 		  &gfx3d 26
+		// 		  &gfx3d 27
+		// 		  &gfx3d 28
+		// 		  &gfx3d 29
+		// 		  &gfx3d 30
+		// 		  &gfx3d 31
+		// 		  &gfx3d1 0
+		// 		  &gfx3d1 1
+		// 		  &gfx3d1 2
+		// 		  &gfx3d1 3
+		// 		  &gfx3d1 4
+		// 		  &gfx3d1 5
+		// 		  &gfx3d1 6
+		// 		  &gfx3d1 7
+		// 		  &gfx3d1 8
+		// 		  &gfx3d1 9
+		// 		  &gfx3d1 10
+		// 		  &gfx3d1 11
+		// 		  &gfx3d1 12
+		// 		  &gfx3d1 13
+		// 		  &gfx3d1 14
+		// 		  &gfx3d1 15
+		// 		  &gfx3d1 16
+		// 		  &gfx3d1 17
+		// 		  &gfx3d1 18
+		// 		  &gfx3d1 19
+		// 		  &gfx3d1 20
+		// 		  &gfx3d1 21
+		// 		  &gfx3d1 22
+		// 		  &gfx3d1 23
+		// 		  &gfx3d1 24
+		// 		  &gfx3d1 25
+		// 		  &gfx3d1 26
+		// 		  &gfx3d1 27
+		// 		  &gfx3d1 28
+		// 		  &gfx3d1 29
+		// 		  &gfx3d1 30
+		// 		  &gfx3d1 31>;
+		//
+		// 	operating-points-v2 = <&gpu_opp_table>;
+		//
+		// 	gpu_opp_table: opp-table {
+		// 		compatible = "operating-points-v2";
+		//
+		// 		opp-450000000 {
+		// 			opp-hz = /bits/ 64 <450000000>;
+		// 		};
+		//
+		// 		opp-27000000 {
+		// 			opp-hz = /bits/ 64 <27000000>;
+		// 		};
+		// 	};
+		// };
 
 		mmss_sfpb: syscon@5700000 {
 			compatible = "syscon";
@@ -1522,6 +1649,10 @@
 
 			memory-region = <&wcnss_mem>;
 
+			vddcx-supply = <&pmic_s3>;
+			vddmx-supply = <&pmic_l24>;
+			vddpx-supply = <&pmic_s4>;
+
 			status = "disabled";
 
 			iris {
@@ -1529,6 +1660,11 @@
 
 				clocks = <&cxo_board>;
 				clock-names = "xo";
+
+				vddxo-supply = <&pmic_l4>;
+				vddrfa-supply = <&pmic_s2>;
+				vddpa-supply = <&pmic_l10>;
+				vdddig-supply = <&pmic_lvs2>;
 			};
 
 			smd-edge {

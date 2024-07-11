@@ -104,7 +104,7 @@
 		reg = <0x20>;
 
 		interrupts-extended = <&tlmm 17 IRQ_TYPE_EDGE_FALLING>;
-		vdd-supply = <&pm8226_l15>;
+		vdd-supply = <&pm8226_l17>;
 		vio-supply = <&pm8226_l22>;
 
 		pinctrl-names = "default";
