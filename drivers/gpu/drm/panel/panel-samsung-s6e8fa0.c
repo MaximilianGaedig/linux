@@ -38,9 +38,10 @@
 struct s6e8fa0 {
 	struct device *dev;
 	struct drm_panel panel;
+	struct backlight_device *bl_dev;
 
 	struct regulator_bulk_data supplies[2];
-	int reset_gpio;
+	struct gpio_desc *reset_gpio;
 	u32 power_on_delay;
 	u32 reset_delay;
 	u32 init_delay;
@@ -51,7 +52,6 @@ struct s6e8fa0 {
 	u32 height_mm;
 	bool is_power_on;
 
-	struct backlight_device *bl_dev;
 	u8 id[3];
 	/* This field is tested by functions directly accessing DSI bus before
 	 * transfer, transfer is skipped if it is set. In case of transfer
@@ -268,14 +268,11 @@ static int s6e8fa0_power_on(struct s6e8fa0 *ctx)
 	ret = regulator_bulk_enable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
 	if (ret < 0)
 		return ret;
-
 	msleep(ctx->power_on_delay);
 
-	gpio_direction_output(ctx->reset_gpio, 1);
+	gpiod_set_value(ctx->reset_gpio, 0);
 	usleep_range(5000, 6000);
-	gpio_set_value(ctx->reset_gpio, 0);
-	usleep_range(5000, 6000);
-	gpio_set_value(ctx->reset_gpio, 1);
+	gpiod_set_value(ctx->reset_gpio, 1);
 
 	msleep(ctx->reset_delay);
 
@@ -289,7 +286,7 @@ static int s6e8fa0_power_off(struct s6e8fa0 *ctx)
 	if (!ctx->is_power_on)
 		return 0;
 
-	gpio_set_value(ctx->reset_gpio, 0);
+	gpiod_set_value(ctx->reset_gpio, 0);
 	usleep_range(5000, 6000);
 
 	regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
@@ -458,16 +455,13 @@ static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 	if (ret < 0)
 		dev_warn(dev, "failed to get regulators: %d\n", ret);
 
-	ctx->reset_gpio = of_get_named_gpio(dev->of_node, "reset-gpios", 0);
-	if (ctx->reset_gpio < 0) {
-		dev_err(dev, "cannot get reset-gpios %d\n", ctx->reset_gpio);
-		return ctx->reset_gpio;
-	}
 
-	ret = devm_gpio_request(dev, ctx->reset_gpio, "reset-gpios");
-	if (ret) {
-		dev_err(dev, "failed to request reset-gpios\n");
-		return ret;
+
+	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(ctx->reset_gpio)) {
+		dev_err(dev, "cannot get reset-gpios %ld\n",
+			PTR_ERR(ctx->reset_gpio));
+		return PTR_ERR(ctx->reset_gpio);
 	}
 
 	ctx->bl_dev = backlight_device_register("s6e8fa0", dev, ctx,
