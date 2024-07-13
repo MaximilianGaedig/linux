@@ -160,6 +160,7 @@ properties:
           - enum:
               - asus,nexus7-flo
               - lg,nexus4-mako
+              - samsung,jflte
               - samsung,jfvelte
               - sony,xperia-yuga
               - qcom,apq8064-cm-qs600

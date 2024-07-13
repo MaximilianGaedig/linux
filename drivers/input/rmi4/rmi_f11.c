@@ -4,6 +4,8 @@
  * Copyright (c) 2011 Unixphere
  */
 
+#define DEBUG 1
+
 #include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/device.h>
