@@ -4,617 +4,687 @@
  * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  */
 
+#define DEBUG 1
+
+#include <linux/mfd/qcom_rpm.h>
 #include <linux/module.h>
-#include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
-#include <linux/mfd/qcom_rpm.h>
 
 #include <dt-bindings/mfd/qcom-rpm.h>
 
 #define MAX_REQUEST_LEN 2
 
 struct request_member {
-	int		word;
-	unsigned int	mask;
-	int		shift;
+  int word;
+  unsigned int mask;
+  int shift;
 };
 
 struct rpm_reg_parts {
-	struct request_member mV;		/* used if voltage is in mV */
-	struct request_member uV;		/* used if voltage is in uV */
-	struct request_member ip;		/* peak current in mA */
-	struct request_member pd;		/* pull down enable */
-	struct request_member ia;		/* average current in mA */
-	struct request_member fm;		/* force mode */
-	struct request_member pm;		/* power mode */
-	struct request_member pc;		/* pin control */
-	struct request_member pf;		/* pin function */
-	struct request_member enable_state;	/* NCP and switch */
-	struct request_member comp_mode;	/* NCP */
-	struct request_member freq;		/* frequency: NCP and SMPS */
-	struct request_member freq_clk_src;	/* clock source: SMPS */
-	struct request_member hpm;		/* switch: control OCP and SS */
-	int request_len;
+  struct request_member mV;           /* used if voltage is in mV */
+  struct request_member uV;           /* used if voltage is in uV */
+  struct request_member ip;           /* peak current in mA */
+  struct request_member pd;           /* pull down enable */
+  struct request_member ia;           /* average current in mA */
+  struct request_member fm;           /* force mode */
+  struct request_member pm;           /* power mode */
+  struct request_member pc;           /* pin control */
+  struct request_member pf;           /* pin function */
+  struct request_member enable_state; /* NCP and switch */
+  struct request_member comp_mode;    /* NCP */
+  struct request_member freq;         /* frequency: NCP and SMPS */
+  struct request_member freq_clk_src; /* clock source: SMPS */
+  struct request_member hpm;          /* switch: control OCP and SS */
+  int request_len;
 };
 
-#define FORCE_MODE_IS_2_BITS(reg) \
-	(((reg)->parts->fm.mask >> (reg)->parts->fm.shift) == 3)
+#define FORCE_MODE_IS_2_BITS(reg)                                              \
+  (((reg)->parts->fm.mask >> (reg)->parts->fm.shift) == 3)
 
 struct qcom_rpm_reg {
-	struct qcom_rpm *rpm;
+  struct qcom_rpm *rpm;
 
-	struct mutex lock;
-	struct device *dev;
-	struct regulator_desc desc;
-	const struct rpm_reg_parts *parts;
+  struct mutex lock;
+  struct device *dev;
+  struct regulator_desc desc;
+  const struct rpm_reg_parts *parts;
 
-	int resource;
-	u32 val[MAX_REQUEST_LEN];
+  int resource;
+  u32 val[MAX_REQUEST_LEN];
 
-	int uV;
-	int is_enabled;
+  int uV;
+  int is_enabled;
 
-	bool supports_force_mode_auto;
-	bool supports_force_mode_bypass;
+  bool supports_force_mode_auto;
+  bool supports_force_mode_bypass;
 };
 
 static const struct rpm_reg_parts rpm8660_ldo_parts = {
-	.request_len    = 2,
-	.mV             = { 0, 0x00000FFF,  0 },
-	.ip             = { 0, 0x00FFF000, 12 },
-	.fm             = { 0, 0x03000000, 24 },
-	.pc             = { 0, 0x3C000000, 26 },
-	.pf             = { 0, 0xC0000000, 30 },
-	.pd             = { 1, 0x00000001,  0 },
-	.ia             = { 1, 0x00001FFE,  1 },
+    .request_len = 2,
+    .mV = {0, 0x00000FFF, 0},
+    .ip = {0, 0x00FFF000, 12},
+    .fm = {0, 0x03000000, 24},
+    .pc = {0, 0x3C000000, 26},
+    .pf = {0, 0xC0000000, 30},
+    .pd = {1, 0x00000001, 0},
+    .ia = {1, 0x00001FFE, 1},
 };
 
 static const struct rpm_reg_parts rpm8660_smps_parts = {
-	.request_len    = 2,
-	.mV             = { 0, 0x00000FFF,  0 },
-	.ip             = { 0, 0x00FFF000, 12 },
-	.fm             = { 0, 0x03000000, 24 },
-	.pc             = { 0, 0x3C000000, 26 },
-	.pf             = { 0, 0xC0000000, 30 },
-	.pd             = { 1, 0x00000001,  0 },
-	.ia             = { 1, 0x00001FFE,  1 },
-	.freq           = { 1, 0x001FE000, 13 },
-	.freq_clk_src   = { 1, 0x00600000, 21 },
+    .request_len = 2,
+    .mV = {0, 0x00000FFF, 0},
+    .ip = {0, 0x00FFF000, 12},
+    .fm = {0, 0x03000000, 24},
+    .pc = {0, 0x3C000000, 26},
+    .pf = {0, 0xC0000000, 30},
+    .pd = {1, 0x00000001, 0},
+    .ia = {1, 0x00001FFE, 1},
+    .freq = {1, 0x001FE000, 13},
+    .freq_clk_src = {1, 0x00600000, 21},
 };
 
 static const struct rpm_reg_parts rpm8660_switch_parts = {
-	.request_len    = 1,
-	.enable_state   = { 0, 0x00000001,  0 },
-	.pd             = { 0, 0x00000002,  1 },
-	.pc             = { 0, 0x0000003C,  2 },
-	.pf             = { 0, 0x000000C0,  6 },
-	.hpm            = { 0, 0x00000300,  8 },
+    .request_len = 1,
+    .enable_state = {0, 0x00000001, 0},
+    .pd = {0, 0x00000002, 1},
+    .pc = {0, 0x0000003C, 2},
+    .pf = {0, 0x000000C0, 6},
+    .hpm = {0, 0x00000300, 8},
 };
 
 static const struct rpm_reg_parts rpm8660_ncp_parts = {
-	.request_len    = 1,
-	.mV             = { 0, 0x00000FFF,  0 },
-	.enable_state   = { 0, 0x00001000, 12 },
-	.comp_mode      = { 0, 0x00002000, 13 },
-	.freq           = { 0, 0x003FC000, 14 },
+    .request_len = 1,
+    .mV = {0, 0x00000FFF, 0},
+    .enable_state = {0, 0x00001000, 12},
+    .comp_mode = {0, 0x00002000, 13},
+    .freq = {0, 0x003FC000, 14},
 };
 
 static const struct rpm_reg_parts rpm8960_ldo_parts = {
-	.request_len    = 2,
-	.uV             = { 0, 0x007FFFFF,  0 },
-	.pd             = { 0, 0x00800000, 23 },
-	.pc             = { 0, 0x0F000000, 24 },
-	.pf             = { 0, 0xF0000000, 28 },
-	.ip             = { 1, 0x000003FF,  0 },
-	.ia             = { 1, 0x000FFC00, 10 },
-	.fm             = { 1, 0x00700000, 20 },
+    .request_len = 2,
+    .uV = {0, 0x007FFFFF, 0},
+    .pd = {0, 0x00800000, 23},
+    .pc = {0, 0x0F000000, 24},
+    .pf = {0, 0xF0000000, 28},
+    .ip = {1, 0x000003FF, 0},
+    .ia = {1, 0x000FFC00, 10},
+    .fm = {1, 0x00700000, 20},
 };
 
 static const struct rpm_reg_parts rpm8960_smps_parts = {
-	.request_len    = 2,
-	.uV             = { 0, 0x007FFFFF,  0 },
-	.pd             = { 0, 0x00800000, 23 },
-	.pc             = { 0, 0x0F000000, 24 },
-	.pf             = { 0, 0xF0000000, 28 },
-	.ip             = { 1, 0x000003FF,  0 },
-	.ia             = { 1, 0x000FFC00, 10 },
-	.fm             = { 1, 0x00700000, 20 },
-	.pm             = { 1, 0x00800000, 23 },
-	.freq           = { 1, 0x1F000000, 24 },
-	.freq_clk_src   = { 1, 0x60000000, 29 },
+    .request_len = 2,
+    .uV = {0, 0x007FFFFF, 0},
+    .pd = {0, 0x00800000, 23},
+    .pc = {0, 0x0F000000, 24},
+    .pf = {0, 0xF0000000, 28},
+    .ip = {1, 0x000003FF, 0},
+    .ia = {1, 0x000FFC00, 10},
+    .fm = {1, 0x00700000, 20},
+    .pm = {1, 0x00800000, 23},
+    .freq = {1, 0x1F000000, 24},
+    .freq_clk_src = {1, 0x60000000, 29},
 };
 
 static const struct rpm_reg_parts rpm8960_switch_parts = {
-	.request_len    = 1,
-	.enable_state   = { 0, 0x00000001,  0 },
-	.pd             = { 0, 0x00000002,  1 },
-	.pc             = { 0, 0x0000003C,  2 },
-	.pf             = { 0, 0x000003C0,  6 },
-	.hpm            = { 0, 0x00000C00, 10 },
+    .request_len = 1,
+    .enable_state = {0, 0x00000001, 0},
+    .pd = {0, 0x00000002, 1},
+    .pc = {0, 0x0000003C, 2},
+    .pf = {0, 0x000003C0, 6},
+    .hpm = {0, 0x00000C00, 10},
 };
 
 static const struct rpm_reg_parts rpm8960_ncp_parts = {
-	.request_len    = 1,
-	.uV             = { 0, 0x007FFFFF,  0 },
-	.enable_state   = { 0, 0x00800000, 23 },
-	.comp_mode      = { 0, 0x01000000, 24 },
-	.freq           = { 0, 0x3E000000, 25 },
+    .request_len = 1,
+    .uV = {0, 0x007FFFFF, 0},
+    .enable_state = {0, 0x00800000, 23},
+    .comp_mode = {0, 0x01000000, 24},
+    .freq = {0, 0x3E000000, 25},
 };
 
 /*
  * Physically available PMIC regulator voltage ranges
  */
 static const struct linear_range pldo_ranges[] = {
-	REGULATOR_LINEAR_RANGE( 750000,   0,  59, 12500),
-	REGULATOR_LINEAR_RANGE(1500000,  60, 123, 25000),
-	REGULATOR_LINEAR_RANGE(3100000, 124, 160, 50000),
+    REGULATOR_LINEAR_RANGE(750000, 0, 59, 12500),
+    REGULATOR_LINEAR_RANGE(1500000, 60, 123, 25000),
+    REGULATOR_LINEAR_RANGE(3100000, 124, 160, 50000),
 };
 
 static const struct linear_range nldo_ranges[] = {
-	REGULATOR_LINEAR_RANGE( 750000,   0,  63, 12500),
+    REGULATOR_LINEAR_RANGE(750000, 0, 63, 12500),
 };
 
 static const struct linear_range nldo1200_ranges[] = {
-	REGULATOR_LINEAR_RANGE( 375000,   0,  59,  6250),
-	REGULATOR_LINEAR_RANGE( 750000,  60, 123, 12500),
+    REGULATOR_LINEAR_RANGE(375000, 0, 59, 6250),
+    REGULATOR_LINEAR_RANGE(750000, 60, 123, 12500),
 };
 
 static const struct linear_range smps_ranges[] = {
-	REGULATOR_LINEAR_RANGE( 375000,   0,  29, 12500),
-	REGULATOR_LINEAR_RANGE( 750000,  30,  89, 12500),
-	REGULATOR_LINEAR_RANGE(1500000,  90, 153, 25000),
+    REGULATOR_LINEAR_RANGE(375000, 0, 29, 12500),
+    REGULATOR_LINEAR_RANGE(750000, 30, 89, 12500),
+    REGULATOR_LINEAR_RANGE(1500000, 90, 153, 25000),
 };
 
 static const struct linear_range ftsmps_ranges[] = {
-	REGULATOR_LINEAR_RANGE( 350000,   0,   6, 50000),
-	REGULATOR_LINEAR_RANGE( 700000,   7,  63, 12500),
-	REGULATOR_LINEAR_RANGE(1500000,  64, 100, 50000),
+    REGULATOR_LINEAR_RANGE(350000, 0, 6, 50000),
+    REGULATOR_LINEAR_RANGE(700000, 7, 63, 12500),
+    REGULATOR_LINEAR_RANGE(1500000, 64, 100, 50000),
 };
 
 static const struct linear_range smb208_ranges[] = {
-	REGULATOR_LINEAR_RANGE( 375000,   0,  29, 12500),
-	REGULATOR_LINEAR_RANGE( 750000,  30,  89, 12500),
-	REGULATOR_LINEAR_RANGE(1500000,  90, 153, 25000),
-	REGULATOR_LINEAR_RANGE(3100000, 154, 234, 25000),
+    REGULATOR_LINEAR_RANGE(375000, 0, 29, 12500),
+    REGULATOR_LINEAR_RANGE(750000, 30, 89, 12500),
+    REGULATOR_LINEAR_RANGE(1500000, 90, 153, 25000),
+    REGULATOR_LINEAR_RANGE(3100000, 154, 234, 25000),
 };
 
 static const struct linear_range ncp_ranges[] = {
-	REGULATOR_LINEAR_RANGE(1500000,   0,  31, 50000),
+    REGULATOR_LINEAR_RANGE(1500000, 0, 31, 50000),
 };
 
+static struct qcom_rpm_reg *vregYYYYYYY;
+
+static ssize_t debug_store(struct device *dev, struct device_attribute *attr,
+                           const char *buf, size_t count) {
+  printk("debug_store");
+  int ret;
+  unsigned int n1, n2, n3, n4, value;
+
+  // struct regulator_dev *rdev = vregYYYYYYY;
+  // if (rdev <= 0) {
+  // 	printk("of_find_regulator_by_node in debug_store failed: %d",
+  // 	       rdev);
+  // 	return -ECHRNG;
+  // }
+
+  ret = sscanf(buf, "%u %u %u %u %u", &n1, &n2, &n3, &n4, &value);
+  if (ret != 5) {
+    printk("einval A");
+    return -EINVAL;
+  }
+
+  if (n1 > 255 || n2 > 255 || n3 > 255 || n4 > 255 || value > 255) {
+    printk("einval B");
+    return -EINVAL;
+  }
+
+  struct qcom_rpm_resource res;
+  res = (struct qcom_rpm_resource){n1, n2, n3, n4};
+
+  // struct vreg = rdev_get_drvdata(rdev);
+  struct qcom_rpm_reg *vreg = vregYYYYYYY;
+  if (vreg <= 0) {
+    printk("vreg in debug_store failed: %d", vreg);
+    return -ECHRNG;
+  }
+
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member req_real = {0, 8388607, 0};
+  const struct request_member *req = &req_real;
+
+  if (req->mask == 0) {
+    printk("mask 0");
+    return -EINVAL;
+  }
+
+  mutex_lock(&vreg->lock);
+
+  if (WARN_ON((value << req->shift) & ~req->mask))
+    return -EINVAL;
+
+  vreg->val[req->word] &= ~req->mask; // this might be problematic, this might
+                                      // apply only to one voltage
+  vreg->val[req->word] |= value << req->shift;
+
+  printk("write_raw");
+  ret = qcom_rpm_write_raw(vreg->rpm, QCOM_RPM_ACTIVE_STATE, &res, vreg->val);
+
+  if (!ret) {
+    printk("!ret; vreg->is_enabled = 1;");
+    vreg->is_enabled = 1;
+  } else {
+    printk("ret: %d", ret);
+  }
+  mutex_unlock(&vreg->lock);
+
+  return ret;
+}
+
+struct device_attribute dev_attr_debug_data =
+    __ATTR(debug_data, 0664, NULL, debug_store);
+
 static int rpm_reg_write(struct qcom_rpm_reg *vreg,
-			 const struct request_member *req,
-			 const int value)
-{
-	if (WARN_ON((value << req->shift) & ~req->mask))
-		return -EINVAL;
+                         const struct request_member *req, const int value) {
+  if (WARN_ON((value << req->shift) & ~req->mask))
+    return -EINVAL;
 
-	vreg->val[req->word] &= ~req->mask;
-	vreg->val[req->word] |= value << req->shift;
+  vreg->val[req->word] &= ~req->mask;
+  vreg->val[req->word] |= value << req->shift;
 
-	return qcom_rpm_write(vreg->rpm,
-			      QCOM_RPM_ACTIVE_STATE,
-			      vreg->resource,
-			      vreg->val,
-			      vreg->parts->request_len);
+  return qcom_rpm_write(vreg->rpm, QCOM_RPM_ACTIVE_STATE, vreg->resource,
+                        vreg->val, vreg->parts->request_len);
 }
 
-static int rpm_reg_set_mV_sel(struct regulator_dev *rdev,
-			      unsigned selector)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->mV;
-	int ret = 0;
-	int uV;
+static int rpm_reg_set_mV_sel(struct regulator_dev *rdev, unsigned selector) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_set_mV_sel resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->mV;
+  int ret = 0;
+  int uV;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	uV = regulator_list_voltage_linear_range(rdev, selector);
-	if (uV < 0)
-		return uV;
+  uV = regulator_list_voltage_linear_range(rdev, selector);
+  if (uV < 0)
+    return uV;
 
-	mutex_lock(&vreg->lock);
-	if (vreg->is_enabled)
-		ret = rpm_reg_write(vreg, req, uV / 1000);
+  mutex_lock(&vreg->lock);
+  if (vreg->is_enabled)
+    ret = rpm_reg_write(vreg, req, uV / 1000);
 
-	if (!ret)
-		vreg->uV = uV;
-	mutex_unlock(&vreg->lock);
+  if (!ret)
+    vreg->uV = uV;
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
-static int rpm_reg_set_uV_sel(struct regulator_dev *rdev,
-			      unsigned selector)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->uV;
-	int ret = 0;
-	int uV;
+static int rpm_reg_set_uV_sel(struct regulator_dev *rdev, unsigned selector) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_set_uV_sel resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->uV;
+  int ret = 0;
+  int uV;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	uV = regulator_list_voltage_linear_range(rdev, selector);
-	if (uV < 0)
-		return uV;
+  uV = regulator_list_voltage_linear_range(rdev, selector);
+  if (uV < 0)
+    return uV;
 
-	mutex_lock(&vreg->lock);
-	if (vreg->is_enabled)
-		ret = rpm_reg_write(vreg, req, uV);
+  mutex_lock(&vreg->lock);
+  if (vreg->is_enabled)
+    ret = rpm_reg_write(vreg, req, uV);
 
-	if (!ret)
-		vreg->uV = uV;
-	mutex_unlock(&vreg->lock);
+  if (!ret)
+    vreg->uV = uV;
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
-static int rpm_reg_get_voltage(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+static int rpm_reg_get_voltage(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_get_voltage resource:%d", vreg->resource);
 
-	return vreg->uV;
+  return vreg->uV;
 }
 
-static int rpm_reg_mV_enable(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->mV;
-	int ret;
+static int rpm_reg_mV_enable(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  vregYYYYYYY = vreg;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  printk("rpm_reg_mV_enable resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->mV;
+  int ret;
 
-	mutex_lock(&vreg->lock);
-	ret = rpm_reg_write(vreg, req, vreg->uV / 1000);
-	if (!ret)
-		vreg->is_enabled = 1;
-	mutex_unlock(&vreg->lock);
+  if (req->mask == 0)
+    return -EINVAL;
 
-	return ret;
+  mutex_lock(&vreg->lock);
+  ret = rpm_reg_write(vreg, req, vreg->uV / 1000);
+  if (!ret)
+    vreg->is_enabled = 1;
+  mutex_unlock(&vreg->lock);
+
+  return ret;
 }
 
-static int rpm_reg_uV_enable(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->uV;
-	int ret;
+static int rpm_reg_uV_enable(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_uV_enable resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->uV;
+  printk("req_member resource:%d,->word:%d,->mask:%d,->shift:%d",
+         vreg->resource, req->word, req->mask, req->shift);
+  int ret;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	mutex_lock(&vreg->lock);
-	ret = rpm_reg_write(vreg, req, vreg->uV);
-	if (!ret)
-		vreg->is_enabled = 1;
-	mutex_unlock(&vreg->lock);
+  mutex_lock(&vreg->lock);
+  ret = rpm_reg_write(vreg, req, vreg->uV);
+  if (!ret)
+    vreg->is_enabled = 1;
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
-static int rpm_reg_switch_enable(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->enable_state;
-	int ret;
+static int rpm_reg_switch_enable(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_switch_enable resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->enable_state;
+  int ret;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	mutex_lock(&vreg->lock);
-	ret = rpm_reg_write(vreg, req, 1);
-	if (!ret)
-		vreg->is_enabled = 1;
-	mutex_unlock(&vreg->lock);
+  mutex_lock(&vreg->lock);
+  ret = rpm_reg_write(vreg, req, 1);
+  if (!ret)
+    vreg->is_enabled = 1;
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
-static int rpm_reg_mV_disable(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->mV;
-	int ret;
+static int rpm_reg_mV_disable(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_mV_disable resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->mV;
+  int ret;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	mutex_lock(&vreg->lock);
-	ret = rpm_reg_write(vreg, req, 0);
-	if (!ret)
-		vreg->is_enabled = 0;
-	mutex_unlock(&vreg->lock);
+  mutex_lock(&vreg->lock);
+  ret = rpm_reg_write(vreg, req, 0);
+  if (!ret)
+    vreg->is_enabled = 0;
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
-static int rpm_reg_uV_disable(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->uV;
-	int ret;
+static int rpm_reg_uV_disable(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_uV_disable resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->uV;
+  int ret;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	mutex_lock(&vreg->lock);
-	ret = rpm_reg_write(vreg, req, 0);
-	if (!ret)
-		vreg->is_enabled = 0;
-	mutex_unlock(&vreg->lock);
+  mutex_lock(&vreg->lock);
+  ret = rpm_reg_write(vreg, req, 0);
+  if (!ret)
+    vreg->is_enabled = 0;
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
-static int rpm_reg_switch_disable(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->enable_state;
-	int ret;
+static int rpm_reg_switch_disable(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_switch_disable resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->enable_state;
+  int ret;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	mutex_lock(&vreg->lock);
-	ret = rpm_reg_write(vreg, req, 0);
-	if (!ret)
-		vreg->is_enabled = 0;
-	mutex_unlock(&vreg->lock);
+  mutex_lock(&vreg->lock);
+  ret = rpm_reg_write(vreg, req, 0);
+  if (!ret)
+    vreg->is_enabled = 0;
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
-static int rpm_reg_is_enabled(struct regulator_dev *rdev)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+static int rpm_reg_is_enabled(struct regulator_dev *rdev) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_is_enabled resource:%d", vreg->resource);
 
-	return vreg->is_enabled;
+  return vreg->is_enabled;
 }
 
-static int rpm_reg_set_load(struct regulator_dev *rdev, int load_uA)
-{
-	struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
-	const struct rpm_reg_parts *parts = vreg->parts;
-	const struct request_member *req = &parts->ia;
-	int load_mA = load_uA / 1000;
-	int max_mA = req->mask >> req->shift;
-	int ret;
+static int rpm_reg_set_load(struct regulator_dev *rdev, int load_uA) {
+  struct qcom_rpm_reg *vreg = rdev_get_drvdata(rdev);
+  printk("rpm_reg_set_load resource:%d", vreg->resource);
+  const struct rpm_reg_parts *parts = vreg->parts;
+  const struct request_member *req = &parts->ia;
+  int load_mA = load_uA / 1000;
+  int max_mA = req->mask >> req->shift;
+  int ret;
 
-	if (req->mask == 0)
-		return -EINVAL;
+  if (req->mask == 0)
+    return -EINVAL;
 
-	if (load_mA > max_mA)
-		load_mA = max_mA;
+  if (load_mA > max_mA)
+    load_mA = max_mA;
 
-	mutex_lock(&vreg->lock);
-	ret = rpm_reg_write(vreg, req, load_mA);
-	mutex_unlock(&vreg->lock);
+  mutex_lock(&vreg->lock);
+  ret = rpm_reg_write(vreg, req, load_mA);
+  mutex_unlock(&vreg->lock);
 
-	return ret;
+  return ret;
 }
 
 static const struct regulator_ops uV_ops = {
-	.list_voltage = regulator_list_voltage_linear_range,
+    .list_voltage = regulator_list_voltage_linear_range,
 
-	.set_voltage_sel = rpm_reg_set_uV_sel,
-	.get_voltage = rpm_reg_get_voltage,
+    .set_voltage_sel = rpm_reg_set_uV_sel,
+    .get_voltage = rpm_reg_get_voltage,
 
-	.enable = rpm_reg_uV_enable,
-	.disable = rpm_reg_uV_disable,
-	.is_enabled = rpm_reg_is_enabled,
+    .enable = rpm_reg_uV_enable,
+    .disable = rpm_reg_uV_disable,
+    .is_enabled = rpm_reg_is_enabled,
 
-	.set_load = rpm_reg_set_load,
+    .set_load = rpm_reg_set_load,
 };
 
 static const struct regulator_ops mV_ops = {
-	.list_voltage = regulator_list_voltage_linear_range,
+    .list_voltage = regulator_list_voltage_linear_range,
 
-	.set_voltage_sel = rpm_reg_set_mV_sel,
-	.get_voltage = rpm_reg_get_voltage,
+    .set_voltage_sel = rpm_reg_set_mV_sel,
+    .get_voltage = rpm_reg_get_voltage,
 
-	.enable = rpm_reg_mV_enable,
-	.disable = rpm_reg_mV_disable,
-	.is_enabled = rpm_reg_is_enabled,
+    .enable = rpm_reg_mV_enable,
+    .disable = rpm_reg_mV_disable,
+    .is_enabled = rpm_reg_is_enabled,
 
-	.set_load = rpm_reg_set_load,
+    .set_load = rpm_reg_set_load,
 };
 
 static const struct regulator_ops switch_ops = {
-	.enable = rpm_reg_switch_enable,
-	.disable = rpm_reg_switch_disable,
-	.is_enabled = rpm_reg_is_enabled,
+    .enable = rpm_reg_switch_enable,
+    .disable = rpm_reg_switch_disable,
+    .is_enabled = rpm_reg_is_enabled,
 };
 
 /*
  * PM8018 regulators
  */
 static const struct qcom_rpm_reg pm8018_pldo = {
-	.desc.linear_ranges = pldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
-	.desc.n_voltages = 161,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = pldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
+    .desc.n_voltages = 161,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8018_nldo = {
-	.desc.linear_ranges = nldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
-	.desc.n_voltages = 64,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = nldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
+    .desc.n_voltages = 64,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8018_smps = {
-	.desc.linear_ranges = smps_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(smps_ranges),
-	.desc.n_voltages = 154,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_smps_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = smps_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(smps_ranges),
+    .desc.n_voltages = 154,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_smps_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8018_switch = {
-	.desc.ops = &switch_ops,
-	.parts = &rpm8960_switch_parts,
+    .desc.ops = &switch_ops,
+    .parts = &rpm8960_switch_parts,
 };
 
 /*
  * PM8058 regulators
  */
 static const struct qcom_rpm_reg pm8058_pldo = {
-	.desc.linear_ranges = pldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
-	.desc.n_voltages = 161,
-	.desc.ops = &mV_ops,
-	.parts = &rpm8660_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = pldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
+    .desc.n_voltages = 161,
+    .desc.ops = &mV_ops,
+    .parts = &rpm8660_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8058_nldo = {
-	.desc.linear_ranges = nldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
-	.desc.n_voltages = 64,
-	.desc.ops = &mV_ops,
-	.parts = &rpm8660_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = nldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
+    .desc.n_voltages = 64,
+    .desc.ops = &mV_ops,
+    .parts = &rpm8660_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8058_smps = {
-	.desc.linear_ranges = smps_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(smps_ranges),
-	.desc.n_voltages = 154,
-	.desc.ops = &mV_ops,
-	.parts = &rpm8660_smps_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = smps_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(smps_ranges),
+    .desc.n_voltages = 154,
+    .desc.ops = &mV_ops,
+    .parts = &rpm8660_smps_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8058_ncp = {
-	.desc.linear_ranges = ncp_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(ncp_ranges),
-	.desc.n_voltages = 32,
-	.desc.ops = &mV_ops,
-	.parts = &rpm8660_ncp_parts,
+    .desc.linear_ranges = ncp_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(ncp_ranges),
+    .desc.n_voltages = 32,
+    .desc.ops = &mV_ops,
+    .parts = &rpm8660_ncp_parts,
 };
 
 static const struct qcom_rpm_reg pm8058_switch = {
-	.desc.ops = &switch_ops,
-	.parts = &rpm8660_switch_parts,
+    .desc.ops = &switch_ops,
+    .parts = &rpm8660_switch_parts,
 };
 
 /*
  * PM8901 regulators
  */
 static const struct qcom_rpm_reg pm8901_pldo = {
-	.desc.linear_ranges = pldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
-	.desc.n_voltages = 161,
-	.desc.ops = &mV_ops,
-	.parts = &rpm8660_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = true,
+    .desc.linear_ranges = pldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
+    .desc.n_voltages = 161,
+    .desc.ops = &mV_ops,
+    .parts = &rpm8660_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = true,
 };
 
 static const struct qcom_rpm_reg pm8901_nldo = {
-	.desc.linear_ranges = nldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
-	.desc.n_voltages = 64,
-	.desc.ops = &mV_ops,
-	.parts = &rpm8660_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = true,
+    .desc.linear_ranges = nldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
+    .desc.n_voltages = 64,
+    .desc.ops = &mV_ops,
+    .parts = &rpm8660_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = true,
 };
 
 static const struct qcom_rpm_reg pm8901_ftsmps = {
-	.desc.linear_ranges = ftsmps_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(ftsmps_ranges),
-	.desc.n_voltages = 101,
-	.desc.ops = &mV_ops,
-	.parts = &rpm8660_smps_parts,
-	.supports_force_mode_auto = true,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = ftsmps_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(ftsmps_ranges),
+    .desc.n_voltages = 101,
+    .desc.ops = &mV_ops,
+    .parts = &rpm8660_smps_parts,
+    .supports_force_mode_auto = true,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8901_switch = {
-	.desc.ops = &switch_ops,
-	.parts = &rpm8660_switch_parts,
+    .desc.ops = &switch_ops,
+    .parts = &rpm8660_switch_parts,
 };
 
 /*
  * PM8921/PM8917 regulators
  */
 static const struct qcom_rpm_reg pm8921_pldo = {
-	.desc.linear_ranges = pldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
-	.desc.n_voltages = 161,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = true,
+    .desc.linear_ranges = pldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(pldo_ranges),
+    .desc.n_voltages = 161,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = true,
 };
 
 static const struct qcom_rpm_reg pm8921_nldo = {
-	.desc.linear_ranges = nldo_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
-	.desc.n_voltages = 64,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = true,
+    .desc.linear_ranges = nldo_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(nldo_ranges),
+    .desc.n_voltages = 64,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = true,
 };
 
 static const struct qcom_rpm_reg pm8921_nldo1200 = {
-	.desc.linear_ranges = nldo1200_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(nldo1200_ranges),
-	.desc.n_voltages = 124,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_ldo_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = true,
+    .desc.linear_ranges = nldo1200_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(nldo1200_ranges),
+    .desc.n_voltages = 124,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_ldo_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = true,
 };
 
 static const struct qcom_rpm_reg pm8921_smps = {
-	.desc.linear_ranges = smps_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(smps_ranges),
-	.desc.n_voltages = 154,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_smps_parts,
-	.supports_force_mode_auto = true,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = smps_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(smps_ranges),
+    .desc.n_voltages = 154,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_smps_parts,
+    .supports_force_mode_auto = true,
+    .supports_force_mode_bypass = false,
 };
 
 static const struct qcom_rpm_reg pm8921_ncp = {
-	.desc.linear_ranges = ncp_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(ncp_ranges),
-	.desc.n_voltages = 32,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_ncp_parts,
+    .desc.linear_ranges = ncp_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(ncp_ranges),
+    .desc.n_voltages = 32,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_ncp_parts,
 };
 
 static const struct qcom_rpm_reg pm8921_switch = {
-	.desc.ops = &switch_ops,
-	.parts = &rpm8960_switch_parts,
+    .desc.ops = &switch_ops,
+    .parts = &rpm8960_switch_parts,
 };
 
 // static const struct qcom_rpm_reg pm8917_boost = {
@@ -626,455 +696,3007 @@ static const struct qcom_rpm_reg pm8921_switch = {
 // };
 
 static const struct qcom_rpm_reg smb208_smps = {
-	.desc.linear_ranges = smb208_ranges,
-	.desc.n_linear_ranges = ARRAY_SIZE(smb208_ranges),
-	.desc.n_voltages = 235,
-	.desc.ops = &uV_ops,
-	.parts = &rpm8960_smps_parts,
-	.supports_force_mode_auto = false,
-	.supports_force_mode_bypass = false,
+    .desc.linear_ranges = smb208_ranges,
+    .desc.n_linear_ranges = ARRAY_SIZE(smb208_ranges),
+    .desc.n_voltages = 235,
+    .desc.ops = &uV_ops,
+    .parts = &rpm8960_smps_parts,
+    .supports_force_mode_auto = false,
+    .supports_force_mode_bypass = false,
 };
 
 static int rpm_reg_set(struct qcom_rpm_reg *vreg,
-		       const struct request_member *req,
-		       const int value)
-{
-	if (req->mask == 0 || (value << req->shift) & ~req->mask)
-		return -EINVAL;
+                       const struct request_member *req, const int value) {
+  if (req->mask == 0 || (value << req->shift) & ~req->mask)
+    return -EINVAL;
 
-	vreg->val[req->word] &= ~req->mask;
-	vreg->val[req->word] |= value << req->shift;
+  vreg->val[req->word] &= ~req->mask;
+  vreg->val[req->word] |= value << req->shift;
 
-	return 0;
+  return 0;
 }
 
-static int rpm_reg_of_parse_freq(struct device *dev,
-				 struct device_node *node,
-				 struct qcom_rpm_reg *vreg)
-{
-	static const int freq_table[] = {
-		19200000, 9600000, 6400000, 4800000, 3840000, 3200000, 2740000,
-		2400000, 2130000, 1920000, 1750000, 1600000, 1480000, 1370000,
-		1280000, 1200000,
+static int rpm_reg_of_parse_freq(struct device *dev, struct device_node *node,
+                                 struct qcom_rpm_reg *vreg) {
+  static const int freq_table[] = {
+      19200000, 9600000, 6400000, 4800000, 3840000, 3200000, 2740000, 2400000,
+      2130000,  1920000, 1750000, 1600000, 1480000, 1370000, 1280000, 1200000,
 
-	};
-	const char *key;
-	u32 freq;
-	int ret;
-	int i;
+  };
+  const char *key;
+  u32 freq;
+  int ret;
+  int i;
 
-	key = "qcom,switch-mode-frequency";
-	ret = of_property_read_u32(node, key, &freq);
-	if (ret) {
-		dev_err(dev, "regulator requires %s property\n", key);
-		return -EINVAL;
-	}
+  // key = "qcom,switch-mode-frequency";
+  // ret = of_property_read_u32(node, key, &freq);
+  // if (ret) {
+  // 	dev_err(dev, "regulator requires %s property\n", key);
+  // 	return -EINVAL;
+  // }
 
-	for (i = 0; i < ARRAY_SIZE(freq_table); i++) {
-		if (freq == freq_table[i]) {
-			rpm_reg_set(vreg, &vreg->parts->freq, i + 1);
-			return 0;
-		}
-	}
+  freq = 1600000;
 
-	dev_err(dev, "invalid frequency %d\n", freq);
-	return -EINVAL;
+  for (i = 0; i < ARRAY_SIZE(freq_table); i++) {
+    if (freq == freq_table[i]) {
+      rpm_reg_set(vreg, &vreg->parts->freq, i + 1);
+      return 0;
+    }
+  }
+
+  dev_err(dev, "invalid frequency %d\n", freq);
+  return -EINVAL;
 }
 
 static int rpm_reg_of_parse(struct device_node *node,
-			    const struct regulator_desc *desc,
-			    struct regulator_config *config)
-{
-	struct qcom_rpm_reg *vreg = config->driver_data;
-	struct device *dev = config->dev;
-	const char *key;
-	u32 force_mode;
-	bool pwm;
-	u32 val;
-	int ret;
+                            const struct regulator_desc *desc,
+                            struct regulator_config *config) {
+  struct qcom_rpm_reg *vreg = config->driver_data;
+  struct device *dev = config->dev;
+  const char *key;
+  u32 force_mode;
+  bool pwm;
+  u32 val;
+  int ret;
 
-	key = "bias-pull-down";
-	if (of_property_read_bool(node, key)) {
-		ret = rpm_reg_set(vreg, &vreg->parts->pd, 1);
-		if (ret) {
-			dev_err(dev, "%s is invalid", key);
-			return ret;
-		}
-	}
+  // key = "bias-pull-down";
+  // if (of_property_read_bool(node, key)) {
+  ret = rpm_reg_set(vreg, &vreg->parts->pd, 1);
+  if (ret) {
+    dev_err(dev, "%s is invalid", key);
+    return ret;
+  }
+  // }
 
-	if (vreg->parts->freq.mask) {
-		ret = rpm_reg_of_parse_freq(dev, node, vreg);
-		if (ret < 0)
-			return ret;
-	}
+  if (vreg->parts->freq.mask) {
+    ret = rpm_reg_of_parse_freq(dev, node, vreg);
+    if (ret < 0)
+      return ret;
+  }
 
-	if (vreg->parts->pm.mask) {
-		key = "qcom,power-mode-hysteretic";
-		pwm = !of_property_read_bool(node, key);
+  // if (vreg->parts->pm.mask) {
+  // 	key = "qcom,power-mode-hysteretic";
+  // 	pwm = !of_property_read_bool(node, key);
+  //
+  // 	ret = rpm_reg_set(vreg, &vreg->parts->pm, pwm);
+  // 	if (ret) {
+  // 		dev_err(dev, "failed to set power mode\n");
+  // 		return ret;
+  // 	}
+  // }
 
-		ret = rpm_reg_set(vreg, &vreg->parts->pm, pwm);
-		if (ret) {
-			dev_err(dev, "failed to set power mode\n");
-			return ret;
-		}
-	}
+  if (vreg->parts->fm.mask) {
+    // 	force_mode = -1;
+    //
+    // 	key = "qcom,force-mode";
+    // 	ret = of_property_read_u32(node, key, &val);
+    // 	if (ret == -EINVAL) {
+    val = QCOM_RPM_FORCE_MODE_NONE;
+    // 	} else if (ret < 0) {
+    // 		dev_err(dev, "failed to read %s\n", key);
+    // 		return ret;
+    // 	}
+    //
+    /*
+     * If force-mode is encoded as 2 bits then the
+     * possible register values are:
+     * NONE, LPM, HPM
+     * otherwise:
+     * NONE, LPM, AUTO, HPM, BYPASS
+     */
+    switch (val) {
+    case QCOM_RPM_FORCE_MODE_NONE:
+      force_mode = 0;
+      break;
+    case QCOM_RPM_FORCE_MODE_LPM:
+      force_mode = 1;
+      break;
+    case QCOM_RPM_FORCE_MODE_HPM:
+      if (FORCE_MODE_IS_2_BITS(vreg))
+        force_mode = 2;
+      else
+        force_mode = 3;
+      break;
+    case QCOM_RPM_FORCE_MODE_AUTO:
+      if (vreg->supports_force_mode_auto)
+        force_mode = 2;
+      break;
+    case QCOM_RPM_FORCE_MODE_BYPASS:
+      if (vreg->supports_force_mode_bypass)
+        force_mode = 4;
+      break;
+    }
 
-	if (vreg->parts->fm.mask) {
-		force_mode = -1;
+    if (force_mode == -1) {
+      dev_err(dev, "invalid force mode\n");
+      return -EINVAL;
+    }
 
-		key = "qcom,force-mode";
-		ret = of_property_read_u32(node, key, &val);
-		if (ret == -EINVAL) {
-			val = QCOM_RPM_FORCE_MODE_NONE;
-		} else if (ret < 0) {
-			dev_err(dev, "failed to read %s\n", key);
-			return ret;
-		}
+    ret = rpm_reg_set(vreg, &vreg->parts->fm, force_mode);
+    if (ret) {
+      dev_err(dev, "failed to set force mode\n");
+      return ret;
+    }
+  }
 
-		/*
-		 * If force-mode is encoded as 2 bits then the
-		 * possible register values are:
-		 * NONE, LPM, HPM
-		 * otherwise:
-		 * NONE, LPM, AUTO, HPM, BYPASS
-		 */
-		switch (val) {
-		case QCOM_RPM_FORCE_MODE_NONE:
-			force_mode = 0;
-			break;
-		case QCOM_RPM_FORCE_MODE_LPM:
-			force_mode = 1;
-			break;
-		case QCOM_RPM_FORCE_MODE_HPM:
-			if (FORCE_MODE_IS_2_BITS(vreg))
-				force_mode = 2;
-			else
-				force_mode = 3;
-			break;
-		case QCOM_RPM_FORCE_MODE_AUTO:
-			if (vreg->supports_force_mode_auto)
-				force_mode = 2;
-			break;
-		case QCOM_RPM_FORCE_MODE_BYPASS:
-			if (vreg->supports_force_mode_bypass)
-				force_mode = 4;
-			break;
-		}
-
-		if (force_mode == -1) {
-			dev_err(dev, "invalid force mode\n");
-			return -EINVAL;
-		}
-
-		ret = rpm_reg_set(vreg, &vreg->parts->fm, force_mode);
-		if (ret) {
-			dev_err(dev, "failed to set force mode\n");
-			return ret;
-		}
-	}
-
-	return 0;
+  return 0;
 }
 
 struct rpm_regulator_data {
-	const char *name;
-	int resource;
-	const struct qcom_rpm_reg *template;
-	const char *supply;
+  const char *name;
+  int resource;
+  const struct qcom_rpm_reg *template;
+  const char *supply;
 };
 
 static const struct rpm_regulator_data rpm_pm8018_regulators[] = {
-	{ "s1",  QCOM_RPM_PM8018_SMPS1, &pm8018_smps, "vdd_s1" },
-	{ "s2",  QCOM_RPM_PM8018_SMPS2, &pm8018_smps, "vdd_s2" },
-	{ "s3",  QCOM_RPM_PM8018_SMPS3, &pm8018_smps, "vdd_s3" },
-	{ "s4",  QCOM_RPM_PM8018_SMPS4, &pm8018_smps, "vdd_s4" },
-	{ "s5",  QCOM_RPM_PM8018_SMPS5, &pm8018_smps, "vdd_s5" },
+    {"s1", QCOM_RPM_PM8018_SMPS1, &pm8018_smps, "vdd_s1"},
+    {"s2", QCOM_RPM_PM8018_SMPS2, &pm8018_smps, "vdd_s2"},
+    {"s3", QCOM_RPM_PM8018_SMPS3, &pm8018_smps, "vdd_s3"},
+    {"s4", QCOM_RPM_PM8018_SMPS4, &pm8018_smps, "vdd_s4"},
+    {"s5", QCOM_RPM_PM8018_SMPS5, &pm8018_smps, "vdd_s5"},
 
-	{ "l2",  QCOM_RPM_PM8018_LDO2,  &pm8018_pldo, "vdd_l2" },
-	{ "l3",  QCOM_RPM_PM8018_LDO3,  &pm8018_pldo, "vdd_l3" },
-	{ "l4",  QCOM_RPM_PM8018_LDO4,  &pm8018_pldo, "vdd_l4" },
-	{ "l5",  QCOM_RPM_PM8018_LDO5,  &pm8018_pldo, "vdd_l5" },
-	{ "l6",  QCOM_RPM_PM8018_LDO6,  &pm8018_pldo, "vdd_l7" },
-	{ "l7",  QCOM_RPM_PM8018_LDO7,  &pm8018_pldo, "vdd_l7" },
-	{ "l8",  QCOM_RPM_PM8018_LDO8,  &pm8018_nldo, "vdd_l8" },
-	{ "l9",  QCOM_RPM_PM8018_LDO9,  &pm8921_nldo1200,
-						      "vdd_l9_l10_l11_l12" },
-	{ "l10", QCOM_RPM_PM8018_LDO10, &pm8018_nldo, "vdd_l9_l10_l11_l12" },
-	{ "l11", QCOM_RPM_PM8018_LDO11, &pm8018_nldo, "vdd_l9_l10_l11_l12" },
-	{ "l12", QCOM_RPM_PM8018_LDO12, &pm8018_nldo, "vdd_l9_l10_l11_l12" },
-	{ "l14", QCOM_RPM_PM8018_LDO14, &pm8018_pldo, "vdd_l14" },
+    {"l2", QCOM_RPM_PM8018_LDO2, &pm8018_pldo, "vdd_l2"},
+    {"l3", QCOM_RPM_PM8018_LDO3, &pm8018_pldo, "vdd_l3"},
+    {"l4", QCOM_RPM_PM8018_LDO4, &pm8018_pldo, "vdd_l4"},
+    {"l5", QCOM_RPM_PM8018_LDO5, &pm8018_pldo, "vdd_l5"},
+    {"l6", QCOM_RPM_PM8018_LDO6, &pm8018_pldo, "vdd_l7"},
+    {"l7", QCOM_RPM_PM8018_LDO7, &pm8018_pldo, "vdd_l7"},
+    {"l8", QCOM_RPM_PM8018_LDO8, &pm8018_nldo, "vdd_l8"},
+    {"l9", QCOM_RPM_PM8018_LDO9, &pm8921_nldo1200, "vdd_l9_l10_l11_l12"},
+    {"l10", QCOM_RPM_PM8018_LDO10, &pm8018_nldo, "vdd_l9_l10_l11_l12"},
+    {"l11", QCOM_RPM_PM8018_LDO11, &pm8018_nldo, "vdd_l9_l10_l11_l12"},
+    {"l12", QCOM_RPM_PM8018_LDO12, &pm8018_nldo, "vdd_l9_l10_l11_l12"},
+    {"l14", QCOM_RPM_PM8018_LDO14, &pm8018_pldo, "vdd_l14"},
 
-	{ "lvs1", QCOM_RPM_PM8018_LVS1, &pm8018_switch, "lvs1_in" },
+    {"lvs1", QCOM_RPM_PM8018_LVS1, &pm8018_switch, "lvs1_in"},
 
-	{ }
-};
+    {}};
 
 static const struct rpm_regulator_data rpm_pm8058_regulators[] = {
-	{ "s0",   QCOM_RPM_PM8058_SMPS0,  &pm8058_smps, "vdd_s0" },
-	{ "s1",   QCOM_RPM_PM8058_SMPS1,  &pm8058_smps, "vdd_s1" },
-	{ "s2",   QCOM_RPM_PM8058_SMPS2,  &pm8058_smps, "vdd_s2" },
-	{ "s3",   QCOM_RPM_PM8058_SMPS3,  &pm8058_smps, "vdd_s3" },
-	{ "s4",   QCOM_RPM_PM8058_SMPS4,  &pm8058_smps, "vdd_s4" },
+    {"s0", QCOM_RPM_PM8058_SMPS0, &pm8058_smps, "vdd_s0"},
+    {"s1", QCOM_RPM_PM8058_SMPS1, &pm8058_smps, "vdd_s1"},
+    {"s2", QCOM_RPM_PM8058_SMPS2, &pm8058_smps, "vdd_s2"},
+    {"s3", QCOM_RPM_PM8058_SMPS3, &pm8058_smps, "vdd_s3"},
+    {"s4", QCOM_RPM_PM8058_SMPS4, &pm8058_smps, "vdd_s4"},
 
-	{ "l0",   QCOM_RPM_PM8058_LDO0,   &pm8058_nldo, "vdd_l0_l1_lvs"	},
-	{ "l1",   QCOM_RPM_PM8058_LDO1,   &pm8058_nldo, "vdd_l0_l1_lvs" },
-	{ "l2",   QCOM_RPM_PM8058_LDO2,   &pm8058_pldo, "vdd_l2_l11_l12" },
-	{ "l3",   QCOM_RPM_PM8058_LDO3,   &pm8058_pldo, "vdd_l3_l4_l5" },
-	{ "l4",   QCOM_RPM_PM8058_LDO4,   &pm8058_pldo, "vdd_l3_l4_l5" },
-	{ "l5",   QCOM_RPM_PM8058_LDO5,   &pm8058_pldo, "vdd_l3_l4_l5" },
-	{ "l6",   QCOM_RPM_PM8058_LDO6,   &pm8058_pldo, "vdd_l6_l7" },
-	{ "l7",   QCOM_RPM_PM8058_LDO7,   &pm8058_pldo, "vdd_l6_l7" },
-	{ "l8",   QCOM_RPM_PM8058_LDO8,   &pm8058_pldo, "vdd_l8" },
-	{ "l9",   QCOM_RPM_PM8058_LDO9,   &pm8058_pldo, "vdd_l9" },
-	{ "l10",  QCOM_RPM_PM8058_LDO10,  &pm8058_pldo, "vdd_l10" },
-	{ "l11",  QCOM_RPM_PM8058_LDO11,  &pm8058_pldo, "vdd_l2_l11_l12" },
-	{ "l12",  QCOM_RPM_PM8058_LDO12,  &pm8058_pldo, "vdd_l2_l11_l12" },
-	{ "l13",  QCOM_RPM_PM8058_LDO13,  &pm8058_pldo, "vdd_l13_l16" },
-	{ "l14",  QCOM_RPM_PM8058_LDO14,  &pm8058_pldo, "vdd_l14_l15" },
-	{ "l15",  QCOM_RPM_PM8058_LDO15,  &pm8058_pldo, "vdd_l14_l15" },
-	{ "l16",  QCOM_RPM_PM8058_LDO16,  &pm8058_pldo, "vdd_l13_l16" },
-	{ "l17",  QCOM_RPM_PM8058_LDO17,  &pm8058_pldo, "vdd_l17_l18" },
-	{ "l18",  QCOM_RPM_PM8058_LDO18,  &pm8058_pldo, "vdd_l17_l18" },
-	{ "l19",  QCOM_RPM_PM8058_LDO19,  &pm8058_pldo, "vdd_l19_l20" },
-	{ "l20",  QCOM_RPM_PM8058_LDO20,  &pm8058_pldo, "vdd_l19_l20" },
-	{ "l21",  QCOM_RPM_PM8058_LDO21,  &pm8058_nldo, "vdd_l21" },
-	{ "l22",  QCOM_RPM_PM8058_LDO22,  &pm8058_nldo, "vdd_l22" },
-	{ "l23",  QCOM_RPM_PM8058_LDO23,  &pm8058_nldo, "vdd_l23_l24_l25" },
-	{ "l24",  QCOM_RPM_PM8058_LDO24,  &pm8058_nldo, "vdd_l23_l24_l25" },
-	{ "l25",  QCOM_RPM_PM8058_LDO25,  &pm8058_nldo, "vdd_l23_l24_l25" },
+    {"l0", QCOM_RPM_PM8058_LDO0, &pm8058_nldo, "vdd_l0_l1_lvs"},
+    {"l1", QCOM_RPM_PM8058_LDO1, &pm8058_nldo, "vdd_l0_l1_lvs"},
+    {"l2", QCOM_RPM_PM8058_LDO2, &pm8058_pldo, "vdd_l2_l11_l12"},
+    {"l3", QCOM_RPM_PM8058_LDO3, &pm8058_pldo, "vdd_l3_l4_l5"},
+    {"l4", QCOM_RPM_PM8058_LDO4, &pm8058_pldo, "vdd_l3_l4_l5"},
+    {"l5", QCOM_RPM_PM8058_LDO5, &pm8058_pldo, "vdd_l3_l4_l5"},
+    {"l6", QCOM_RPM_PM8058_LDO6, &pm8058_pldo, "vdd_l6_l7"},
+    {"l7", QCOM_RPM_PM8058_LDO7, &pm8058_pldo, "vdd_l6_l7"},
+    {"l8", QCOM_RPM_PM8058_LDO8, &pm8058_pldo, "vdd_l8"},
+    {"l9", QCOM_RPM_PM8058_LDO9, &pm8058_pldo, "vdd_l9"},
+    {"l10", QCOM_RPM_PM8058_LDO10, &pm8058_pldo, "vdd_l10"},
+    {"l11", QCOM_RPM_PM8058_LDO11, &pm8058_pldo, "vdd_l2_l11_l12"},
+    {"l12", QCOM_RPM_PM8058_LDO12, &pm8058_pldo, "vdd_l2_l11_l12"},
+    {"l13", QCOM_RPM_PM8058_LDO13, &pm8058_pldo, "vdd_l13_l16"},
+    {"l14", QCOM_RPM_PM8058_LDO14, &pm8058_pldo, "vdd_l14_l15"},
+    {"l15", QCOM_RPM_PM8058_LDO15, &pm8058_pldo, "vdd_l14_l15"},
+    {"l16", QCOM_RPM_PM8058_LDO16, &pm8058_pldo, "vdd_l13_l16"},
+    {"l17", QCOM_RPM_PM8058_LDO17, &pm8058_pldo, "vdd_l17_l18"},
+    {"l18", QCOM_RPM_PM8058_LDO18, &pm8058_pldo, "vdd_l17_l18"},
+    {"l19", QCOM_RPM_PM8058_LDO19, &pm8058_pldo, "vdd_l19_l20"},
+    {"l20", QCOM_RPM_PM8058_LDO20, &pm8058_pldo, "vdd_l19_l20"},
+    {"l21", QCOM_RPM_PM8058_LDO21, &pm8058_nldo, "vdd_l21"},
+    {"l22", QCOM_RPM_PM8058_LDO22, &pm8058_nldo, "vdd_l22"},
+    {"l23", QCOM_RPM_PM8058_LDO23, &pm8058_nldo, "vdd_l23_l24_l25"},
+    {"l24", QCOM_RPM_PM8058_LDO24, &pm8058_nldo, "vdd_l23_l24_l25"},
+    {"l25", QCOM_RPM_PM8058_LDO25, &pm8058_nldo, "vdd_l23_l24_l25"},
 
-	{ "lvs0", QCOM_RPM_PM8058_LVS0, &pm8058_switch, "vdd_l0_l1_lvs" },
-	{ "lvs1", QCOM_RPM_PM8058_LVS1, &pm8058_switch, "vdd_l0_l1_lvs" },
+    {"lvs0", QCOM_RPM_PM8058_LVS0, &pm8058_switch, "vdd_l0_l1_lvs"},
+    {"lvs1", QCOM_RPM_PM8058_LVS1, &pm8058_switch, "vdd_l0_l1_lvs"},
 
-	{ "ncp",  QCOM_RPM_PM8058_NCP, &pm8058_ncp, "vdd_ncp" },
-	{ }
-};
+    {"ncp", QCOM_RPM_PM8058_NCP, &pm8058_ncp, "vdd_ncp"},
+    {}};
 
 static const struct rpm_regulator_data rpm_pm8901_regulators[] = {
-	{ "s0",   QCOM_RPM_PM8901_SMPS0, &pm8901_ftsmps, "vdd_s0" },
-	{ "s1",   QCOM_RPM_PM8901_SMPS1, &pm8901_ftsmps, "vdd_s1" },
-	{ "s2",   QCOM_RPM_PM8901_SMPS2, &pm8901_ftsmps, "vdd_s2" },
-	{ "s3",   QCOM_RPM_PM8901_SMPS3, &pm8901_ftsmps, "vdd_s3" },
-	{ "s4",   QCOM_RPM_PM8901_SMPS4, &pm8901_ftsmps, "vdd_s4" },
+    {"s0", QCOM_RPM_PM8901_SMPS0, &pm8901_ftsmps, "vdd_s0"},
+    {"s1", QCOM_RPM_PM8901_SMPS1, &pm8901_ftsmps, "vdd_s1"},
+    {"s2", QCOM_RPM_PM8901_SMPS2, &pm8901_ftsmps, "vdd_s2"},
+    {"s3", QCOM_RPM_PM8901_SMPS3, &pm8901_ftsmps, "vdd_s3"},
+    {"s4", QCOM_RPM_PM8901_SMPS4, &pm8901_ftsmps, "vdd_s4"},
 
-	{ "l0",   QCOM_RPM_PM8901_LDO0, &pm8901_nldo, "vdd_l0" },
-	{ "l1",   QCOM_RPM_PM8901_LDO1, &pm8901_pldo, "vdd_l1" },
-	{ "l2",   QCOM_RPM_PM8901_LDO2, &pm8901_pldo, "vdd_l2" },
-	{ "l3",   QCOM_RPM_PM8901_LDO3, &pm8901_pldo, "vdd_l3" },
-	{ "l4",   QCOM_RPM_PM8901_LDO4, &pm8901_pldo, "vdd_l4" },
-	{ "l5",   QCOM_RPM_PM8901_LDO5, &pm8901_pldo, "vdd_l5" },
-	{ "l6",   QCOM_RPM_PM8901_LDO6, &pm8901_pldo, "vdd_l6" },
+    {"l0", QCOM_RPM_PM8901_LDO0, &pm8901_nldo, "vdd_l0"},
+    {"l1", QCOM_RPM_PM8901_LDO1, &pm8901_pldo, "vdd_l1"},
+    {"l2", QCOM_RPM_PM8901_LDO2, &pm8901_pldo, "vdd_l2"},
+    {"l3", QCOM_RPM_PM8901_LDO3, &pm8901_pldo, "vdd_l3"},
+    {"l4", QCOM_RPM_PM8901_LDO4, &pm8901_pldo, "vdd_l4"},
+    {"l5", QCOM_RPM_PM8901_LDO5, &pm8901_pldo, "vdd_l5"},
+    {"l6", QCOM_RPM_PM8901_LDO6, &pm8901_pldo, "vdd_l6"},
 
-	{ "lvs0", QCOM_RPM_PM8901_LVS0, &pm8901_switch, "lvs0_in" },
-	{ "lvs1", QCOM_RPM_PM8901_LVS1, &pm8901_switch, "lvs1_in" },
-	{ "lvs2", QCOM_RPM_PM8901_LVS2, &pm8901_switch, "lvs2_in" },
-	{ "lvs3", QCOM_RPM_PM8901_LVS3, &pm8901_switch, "lvs3_in" },
+    {"lvs0", QCOM_RPM_PM8901_LVS0, &pm8901_switch, "lvs0_in"},
+    {"lvs1", QCOM_RPM_PM8901_LVS1, &pm8901_switch, "lvs1_in"},
+    {"lvs2", QCOM_RPM_PM8901_LVS2, &pm8901_switch, "lvs2_in"},
+    {"lvs3", QCOM_RPM_PM8901_LVS3, &pm8901_switch, "lvs3_in"},
 
-	{ "mvs", QCOM_RPM_PM8901_MVS, &pm8901_switch, "mvs_in" },
-	{ }
-};
+    {"mvs", QCOM_RPM_PM8901_MVS, &pm8901_switch, "mvs_in"},
+    {}};
 
 static const struct rpm_regulator_data rpm_pm8921_regulators[] = {
-	{ "s1",  QCOM_RPM_PM8921_SMPS1, &pm8921_smps, "vdd_s1" },
-	{ "s2",  QCOM_RPM_PM8921_SMPS2, &pm8921_smps, "vdd_s2" },
-	{ "s3",  QCOM_RPM_PM8921_SMPS3, &pm8921_smps },
-	{ "s4",  QCOM_RPM_PM8921_SMPS4, &pm8921_smps, "vdd_s4" },
-	{ "s7",  QCOM_RPM_PM8921_SMPS7, &pm8921_smps, "vdd_s7" },
-	{ "s8",  QCOM_RPM_PM8921_SMPS8, &pm8921_smps, "vdd_s8"  },
+    {"s1", QCOM_RPM_PM8921_SMPS1, &pm8921_smps, "vdd_s1"},
+    {"s2", QCOM_RPM_PM8921_SMPS2, &pm8921_smps, "vdd_s2"},
+    {"s3", QCOM_RPM_PM8921_SMPS3, &pm8921_smps},
+    {"s4", QCOM_RPM_PM8921_SMPS4, &pm8921_smps, "vdd_s4"},
+    {"s7", QCOM_RPM_PM8921_SMPS7, &pm8921_smps, "vdd_s7"},
+    {"s8", QCOM_RPM_PM8921_SMPS8, &pm8921_smps, "vdd_s8"},
 
-	{ "l1",  QCOM_RPM_PM8921_LDO1, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l2",  QCOM_RPM_PM8921_LDO2, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l3",  QCOM_RPM_PM8921_LDO3, &pm8921_pldo, "vdd_l3_l15_l17" },
-	{ "l4",  QCOM_RPM_PM8921_LDO4, &pm8921_pldo, "vdd_l4_l14" },
-	{ "l5",  QCOM_RPM_PM8921_LDO5, &pm8921_pldo, "vdd_l5_l8_l16" },
-	{ "l6",  QCOM_RPM_PM8921_LDO6, &pm8921_pldo, "vdd_l6_l7" },
-	{ "l7",  QCOM_RPM_PM8921_LDO7, &pm8921_pldo, "vdd_l6_l7" },
-	{ "l8",  QCOM_RPM_PM8921_LDO8, &pm8921_pldo, "vdd_l5_l8_l16" },
-	{ "l9",  QCOM_RPM_PM8921_LDO9, &pm8921_pldo, "vdd_l9_l11" },
-	{ "l10", QCOM_RPM_PM8921_LDO10, &pm8921_pldo, "vdd_l10_l22" },
-	{ "l11", QCOM_RPM_PM8921_LDO11, &pm8921_pldo, "vdd_l9_l11" },
-	{ "l12", QCOM_RPM_PM8921_LDO12, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l14", QCOM_RPM_PM8921_LDO14, &pm8921_pldo, "vdd_l4_l14" },
-	{ "l15", QCOM_RPM_PM8921_LDO15, &pm8921_pldo, "vdd_l3_l15_l17" },
-	{ "l16", QCOM_RPM_PM8921_LDO16, &pm8921_pldo, "vdd_l5_l8_l16" },
-	{ "l17", QCOM_RPM_PM8921_LDO17, &pm8921_pldo, "vdd_l3_l15_l17" },
-	{ "l18", QCOM_RPM_PM8921_LDO18, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l21", QCOM_RPM_PM8921_LDO21, &pm8921_pldo, "vdd_l21_l23_l29" },
-	{ "l22", QCOM_RPM_PM8921_LDO22, &pm8921_pldo, "vdd_l10_l22" },
-	{ "l23", QCOM_RPM_PM8921_LDO23, &pm8921_pldo, "vdd_l21_l23_l29" },
-	{ "l24", QCOM_RPM_PM8921_LDO24, &pm8921_nldo1200, "vdd_l24" },
-	{ "l25", QCOM_RPM_PM8921_LDO25, &pm8921_nldo1200, "vdd_l25" },
-	{ "l26", QCOM_RPM_PM8921_LDO26, &pm8921_nldo1200, "vdd_l26" },
-	{ "l27", QCOM_RPM_PM8921_LDO27, &pm8921_nldo1200, "vdd_l27" },
-	{ "l28", QCOM_RPM_PM8921_LDO28, &pm8921_nldo1200, "vdd_l28" },
-	{ "l29", QCOM_RPM_PM8921_LDO29, &pm8921_pldo, "vdd_l21_l23_l29" },
+    {"l1", QCOM_RPM_PM8921_LDO1, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l2", QCOM_RPM_PM8921_LDO2, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l3", QCOM_RPM_PM8921_LDO3, &pm8921_pldo, "vdd_l3_l15_l17"},
+    {"l4", QCOM_RPM_PM8921_LDO4, &pm8921_pldo, "vdd_l4_l14"},
+    {"l5", QCOM_RPM_PM8921_LDO5, &pm8921_pldo, "vdd_l5_l8_l16"},
+    {"l6", QCOM_RPM_PM8921_LDO6, &pm8921_pldo, "vdd_l6_l7"},
+    {"l7", QCOM_RPM_PM8921_LDO7, &pm8921_pldo, "vdd_l6_l7"},
+    {"l8", QCOM_RPM_PM8921_LDO8, &pm8921_pldo, "vdd_l5_l8_l16"},
+    {"l9", QCOM_RPM_PM8921_LDO9, &pm8921_pldo, "vdd_l9_l11"},
+    {"l10", QCOM_RPM_PM8921_LDO10, &pm8921_pldo, "vdd_l10_l22"},
+    {"l11", QCOM_RPM_PM8921_LDO11, &pm8921_pldo, "vdd_l9_l11"},
+    {"l12", QCOM_RPM_PM8921_LDO12, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l14", QCOM_RPM_PM8921_LDO14, &pm8921_pldo, "vdd_l4_l14"},
+    {"l15", QCOM_RPM_PM8921_LDO15, &pm8921_pldo, "vdd_l3_l15_l17"},
+    {"l16", QCOM_RPM_PM8921_LDO16, &pm8921_pldo, "vdd_l5_l8_l16"},
+    {"l17", QCOM_RPM_PM8921_LDO17, &pm8921_pldo, "vdd_l3_l15_l17"},
+    {"l18", QCOM_RPM_PM8921_LDO18, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l21", QCOM_RPM_PM8921_LDO21, &pm8921_pldo, "vdd_l21_l23_l29"},
+    {"l22", QCOM_RPM_PM8921_LDO22, &pm8921_pldo, "vdd_l10_l22"},
+    {"l23", QCOM_RPM_PM8921_LDO23, &pm8921_pldo, "vdd_l21_l23_l29"},
+    {"l24", QCOM_RPM_PM8921_LDO24, &pm8921_nldo1200, "vdd_l24"},
+    {"l25", QCOM_RPM_PM8921_LDO25, &pm8921_nldo1200, "vdd_l25"},
+    {"l26", QCOM_RPM_PM8921_LDO26, &pm8921_nldo1200, "vdd_l26"},
+    {"l27", QCOM_RPM_PM8921_LDO27, &pm8921_nldo1200, "vdd_l27"},
+    {"l28", QCOM_RPM_PM8921_LDO28, &pm8921_nldo1200, "vdd_l28"},
+    {"l29", QCOM_RPM_PM8921_LDO29, &pm8921_pldo, "vdd_l21_l23_l29"},
 
-	{ "lvs1", QCOM_RPM_PM8921_LVS1, &pm8921_switch, "vin_lvs1_3_6" },
-	{ "lvs2", QCOM_RPM_PM8921_LVS2, &pm8921_switch, "vin_lvs2" },
-	{ "lvs3", QCOM_RPM_PM8921_LVS3, &pm8921_switch, "vin_lvs1_3_6" },
-	{ "lvs4", QCOM_RPM_PM8921_LVS4, &pm8921_switch, "vin_lvs4_5_7" },
-	{ "lvs5", QCOM_RPM_PM8921_LVS5, &pm8921_switch, "vin_lvs4_5_7" },
-	{ "lvs6", QCOM_RPM_PM8921_LVS6, &pm8921_switch, "vin_lvs1_3_6" },
-	{ "lvs7", QCOM_RPM_PM8921_LVS7, &pm8921_switch, "vin_lvs4_5_7" },
+    {"lvs1", QCOM_RPM_PM8921_LVS1, &pm8921_switch, "vin_lvs1_3_6"},
+    {"lvs2", QCOM_RPM_PM8921_LVS2, &pm8921_switch, "vin_lvs2"},
+    {"lvs3", QCOM_RPM_PM8921_LVS3, &pm8921_switch, "vin_lvs1_3_6"},
+    {"lvs4", QCOM_RPM_PM8921_LVS4, &pm8921_switch, "vin_lvs4_5_7"},
+    {"lvs5", QCOM_RPM_PM8921_LVS5, &pm8921_switch, "vin_lvs4_5_7"},
+    {"lvs6", QCOM_RPM_PM8921_LVS6, &pm8921_switch, "vin_lvs1_3_6"},
+    {"lvs7", QCOM_RPM_PM8921_LVS7, &pm8921_switch, "vin_lvs4_5_7"},
 
-	{ "usb-switch", QCOM_RPM_USB_OTG_SWITCH, &pm8921_switch, "vin_5vs" },
-	{ "hdmi-switch", QCOM_RPM_HDMI_SWITCH, &pm8921_switch, "vin_5vs" },
-	{ "ncp", QCOM_RPM_PM8921_NCP, &pm8921_ncp, "vdd_ncp" },
-	{ }
-};
+    {"usb-switch", QCOM_RPM_USB_OTG_SWITCH, &pm8921_switch, "vin_5vs"},
+    {"hdmi-switch", QCOM_RPM_HDMI_SWITCH, &pm8921_switch, "vin_5vs"},
+    {"ncp", QCOM_RPM_PM8921_NCP, &pm8921_ncp, "vdd_ncp"},
+    {}};
 
 static const struct rpm_regulator_data rpm_pm8917_regulators[] = {
-	{ "s1", QCOM_RPM_PM8917_SMPS1, &pm8921_smps, "vdd_s1" },
-	{ "s2", QCOM_RPM_PM8917_SMPS2, &pm8921_smps, "vdd_s2" },
-	{ "s3", QCOM_RPM_PM8917_SMPS3, &pm8921_smps },
-	{ "s4", QCOM_RPM_PM8917_SMPS4, &pm8921_smps, "vdd_s4" },
-	{ "s7", QCOM_RPM_PM8917_SMPS7, &pm8921_smps, "vdd_s7" },
-	{ "s8", QCOM_RPM_PM8917_SMPS8, &pm8921_smps, "vdd_s8" },
+    {"s3", QCOM_RPM_PM8921_SMPS3, &pm8921_smps},
+    {"s4", QCOM_RPM_PM8921_SMPS4, &pm8921_smps, "vdd_s4"},
+    {"s7", QCOM_RPM_PM8921_SMPS7, &pm8921_smps, "vdd_s7"},
+    {"s8", QCOM_RPM_PM8921_SMPS8, &pm8921_smps, "vdd_s8"},
 
-	{ "l1", QCOM_RPM_PM8917_LDO1, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l2", QCOM_RPM_PM8917_LDO2, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l3", QCOM_RPM_PM8917_LDO3, &pm8921_pldo, "vdd_l3_l15_l17" },
-	{ "l4", QCOM_RPM_PM8917_LDO4, &pm8921_pldo, "vdd_l4_l14" },
-	{ "l5", QCOM_RPM_PM8917_LDO5, &pm8921_pldo, "vdd_l5_l8_l16" },
-	{ "l6", QCOM_RPM_PM8917_LDO6, &pm8921_pldo, "vdd_l6_l7" },
-	{ "l7", QCOM_RPM_PM8917_LDO7, &pm8921_pldo, "vdd_l6_l7" },
-	{ "l8", QCOM_RPM_PM8917_LDO8, &pm8921_pldo, "vdd_l5_l8_l16" },
-	{ "l9", QCOM_RPM_PM8917_LDO9, &pm8921_pldo, "vdd_l9_l11" },
-	{ "l10", QCOM_RPM_PM8917_LDO10, &pm8921_pldo, "vdd_l10_l22" },
-	{ "l11", QCOM_RPM_PM8917_LDO11, &pm8921_pldo, "vdd_l9_l11" },
-	{ "l12", QCOM_RPM_PM8917_LDO12, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l14", QCOM_RPM_PM8917_LDO14, &pm8921_pldo, "vdd_l4_l14" },
-	{ "l15", QCOM_RPM_PM8917_LDO15, &pm8921_pldo, "vdd_l3_l15_l17" },
-	{ "l16", QCOM_RPM_PM8917_LDO16, &pm8921_pldo, "vdd_l5_l8_l16" },
-	{ "l17", QCOM_RPM_PM8917_LDO17, &pm8921_pldo, "vdd_l3_l15_l17" },
-	{ "l18", QCOM_RPM_PM8917_LDO18, &pm8921_nldo, "vdd_l1_l2_l12_l18" },
-	{ "l21", QCOM_RPM_PM8917_LDO21, &pm8921_pldo, "vdd_l21_l23_l29" },
-	{ "l22", QCOM_RPM_PM8917_LDO22, &pm8921_pldo, "vdd_l10_l22" },
-	{ "l23", QCOM_RPM_PM8917_LDO23, &pm8921_pldo, "vdd_l21_l23_l29" },
-	{ "l24", QCOM_RPM_PM8917_LDO24, &pm8921_nldo1200, "vdd_l24" },
-	{ "l25", QCOM_RPM_PM8917_LDO25, &pm8921_nldo1200, "vdd_l25" },
-	{ "l26", QCOM_RPM_PM8917_LDO26, &pm8921_nldo1200, "vdd_l26" },
-	{ "l27", QCOM_RPM_PM8917_LDO27, &pm8921_nldo1200, "vdd_l27" },
-	{ "l28", QCOM_RPM_PM8917_LDO28, &pm8921_nldo1200, "vdd_l28" },
-	{ "l29", QCOM_RPM_PM8917_LDO29, &pm8921_pldo, "vdd_l21_l23_l29" },
-	{ "l30", QCOM_RPM_PM8917_LDO30, &pm8921_pldo, "vdd_l30" },
-	{ "l31", QCOM_RPM_PM8917_LDO31, &pm8921_pldo, "vdd_l31" },
-	{ "l32", QCOM_RPM_PM8917_LDO32, &pm8921_pldo, "vdd_l32" },
-	{ "l33", QCOM_RPM_PM8917_LDO33, &pm8921_pldo, "vdd_l33" },
-	{ "l34", QCOM_RPM_PM8917_LDO34, &pm8921_pldo, "vdd_l34" },
-	{ "l35", QCOM_RPM_PM8917_LDO35, &pm8921_pldo, "vdd_l35" },
-	{ "l36", QCOM_RPM_PM8917_LDO36, &pm8921_pldo, "vdd_l36" },
+    {"l1", QCOM_RPM_PM8921_LDO1, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l2", QCOM_RPM_PM8921_LDO2, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l3", QCOM_RPM_PM8921_LDO3, &pm8921_pldo, "vdd_l3_l15_l17"},
+    {"l4", QCOM_RPM_PM8921_LDO4, &pm8921_pldo, "vdd_l4_l14"},
+    {"l5", QCOM_RPM_PM8921_LDO5, &pm8921_pldo, "vdd_l5_l8_l16"},
+    {"l6", QCOM_RPM_PM8921_LDO6, &pm8921_pldo, "vdd_l6_l7"},
+    {"l7", QCOM_RPM_PM8921_LDO7, &pm8921_pldo, "vdd_l6_l7"},
+    {"l8", QCOM_RPM_PM8921_LDO8, &pm8921_pldo, "vdd_l5_l8_l16"},
+    {"l9", QCOM_RPM_PM8921_LDO9, &pm8921_pldo, "vdd_l9_l11"},
+    {"l10", QCOM_RPM_PM8921_LDO10, &pm8921_pldo, "vdd_l10_l22"},
+    {"l11", QCOM_RPM_PM8921_LDO11, &pm8921_pldo, "vdd_l9_l11"},
+    {"l12", QCOM_RPM_PM8921_LDO12, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l14", QCOM_RPM_PM8921_LDO14, &pm8921_pldo, "vdd_l4_l14"},
+    {"l15", QCOM_RPM_PM8921_LDO15, &pm8921_pldo, "vdd_l3_l15_l17"},
+    {"l16", QCOM_RPM_PM8921_LDO16, &pm8921_pldo, "vdd_l5_l8_l16"},
+    {"l17", QCOM_RPM_PM8921_LDO17, &pm8921_pldo, "vdd_l3_l15_l17"},
+    {"l18", QCOM_RPM_PM8921_LDO18, &pm8921_nldo, "vdd_l1_l2_l12_l18"},
+    {"l21", QCOM_RPM_PM8921_LDO21, &pm8921_pldo, "vdd_l21_l23_l29"},
+    {"l22", QCOM_RPM_PM8921_LDO22, &pm8921_pldo, "vdd_l10_l22"},
+    {"l23", QCOM_RPM_PM8921_LDO23, &pm8921_pldo, "vdd_l21_l23_l29"},
+    {"l24", QCOM_RPM_PM8921_LDO24, &pm8921_nldo1200, "vdd_l24"},
+    {"l25", QCOM_RPM_PM8921_LDO25, &pm8921_nldo1200, "vdd_l25"},
+    {"l26", QCOM_RPM_PM8921_LDO26, &pm8921_nldo1200, "vdd_l26"},
+    {"l27", QCOM_RPM_PM8921_LDO27, &pm8921_nldo1200, "vdd_l27"},
+    {"l28", QCOM_RPM_PM8921_LDO28, &pm8921_nldo1200, "vdd_l28"},
+    {"l29", QCOM_RPM_PM8921_LDO29, &pm8921_pldo, "vdd_l21_l23_l29"},
+    {"l30", QCOM_RPM_PM8917_LDO30, &pm8921_pldo, "vdd_l30"},
+    {"l31", QCOM_RPM_PM8917_LDO31, &pm8921_pldo, "vdd_l31"},
+    {"l32", QCOM_RPM_PM8917_LDO32, &pm8921_pldo, "vdd_l32"},
+    {"l33", QCOM_RPM_PM8917_LDO33, &pm8921_pldo, "vdd_l33"},
+    {"l34", QCOM_RPM_PM8917_LDO34, &pm8921_pldo, "vdd_l34"},
+    {"l35", QCOM_RPM_PM8917_LDO35, &pm8921_pldo, "vdd_l35"},
+    {"l36", QCOM_RPM_PM8917_LDO36, &pm8921_pldo, "vdd_l36"},
 
-	{ "lvs1", QCOM_RPM_PM8917_LVS1, &pm8921_switch, "vin_lvs1_3_6" },
-	{ "lvs2", QCOM_RPM_PM8917_LVS2, &pm8921_switch, "vin_lvs2" },
-	{ "lvs3", QCOM_RPM_PM8917_LVS3, &pm8921_switch, "vin_lvs1_3_6" },
-	{ "lvs4", QCOM_RPM_PM8917_LVS4, &pm8921_switch, "vin_lvs4_5_7" },
-	{ "lvs5", QCOM_RPM_PM8917_LVS5, &pm8921_switch, "vin_lvs4_5_7" },
-	{ "lvs6", QCOM_RPM_PM8917_LVS6, &pm8921_switch, "vin_lvs1_3_6" },
-	{ "lvs7", QCOM_RPM_PM8917_LVS7, &pm8921_switch, "vin_lvs4_5_7" },
+    {"lvs1", QCOM_RPM_PM8921_LVS1, &pm8921_switch, "vin_lvs1_3_6"},
+    {"lvs2", QCOM_RPM_PM8921_LVS2, &pm8921_switch, "vin_lvs2"},
+    {"lvs3", QCOM_RPM_PM8921_LVS3, &pm8921_switch, "vin_lvs1_3_6"},
+    {"lvs4", QCOM_RPM_PM8921_LVS4, &pm8921_switch, "vin_lvs4_5_7"},
+    {"lvs5", QCOM_RPM_PM8921_LVS5, &pm8921_switch, "vin_lvs4_5_7"},
+    {"lvs6", QCOM_RPM_PM8921_LVS6, &pm8921_switch, "vin_lvs1_3_6"},
+    {"lvs7", QCOM_RPM_PM8921_LVS7, &pm8921_switch, "vin_lvs4_5_7"},
 
-	{ "usb-switch", QCOM_RPM_USB_OTG_SWITCH, &pm8921_switch, "vin_5vs" },
-	{ "hdmi-switch", QCOM_RPM_HDMI_SWITCH, &pm8921_switch, "vin_5vs" },
-	{ "boost", QCOM_RPM_PM8917_BOOST, &pm8921_ncp, "vdd_boost" },
-	{}
-};
+    // {"usb-switch", QCOM_RPM_USB_OTG_SWITCH, &pm8921_switch, "vin_5vs"},
+    // {"hdmi-switch", QCOM_RPM_HDMI_SWITCH, &pm8921_switch, "vin_5vs"},
+    // { "boost", QCOM_RPM_PM8917_BOOST, &pm8921_ncp, "vdd_boost" },
+    { "test0", QCOM_RPM_TEST_0, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1", QCOM_RPM_TEST_1, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2", QCOM_RPM_TEST_2, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test3", QCOM_RPM_TEST_3, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test4", QCOM_RPM_TEST_4, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test5", QCOM_RPM_TEST_5, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test6", QCOM_RPM_TEST_6, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test7", QCOM_RPM_TEST_7, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test8", QCOM_RPM_TEST_8, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test9", QCOM_RPM_TEST_9, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test10", QCOM_RPM_TEST_10, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test11", QCOM_RPM_TEST_11, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test12", QCOM_RPM_TEST_12, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test13", QCOM_RPM_TEST_13, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test14", QCOM_RPM_TEST_14, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test15", QCOM_RPM_TEST_15, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test16", QCOM_RPM_TEST_16, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test17", QCOM_RPM_TEST_17, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test18", QCOM_RPM_TEST_18, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test19", QCOM_RPM_TEST_19, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test20", QCOM_RPM_TEST_20, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test21", QCOM_RPM_TEST_21, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test22", QCOM_RPM_TEST_22, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test23", QCOM_RPM_TEST_23, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test24", QCOM_RPM_TEST_24, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test25", QCOM_RPM_TEST_25, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test26", QCOM_RPM_TEST_26, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test27", QCOM_RPM_TEST_27, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test28", QCOM_RPM_TEST_28, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test29", QCOM_RPM_TEST_29, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test30", QCOM_RPM_TEST_30, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test31", QCOM_RPM_TEST_31, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test32", QCOM_RPM_TEST_32, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test33", QCOM_RPM_TEST_33, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test34", QCOM_RPM_TEST_34, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test35", QCOM_RPM_TEST_35, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test36", QCOM_RPM_TEST_36, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test37", QCOM_RPM_TEST_37, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test38", QCOM_RPM_TEST_38, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test39", QCOM_RPM_TEST_39, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test40", QCOM_RPM_TEST_40, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test41", QCOM_RPM_TEST_41, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test42", QCOM_RPM_TEST_42, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test43", QCOM_RPM_TEST_43, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test44", QCOM_RPM_TEST_44, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test45", QCOM_RPM_TEST_45, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test46", QCOM_RPM_TEST_46, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test47", QCOM_RPM_TEST_47, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test48", QCOM_RPM_TEST_48, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test49", QCOM_RPM_TEST_49, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test50", QCOM_RPM_TEST_50, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test51", QCOM_RPM_TEST_51, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test52", QCOM_RPM_TEST_52, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test53", QCOM_RPM_TEST_53, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test54", QCOM_RPM_TEST_54, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test55", QCOM_RPM_TEST_55, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test56", QCOM_RPM_TEST_56, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test57", QCOM_RPM_TEST_57, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test58", QCOM_RPM_TEST_58, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test59", QCOM_RPM_TEST_59, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test60", QCOM_RPM_TEST_60, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test61", QCOM_RPM_TEST_61, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test62", QCOM_RPM_TEST_62, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test63", QCOM_RPM_TEST_63, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test64", QCOM_RPM_TEST_64, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test65", QCOM_RPM_TEST_65, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test66", QCOM_RPM_TEST_66, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test67", QCOM_RPM_TEST_67, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test68", QCOM_RPM_TEST_68, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test69", QCOM_RPM_TEST_69, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test70", QCOM_RPM_TEST_70, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test71", QCOM_RPM_TEST_71, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test72", QCOM_RPM_TEST_72, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test73", QCOM_RPM_TEST_73, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test74", QCOM_RPM_TEST_74, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test75", QCOM_RPM_TEST_75, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test76", QCOM_RPM_TEST_76, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test77", QCOM_RPM_TEST_77, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test78", QCOM_RPM_TEST_78, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test79", QCOM_RPM_TEST_79, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test80", QCOM_RPM_TEST_80, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test81", QCOM_RPM_TEST_81, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test82", QCOM_RPM_TEST_82, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test83", QCOM_RPM_TEST_83, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test84", QCOM_RPM_TEST_84, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test85", QCOM_RPM_TEST_85, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test86", QCOM_RPM_TEST_86, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test87", QCOM_RPM_TEST_87, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test88", QCOM_RPM_TEST_88, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test89", QCOM_RPM_TEST_89, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test90", QCOM_RPM_TEST_90, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test91", QCOM_RPM_TEST_91, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test92", QCOM_RPM_TEST_92, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test93", QCOM_RPM_TEST_93, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test94", QCOM_RPM_TEST_94, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test95", QCOM_RPM_TEST_95, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test96", QCOM_RPM_TEST_96, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test97", QCOM_RPM_TEST_97, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test98", QCOM_RPM_TEST_98, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test99", QCOM_RPM_TEST_99, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test100", QCOM_RPM_TEST_100, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test101", QCOM_RPM_TEST_101, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test102", QCOM_RPM_TEST_102, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test103", QCOM_RPM_TEST_103, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test104", QCOM_RPM_TEST_104, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test105", QCOM_RPM_TEST_105, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test106", QCOM_RPM_TEST_106, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test107", QCOM_RPM_TEST_107, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test108", QCOM_RPM_TEST_108, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test109", QCOM_RPM_TEST_109, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test110", QCOM_RPM_TEST_110, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test111", QCOM_RPM_TEST_111, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test112", QCOM_RPM_TEST_112, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test113", QCOM_RPM_TEST_113, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test114", QCOM_RPM_TEST_114, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test115", QCOM_RPM_TEST_115, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test116", QCOM_RPM_TEST_116, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test117", QCOM_RPM_TEST_117, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test118", QCOM_RPM_TEST_118, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test119", QCOM_RPM_TEST_119, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test120", QCOM_RPM_TEST_120, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test121", QCOM_RPM_TEST_121, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test122", QCOM_RPM_TEST_122, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test123", QCOM_RPM_TEST_123, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test124", QCOM_RPM_TEST_124, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test125", QCOM_RPM_TEST_125, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test126", QCOM_RPM_TEST_126, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test127", QCOM_RPM_TEST_127, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test128", QCOM_RPM_TEST_128, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test129", QCOM_RPM_TEST_129, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test130", QCOM_RPM_TEST_130, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test131", QCOM_RPM_TEST_131, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test132", QCOM_RPM_TEST_132, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test133", QCOM_RPM_TEST_133, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test134", QCOM_RPM_TEST_134, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test135", QCOM_RPM_TEST_135, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test136", QCOM_RPM_TEST_136, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test137", QCOM_RPM_TEST_137, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test138", QCOM_RPM_TEST_138, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test139", QCOM_RPM_TEST_139, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test140", QCOM_RPM_TEST_140, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test141", QCOM_RPM_TEST_141, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test142", QCOM_RPM_TEST_142, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test143", QCOM_RPM_TEST_143, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test144", QCOM_RPM_TEST_144, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test145", QCOM_RPM_TEST_145, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test146", QCOM_RPM_TEST_146, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test147", QCOM_RPM_TEST_147, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test148", QCOM_RPM_TEST_148, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test149", QCOM_RPM_TEST_149, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test150", QCOM_RPM_TEST_150, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test151", QCOM_RPM_TEST_151, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test152", QCOM_RPM_TEST_152, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test153", QCOM_RPM_TEST_153, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test154", QCOM_RPM_TEST_154, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test155", QCOM_RPM_TEST_155, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test156", QCOM_RPM_TEST_156, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test157", QCOM_RPM_TEST_157, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test158", QCOM_RPM_TEST_158, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test159", QCOM_RPM_TEST_159, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test160", QCOM_RPM_TEST_160, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test161", QCOM_RPM_TEST_161, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test162", QCOM_RPM_TEST_162, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test163", QCOM_RPM_TEST_163, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test164", QCOM_RPM_TEST_164, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test165", QCOM_RPM_TEST_165, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test166", QCOM_RPM_TEST_166, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test167", QCOM_RPM_TEST_167, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test168", QCOM_RPM_TEST_168, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test169", QCOM_RPM_TEST_169, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test170", QCOM_RPM_TEST_170, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test171", QCOM_RPM_TEST_171, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test172", QCOM_RPM_TEST_172, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test173", QCOM_RPM_TEST_173, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test174", QCOM_RPM_TEST_174, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test175", QCOM_RPM_TEST_175, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test176", QCOM_RPM_TEST_176, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test177", QCOM_RPM_TEST_177, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test178", QCOM_RPM_TEST_178, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test179", QCOM_RPM_TEST_179, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test180", QCOM_RPM_TEST_180, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test181", QCOM_RPM_TEST_181, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test182", QCOM_RPM_TEST_182, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test183", QCOM_RPM_TEST_183, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test184", QCOM_RPM_TEST_184, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test185", QCOM_RPM_TEST_185, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test186", QCOM_RPM_TEST_186, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test187", QCOM_RPM_TEST_187, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test188", QCOM_RPM_TEST_188, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test189", QCOM_RPM_TEST_189, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test190", QCOM_RPM_TEST_190, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test191", QCOM_RPM_TEST_191, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test192", QCOM_RPM_TEST_192, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test193", QCOM_RPM_TEST_193, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test194", QCOM_RPM_TEST_194, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test195", QCOM_RPM_TEST_195, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test196", QCOM_RPM_TEST_196, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test197", QCOM_RPM_TEST_197, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test198", QCOM_RPM_TEST_198, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test199", QCOM_RPM_TEST_199, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test200", QCOM_RPM_TEST_200, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test201", QCOM_RPM_TEST_201, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test202", QCOM_RPM_TEST_202, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test203", QCOM_RPM_TEST_203, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test204", QCOM_RPM_TEST_204, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test205", QCOM_RPM_TEST_205, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test206", QCOM_RPM_TEST_206, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test207", QCOM_RPM_TEST_207, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test208", QCOM_RPM_TEST_208, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test209", QCOM_RPM_TEST_209, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test210", QCOM_RPM_TEST_210, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test211", QCOM_RPM_TEST_211, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test212", QCOM_RPM_TEST_212, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test213", QCOM_RPM_TEST_213, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test214", QCOM_RPM_TEST_214, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test215", QCOM_RPM_TEST_215, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test216", QCOM_RPM_TEST_216, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test217", QCOM_RPM_TEST_217, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test218", QCOM_RPM_TEST_218, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test219", QCOM_RPM_TEST_219, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test220", QCOM_RPM_TEST_220, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test221", QCOM_RPM_TEST_221, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test222", QCOM_RPM_TEST_222, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test223", QCOM_RPM_TEST_223, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test224", QCOM_RPM_TEST_224, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test225", QCOM_RPM_TEST_225, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test226", QCOM_RPM_TEST_226, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test227", QCOM_RPM_TEST_227, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test228", QCOM_RPM_TEST_228, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test229", QCOM_RPM_TEST_229, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test230", QCOM_RPM_TEST_230, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test231", QCOM_RPM_TEST_231, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test232", QCOM_RPM_TEST_232, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test233", QCOM_RPM_TEST_233, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test234", QCOM_RPM_TEST_234, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test235", QCOM_RPM_TEST_235, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test236", QCOM_RPM_TEST_236, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test237", QCOM_RPM_TEST_237, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test238", QCOM_RPM_TEST_238, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test239", QCOM_RPM_TEST_239, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test240", QCOM_RPM_TEST_240, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test241", QCOM_RPM_TEST_241, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test242", QCOM_RPM_TEST_242, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test243", QCOM_RPM_TEST_243, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test244", QCOM_RPM_TEST_244, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test245", QCOM_RPM_TEST_245, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test246", QCOM_RPM_TEST_246, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test247", QCOM_RPM_TEST_247, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test248", QCOM_RPM_TEST_248, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test249", QCOM_RPM_TEST_249, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test250", QCOM_RPM_TEST_250, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test251", QCOM_RPM_TEST_251, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test252", QCOM_RPM_TEST_252, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test253", QCOM_RPM_TEST_253, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test254", QCOM_RPM_TEST_254, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test255", QCOM_RPM_TEST_255, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test256", QCOM_RPM_TEST_256, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test257", QCOM_RPM_TEST_257, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test258", QCOM_RPM_TEST_258, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test259", QCOM_RPM_TEST_259, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test260", QCOM_RPM_TEST_260, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test261", QCOM_RPM_TEST_261, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test262", QCOM_RPM_TEST_262, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test263", QCOM_RPM_TEST_263, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test264", QCOM_RPM_TEST_264, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test265", QCOM_RPM_TEST_265, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test266", QCOM_RPM_TEST_266, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test267", QCOM_RPM_TEST_267, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test268", QCOM_RPM_TEST_268, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test269", QCOM_RPM_TEST_269, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test270", QCOM_RPM_TEST_270, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test271", QCOM_RPM_TEST_271, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test272", QCOM_RPM_TEST_272, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test273", QCOM_RPM_TEST_273, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test274", QCOM_RPM_TEST_274, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test275", QCOM_RPM_TEST_275, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test276", QCOM_RPM_TEST_276, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test277", QCOM_RPM_TEST_277, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test278", QCOM_RPM_TEST_278, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test279", QCOM_RPM_TEST_279, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test280", QCOM_RPM_TEST_280, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test281", QCOM_RPM_TEST_281, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test282", QCOM_RPM_TEST_282, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test283", QCOM_RPM_TEST_283, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test284", QCOM_RPM_TEST_284, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test285", QCOM_RPM_TEST_285, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test286", QCOM_RPM_TEST_286, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test287", QCOM_RPM_TEST_287, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test288", QCOM_RPM_TEST_288, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test289", QCOM_RPM_TEST_289, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test290", QCOM_RPM_TEST_290, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test291", QCOM_RPM_TEST_291, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test292", QCOM_RPM_TEST_292, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test293", QCOM_RPM_TEST_293, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test294", QCOM_RPM_TEST_294, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test295", QCOM_RPM_TEST_295, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test296", QCOM_RPM_TEST_296, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test297", QCOM_RPM_TEST_297, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test298", QCOM_RPM_TEST_298, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test299", QCOM_RPM_TEST_299, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test300", QCOM_RPM_TEST_300, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test301", QCOM_RPM_TEST_301, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test302", QCOM_RPM_TEST_302, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test303", QCOM_RPM_TEST_303, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test304", QCOM_RPM_TEST_304, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test305", QCOM_RPM_TEST_305, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test306", QCOM_RPM_TEST_306, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test307", QCOM_RPM_TEST_307, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test308", QCOM_RPM_TEST_308, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test309", QCOM_RPM_TEST_309, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test310", QCOM_RPM_TEST_310, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test311", QCOM_RPM_TEST_311, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test312", QCOM_RPM_TEST_312, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test313", QCOM_RPM_TEST_313, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test314", QCOM_RPM_TEST_314, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test315", QCOM_RPM_TEST_315, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test316", QCOM_RPM_TEST_316, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test317", QCOM_RPM_TEST_317, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test318", QCOM_RPM_TEST_318, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test319", QCOM_RPM_TEST_319, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test320", QCOM_RPM_TEST_320, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test321", QCOM_RPM_TEST_321, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test322", QCOM_RPM_TEST_322, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test323", QCOM_RPM_TEST_323, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test324", QCOM_RPM_TEST_324, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test325", QCOM_RPM_TEST_325, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test326", QCOM_RPM_TEST_326, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test327", QCOM_RPM_TEST_327, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test328", QCOM_RPM_TEST_328, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test329", QCOM_RPM_TEST_329, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test330", QCOM_RPM_TEST_330, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test331", QCOM_RPM_TEST_331, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test332", QCOM_RPM_TEST_332, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test333", QCOM_RPM_TEST_333, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test334", QCOM_RPM_TEST_334, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test335", QCOM_RPM_TEST_335, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test336", QCOM_RPM_TEST_336, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test337", QCOM_RPM_TEST_337, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test338", QCOM_RPM_TEST_338, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test339", QCOM_RPM_TEST_339, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test340", QCOM_RPM_TEST_340, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test341", QCOM_RPM_TEST_341, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test342", QCOM_RPM_TEST_342, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test343", QCOM_RPM_TEST_343, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test344", QCOM_RPM_TEST_344, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test345", QCOM_RPM_TEST_345, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test346", QCOM_RPM_TEST_346, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test347", QCOM_RPM_TEST_347, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test348", QCOM_RPM_TEST_348, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test349", QCOM_RPM_TEST_349, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test350", QCOM_RPM_TEST_350, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test351", QCOM_RPM_TEST_351, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test352", QCOM_RPM_TEST_352, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test353", QCOM_RPM_TEST_353, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test354", QCOM_RPM_TEST_354, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test355", QCOM_RPM_TEST_355, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test356", QCOM_RPM_TEST_356, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test357", QCOM_RPM_TEST_357, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test358", QCOM_RPM_TEST_358, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test359", QCOM_RPM_TEST_359, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test360", QCOM_RPM_TEST_360, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test361", QCOM_RPM_TEST_361, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test362", QCOM_RPM_TEST_362, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test363", QCOM_RPM_TEST_363, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test364", QCOM_RPM_TEST_364, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test365", QCOM_RPM_TEST_365, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test366", QCOM_RPM_TEST_366, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test367", QCOM_RPM_TEST_367, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test368", QCOM_RPM_TEST_368, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test369", QCOM_RPM_TEST_369, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test370", QCOM_RPM_TEST_370, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test371", QCOM_RPM_TEST_371, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test372", QCOM_RPM_TEST_372, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test373", QCOM_RPM_TEST_373, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test374", QCOM_RPM_TEST_374, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test375", QCOM_RPM_TEST_375, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test376", QCOM_RPM_TEST_376, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test377", QCOM_RPM_TEST_377, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test378", QCOM_RPM_TEST_378, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test379", QCOM_RPM_TEST_379, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test380", QCOM_RPM_TEST_380, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test381", QCOM_RPM_TEST_381, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test382", QCOM_RPM_TEST_382, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test383", QCOM_RPM_TEST_383, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test384", QCOM_RPM_TEST_384, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test385", QCOM_RPM_TEST_385, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test386", QCOM_RPM_TEST_386, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test387", QCOM_RPM_TEST_387, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test388", QCOM_RPM_TEST_388, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test389", QCOM_RPM_TEST_389, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test390", QCOM_RPM_TEST_390, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test391", QCOM_RPM_TEST_391, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test392", QCOM_RPM_TEST_392, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test393", QCOM_RPM_TEST_393, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test394", QCOM_RPM_TEST_394, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test395", QCOM_RPM_TEST_395, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test396", QCOM_RPM_TEST_396, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test397", QCOM_RPM_TEST_397, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test398", QCOM_RPM_TEST_398, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test399", QCOM_RPM_TEST_399, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test400", QCOM_RPM_TEST_400, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test401", QCOM_RPM_TEST_401, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test402", QCOM_RPM_TEST_402, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test403", QCOM_RPM_TEST_403, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test404", QCOM_RPM_TEST_404, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test405", QCOM_RPM_TEST_405, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test406", QCOM_RPM_TEST_406, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test407", QCOM_RPM_TEST_407, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test408", QCOM_RPM_TEST_408, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test409", QCOM_RPM_TEST_409, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test410", QCOM_RPM_TEST_410, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test411", QCOM_RPM_TEST_411, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test412", QCOM_RPM_TEST_412, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test413", QCOM_RPM_TEST_413, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test414", QCOM_RPM_TEST_414, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test415", QCOM_RPM_TEST_415, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test416", QCOM_RPM_TEST_416, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test417", QCOM_RPM_TEST_417, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test418", QCOM_RPM_TEST_418, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test419", QCOM_RPM_TEST_419, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test420", QCOM_RPM_TEST_420, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test421", QCOM_RPM_TEST_421, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test422", QCOM_RPM_TEST_422, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test423", QCOM_RPM_TEST_423, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test424", QCOM_RPM_TEST_424, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test425", QCOM_RPM_TEST_425, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test426", QCOM_RPM_TEST_426, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test427", QCOM_RPM_TEST_427, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test428", QCOM_RPM_TEST_428, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test429", QCOM_RPM_TEST_429, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test430", QCOM_RPM_TEST_430, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test431", QCOM_RPM_TEST_431, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test432", QCOM_RPM_TEST_432, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test433", QCOM_RPM_TEST_433, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test434", QCOM_RPM_TEST_434, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test435", QCOM_RPM_TEST_435, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test436", QCOM_RPM_TEST_436, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test437", QCOM_RPM_TEST_437, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test438", QCOM_RPM_TEST_438, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test439", QCOM_RPM_TEST_439, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test440", QCOM_RPM_TEST_440, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test441", QCOM_RPM_TEST_441, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test442", QCOM_RPM_TEST_442, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test443", QCOM_RPM_TEST_443, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test444", QCOM_RPM_TEST_444, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test445", QCOM_RPM_TEST_445, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test446", QCOM_RPM_TEST_446, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test447", QCOM_RPM_TEST_447, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test448", QCOM_RPM_TEST_448, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test449", QCOM_RPM_TEST_449, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test450", QCOM_RPM_TEST_450, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test451", QCOM_RPM_TEST_451, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test452", QCOM_RPM_TEST_452, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test453", QCOM_RPM_TEST_453, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test454", QCOM_RPM_TEST_454, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test455", QCOM_RPM_TEST_455, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test456", QCOM_RPM_TEST_456, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test457", QCOM_RPM_TEST_457, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test458", QCOM_RPM_TEST_458, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test459", QCOM_RPM_TEST_459, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test460", QCOM_RPM_TEST_460, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test461", QCOM_RPM_TEST_461, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test462", QCOM_RPM_TEST_462, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test463", QCOM_RPM_TEST_463, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test464", QCOM_RPM_TEST_464, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test465", QCOM_RPM_TEST_465, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test466", QCOM_RPM_TEST_466, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test467", QCOM_RPM_TEST_467, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test468", QCOM_RPM_TEST_468, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test469", QCOM_RPM_TEST_469, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test470", QCOM_RPM_TEST_470, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test471", QCOM_RPM_TEST_471, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test472", QCOM_RPM_TEST_472, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test473", QCOM_RPM_TEST_473, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test474", QCOM_RPM_TEST_474, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test475", QCOM_RPM_TEST_475, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test476", QCOM_RPM_TEST_476, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test477", QCOM_RPM_TEST_477, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test478", QCOM_RPM_TEST_478, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test479", QCOM_RPM_TEST_479, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test480", QCOM_RPM_TEST_480, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test481", QCOM_RPM_TEST_481, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test482", QCOM_RPM_TEST_482, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test483", QCOM_RPM_TEST_483, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test484", QCOM_RPM_TEST_484, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test485", QCOM_RPM_TEST_485, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test486", QCOM_RPM_TEST_486, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test487", QCOM_RPM_TEST_487, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test488", QCOM_RPM_TEST_488, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test489", QCOM_RPM_TEST_489, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test490", QCOM_RPM_TEST_490, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test491", QCOM_RPM_TEST_491, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test492", QCOM_RPM_TEST_492, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test493", QCOM_RPM_TEST_493, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test494", QCOM_RPM_TEST_494, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test495", QCOM_RPM_TEST_495, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test496", QCOM_RPM_TEST_496, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test497", QCOM_RPM_TEST_497, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test498", QCOM_RPM_TEST_498, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test499", QCOM_RPM_TEST_499, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test500", QCOM_RPM_TEST_500, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test501", QCOM_RPM_TEST_501, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test502", QCOM_RPM_TEST_502, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test503", QCOM_RPM_TEST_503, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test504", QCOM_RPM_TEST_504, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test505", QCOM_RPM_TEST_505, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test506", QCOM_RPM_TEST_506, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test507", QCOM_RPM_TEST_507, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test508", QCOM_RPM_TEST_508, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test509", QCOM_RPM_TEST_509, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test510", QCOM_RPM_TEST_510, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test511", QCOM_RPM_TEST_511, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test512", QCOM_RPM_TEST_512, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test513", QCOM_RPM_TEST_513, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test514", QCOM_RPM_TEST_514, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test515", QCOM_RPM_TEST_515, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test516", QCOM_RPM_TEST_516, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test517", QCOM_RPM_TEST_517, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test518", QCOM_RPM_TEST_518, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test519", QCOM_RPM_TEST_519, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test520", QCOM_RPM_TEST_520, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test521", QCOM_RPM_TEST_521, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test522", QCOM_RPM_TEST_522, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test523", QCOM_RPM_TEST_523, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test524", QCOM_RPM_TEST_524, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test525", QCOM_RPM_TEST_525, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test526", QCOM_RPM_TEST_526, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test527", QCOM_RPM_TEST_527, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test528", QCOM_RPM_TEST_528, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test529", QCOM_RPM_TEST_529, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test530", QCOM_RPM_TEST_530, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test531", QCOM_RPM_TEST_531, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test532", QCOM_RPM_TEST_532, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test533", QCOM_RPM_TEST_533, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test534", QCOM_RPM_TEST_534, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test535", QCOM_RPM_TEST_535, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test536", QCOM_RPM_TEST_536, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test537", QCOM_RPM_TEST_537, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test538", QCOM_RPM_TEST_538, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test539", QCOM_RPM_TEST_539, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test540", QCOM_RPM_TEST_540, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test541", QCOM_RPM_TEST_541, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test542", QCOM_RPM_TEST_542, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test543", QCOM_RPM_TEST_543, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test544", QCOM_RPM_TEST_544, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test545", QCOM_RPM_TEST_545, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test546", QCOM_RPM_TEST_546, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test547", QCOM_RPM_TEST_547, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test548", QCOM_RPM_TEST_548, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test549", QCOM_RPM_TEST_549, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test550", QCOM_RPM_TEST_550, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test551", QCOM_RPM_TEST_551, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test552", QCOM_RPM_TEST_552, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test553", QCOM_RPM_TEST_553, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test554", QCOM_RPM_TEST_554, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test555", QCOM_RPM_TEST_555, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test556", QCOM_RPM_TEST_556, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test557", QCOM_RPM_TEST_557, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test558", QCOM_RPM_TEST_558, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test559", QCOM_RPM_TEST_559, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test560", QCOM_RPM_TEST_560, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test561", QCOM_RPM_TEST_561, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test562", QCOM_RPM_TEST_562, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test563", QCOM_RPM_TEST_563, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test564", QCOM_RPM_TEST_564, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test565", QCOM_RPM_TEST_565, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test566", QCOM_RPM_TEST_566, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test567", QCOM_RPM_TEST_567, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test568", QCOM_RPM_TEST_568, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test569", QCOM_RPM_TEST_569, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test570", QCOM_RPM_TEST_570, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test571", QCOM_RPM_TEST_571, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test572", QCOM_RPM_TEST_572, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test573", QCOM_RPM_TEST_573, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test574", QCOM_RPM_TEST_574, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test575", QCOM_RPM_TEST_575, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test576", QCOM_RPM_TEST_576, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test577", QCOM_RPM_TEST_577, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test578", QCOM_RPM_TEST_578, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test579", QCOM_RPM_TEST_579, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test580", QCOM_RPM_TEST_580, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test581", QCOM_RPM_TEST_581, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test582", QCOM_RPM_TEST_582, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test583", QCOM_RPM_TEST_583, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test584", QCOM_RPM_TEST_584, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test585", QCOM_RPM_TEST_585, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test586", QCOM_RPM_TEST_586, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test587", QCOM_RPM_TEST_587, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test588", QCOM_RPM_TEST_588, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test589", QCOM_RPM_TEST_589, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test590", QCOM_RPM_TEST_590, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test591", QCOM_RPM_TEST_591, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test592", QCOM_RPM_TEST_592, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test593", QCOM_RPM_TEST_593, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test594", QCOM_RPM_TEST_594, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test595", QCOM_RPM_TEST_595, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test596", QCOM_RPM_TEST_596, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test597", QCOM_RPM_TEST_597, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test598", QCOM_RPM_TEST_598, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test599", QCOM_RPM_TEST_599, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test600", QCOM_RPM_TEST_600, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test601", QCOM_RPM_TEST_601, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test602", QCOM_RPM_TEST_602, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test603", QCOM_RPM_TEST_603, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test604", QCOM_RPM_TEST_604, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test605", QCOM_RPM_TEST_605, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test606", QCOM_RPM_TEST_606, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test607", QCOM_RPM_TEST_607, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test608", QCOM_RPM_TEST_608, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test609", QCOM_RPM_TEST_609, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test610", QCOM_RPM_TEST_610, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test611", QCOM_RPM_TEST_611, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test612", QCOM_RPM_TEST_612, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test613", QCOM_RPM_TEST_613, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test614", QCOM_RPM_TEST_614, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test615", QCOM_RPM_TEST_615, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test616", QCOM_RPM_TEST_616, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test617", QCOM_RPM_TEST_617, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test618", QCOM_RPM_TEST_618, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test619", QCOM_RPM_TEST_619, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test620", QCOM_RPM_TEST_620, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test621", QCOM_RPM_TEST_621, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test622", QCOM_RPM_TEST_622, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test623", QCOM_RPM_TEST_623, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test624", QCOM_RPM_TEST_624, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test625", QCOM_RPM_TEST_625, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test626", QCOM_RPM_TEST_626, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test627", QCOM_RPM_TEST_627, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test628", QCOM_RPM_TEST_628, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test629", QCOM_RPM_TEST_629, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test630", QCOM_RPM_TEST_630, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test631", QCOM_RPM_TEST_631, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test632", QCOM_RPM_TEST_632, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test633", QCOM_RPM_TEST_633, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test634", QCOM_RPM_TEST_634, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test635", QCOM_RPM_TEST_635, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test636", QCOM_RPM_TEST_636, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test637", QCOM_RPM_TEST_637, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test638", QCOM_RPM_TEST_638, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test639", QCOM_RPM_TEST_639, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test640", QCOM_RPM_TEST_640, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test641", QCOM_RPM_TEST_641, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test642", QCOM_RPM_TEST_642, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test643", QCOM_RPM_TEST_643, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test644", QCOM_RPM_TEST_644, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test645", QCOM_RPM_TEST_645, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test646", QCOM_RPM_TEST_646, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test647", QCOM_RPM_TEST_647, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test648", QCOM_RPM_TEST_648, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test649", QCOM_RPM_TEST_649, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test650", QCOM_RPM_TEST_650, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test651", QCOM_RPM_TEST_651, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test652", QCOM_RPM_TEST_652, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test653", QCOM_RPM_TEST_653, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test654", QCOM_RPM_TEST_654, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test655", QCOM_RPM_TEST_655, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test656", QCOM_RPM_TEST_656, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test657", QCOM_RPM_TEST_657, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test658", QCOM_RPM_TEST_658, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test659", QCOM_RPM_TEST_659, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test660", QCOM_RPM_TEST_660, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test661", QCOM_RPM_TEST_661, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test662", QCOM_RPM_TEST_662, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test663", QCOM_RPM_TEST_663, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test664", QCOM_RPM_TEST_664, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test665", QCOM_RPM_TEST_665, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test666", QCOM_RPM_TEST_666, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test667", QCOM_RPM_TEST_667, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test668", QCOM_RPM_TEST_668, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test669", QCOM_RPM_TEST_669, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test670", QCOM_RPM_TEST_670, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test671", QCOM_RPM_TEST_671, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test672", QCOM_RPM_TEST_672, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test673", QCOM_RPM_TEST_673, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test674", QCOM_RPM_TEST_674, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test675", QCOM_RPM_TEST_675, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test676", QCOM_RPM_TEST_676, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test677", QCOM_RPM_TEST_677, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test678", QCOM_RPM_TEST_678, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test679", QCOM_RPM_TEST_679, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test680", QCOM_RPM_TEST_680, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test681", QCOM_RPM_TEST_681, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test682", QCOM_RPM_TEST_682, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test683", QCOM_RPM_TEST_683, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test684", QCOM_RPM_TEST_684, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test685", QCOM_RPM_TEST_685, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test686", QCOM_RPM_TEST_686, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test687", QCOM_RPM_TEST_687, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test688", QCOM_RPM_TEST_688, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test689", QCOM_RPM_TEST_689, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test690", QCOM_RPM_TEST_690, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test691", QCOM_RPM_TEST_691, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test692", QCOM_RPM_TEST_692, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test693", QCOM_RPM_TEST_693, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test694", QCOM_RPM_TEST_694, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test695", QCOM_RPM_TEST_695, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test696", QCOM_RPM_TEST_696, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test697", QCOM_RPM_TEST_697, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test698", QCOM_RPM_TEST_698, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test699", QCOM_RPM_TEST_699, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test700", QCOM_RPM_TEST_700, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test701", QCOM_RPM_TEST_701, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test702", QCOM_RPM_TEST_702, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test703", QCOM_RPM_TEST_703, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test704", QCOM_RPM_TEST_704, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test705", QCOM_RPM_TEST_705, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test706", QCOM_RPM_TEST_706, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test707", QCOM_RPM_TEST_707, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test708", QCOM_RPM_TEST_708, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test709", QCOM_RPM_TEST_709, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test710", QCOM_RPM_TEST_710, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test711", QCOM_RPM_TEST_711, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test712", QCOM_RPM_TEST_712, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test713", QCOM_RPM_TEST_713, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test714", QCOM_RPM_TEST_714, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test715", QCOM_RPM_TEST_715, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test716", QCOM_RPM_TEST_716, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test717", QCOM_RPM_TEST_717, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test718", QCOM_RPM_TEST_718, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test719", QCOM_RPM_TEST_719, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test720", QCOM_RPM_TEST_720, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test721", QCOM_RPM_TEST_721, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test722", QCOM_RPM_TEST_722, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test723", QCOM_RPM_TEST_723, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test724", QCOM_RPM_TEST_724, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test725", QCOM_RPM_TEST_725, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test726", QCOM_RPM_TEST_726, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test727", QCOM_RPM_TEST_727, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test728", QCOM_RPM_TEST_728, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test729", QCOM_RPM_TEST_729, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test730", QCOM_RPM_TEST_730, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test731", QCOM_RPM_TEST_731, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test732", QCOM_RPM_TEST_732, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test733", QCOM_RPM_TEST_733, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test734", QCOM_RPM_TEST_734, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test735", QCOM_RPM_TEST_735, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test736", QCOM_RPM_TEST_736, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test737", QCOM_RPM_TEST_737, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test738", QCOM_RPM_TEST_738, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test739", QCOM_RPM_TEST_739, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test740", QCOM_RPM_TEST_740, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test741", QCOM_RPM_TEST_741, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test742", QCOM_RPM_TEST_742, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test743", QCOM_RPM_TEST_743, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test744", QCOM_RPM_TEST_744, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test745", QCOM_RPM_TEST_745, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test746", QCOM_RPM_TEST_746, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test747", QCOM_RPM_TEST_747, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test748", QCOM_RPM_TEST_748, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test749", QCOM_RPM_TEST_749, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test750", QCOM_RPM_TEST_750, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test751", QCOM_RPM_TEST_751, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test752", QCOM_RPM_TEST_752, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test753", QCOM_RPM_TEST_753, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test754", QCOM_RPM_TEST_754, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test755", QCOM_RPM_TEST_755, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test756", QCOM_RPM_TEST_756, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test757", QCOM_RPM_TEST_757, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test758", QCOM_RPM_TEST_758, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test759", QCOM_RPM_TEST_759, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test760", QCOM_RPM_TEST_760, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test761", QCOM_RPM_TEST_761, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test762", QCOM_RPM_TEST_762, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test763", QCOM_RPM_TEST_763, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test764", QCOM_RPM_TEST_764, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test765", QCOM_RPM_TEST_765, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test766", QCOM_RPM_TEST_766, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test767", QCOM_RPM_TEST_767, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test768", QCOM_RPM_TEST_768, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test769", QCOM_RPM_TEST_769, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test770", QCOM_RPM_TEST_770, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test771", QCOM_RPM_TEST_771, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test772", QCOM_RPM_TEST_772, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test773", QCOM_RPM_TEST_773, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test774", QCOM_RPM_TEST_774, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test775", QCOM_RPM_TEST_775, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test776", QCOM_RPM_TEST_776, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test777", QCOM_RPM_TEST_777, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test778", QCOM_RPM_TEST_778, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test779", QCOM_RPM_TEST_779, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test780", QCOM_RPM_TEST_780, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test781", QCOM_RPM_TEST_781, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test782", QCOM_RPM_TEST_782, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test783", QCOM_RPM_TEST_783, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test784", QCOM_RPM_TEST_784, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test785", QCOM_RPM_TEST_785, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test786", QCOM_RPM_TEST_786, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test787", QCOM_RPM_TEST_787, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test788", QCOM_RPM_TEST_788, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test789", QCOM_RPM_TEST_789, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test790", QCOM_RPM_TEST_790, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test791", QCOM_RPM_TEST_791, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test792", QCOM_RPM_TEST_792, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test793", QCOM_RPM_TEST_793, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test794", QCOM_RPM_TEST_794, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test795", QCOM_RPM_TEST_795, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test796", QCOM_RPM_TEST_796, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test797", QCOM_RPM_TEST_797, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test798", QCOM_RPM_TEST_798, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test799", QCOM_RPM_TEST_799, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test800", QCOM_RPM_TEST_800, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test801", QCOM_RPM_TEST_801, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test802", QCOM_RPM_TEST_802, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test803", QCOM_RPM_TEST_803, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test804", QCOM_RPM_TEST_804, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test805", QCOM_RPM_TEST_805, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test806", QCOM_RPM_TEST_806, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test807", QCOM_RPM_TEST_807, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test808", QCOM_RPM_TEST_808, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test809", QCOM_RPM_TEST_809, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test810", QCOM_RPM_TEST_810, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test811", QCOM_RPM_TEST_811, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test812", QCOM_RPM_TEST_812, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test813", QCOM_RPM_TEST_813, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test814", QCOM_RPM_TEST_814, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test815", QCOM_RPM_TEST_815, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test816", QCOM_RPM_TEST_816, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test817", QCOM_RPM_TEST_817, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test818", QCOM_RPM_TEST_818, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test819", QCOM_RPM_TEST_819, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test820", QCOM_RPM_TEST_820, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test821", QCOM_RPM_TEST_821, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test822", QCOM_RPM_TEST_822, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test823", QCOM_RPM_TEST_823, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test824", QCOM_RPM_TEST_824, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test825", QCOM_RPM_TEST_825, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test826", QCOM_RPM_TEST_826, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test827", QCOM_RPM_TEST_827, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test828", QCOM_RPM_TEST_828, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test829", QCOM_RPM_TEST_829, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test830", QCOM_RPM_TEST_830, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test831", QCOM_RPM_TEST_831, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test832", QCOM_RPM_TEST_832, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test833", QCOM_RPM_TEST_833, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test834", QCOM_RPM_TEST_834, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test835", QCOM_RPM_TEST_835, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test836", QCOM_RPM_TEST_836, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test837", QCOM_RPM_TEST_837, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test838", QCOM_RPM_TEST_838, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test839", QCOM_RPM_TEST_839, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test840", QCOM_RPM_TEST_840, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test841", QCOM_RPM_TEST_841, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test842", QCOM_RPM_TEST_842, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test843", QCOM_RPM_TEST_843, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test844", QCOM_RPM_TEST_844, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test845", QCOM_RPM_TEST_845, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test846", QCOM_RPM_TEST_846, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test847", QCOM_RPM_TEST_847, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test848", QCOM_RPM_TEST_848, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test849", QCOM_RPM_TEST_849, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test850", QCOM_RPM_TEST_850, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test851", QCOM_RPM_TEST_851, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test852", QCOM_RPM_TEST_852, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test853", QCOM_RPM_TEST_853, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test854", QCOM_RPM_TEST_854, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test855", QCOM_RPM_TEST_855, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test856", QCOM_RPM_TEST_856, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test857", QCOM_RPM_TEST_857, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test858", QCOM_RPM_TEST_858, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test859", QCOM_RPM_TEST_859, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test860", QCOM_RPM_TEST_860, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test861", QCOM_RPM_TEST_861, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test862", QCOM_RPM_TEST_862, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test863", QCOM_RPM_TEST_863, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test864", QCOM_RPM_TEST_864, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test865", QCOM_RPM_TEST_865, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test866", QCOM_RPM_TEST_866, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test867", QCOM_RPM_TEST_867, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test868", QCOM_RPM_TEST_868, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test869", QCOM_RPM_TEST_869, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test870", QCOM_RPM_TEST_870, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test871", QCOM_RPM_TEST_871, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test872", QCOM_RPM_TEST_872, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test873", QCOM_RPM_TEST_873, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test874", QCOM_RPM_TEST_874, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test875", QCOM_RPM_TEST_875, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test876", QCOM_RPM_TEST_876, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test877", QCOM_RPM_TEST_877, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test878", QCOM_RPM_TEST_878, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test879", QCOM_RPM_TEST_879, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test880", QCOM_RPM_TEST_880, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test881", QCOM_RPM_TEST_881, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test882", QCOM_RPM_TEST_882, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test883", QCOM_RPM_TEST_883, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test884", QCOM_RPM_TEST_884, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test885", QCOM_RPM_TEST_885, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test886", QCOM_RPM_TEST_886, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test887", QCOM_RPM_TEST_887, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test888", QCOM_RPM_TEST_888, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test889", QCOM_RPM_TEST_889, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test890", QCOM_RPM_TEST_890, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test891", QCOM_RPM_TEST_891, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test892", QCOM_RPM_TEST_892, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test893", QCOM_RPM_TEST_893, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test894", QCOM_RPM_TEST_894, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test895", QCOM_RPM_TEST_895, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test896", QCOM_RPM_TEST_896, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test897", QCOM_RPM_TEST_897, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test898", QCOM_RPM_TEST_898, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test899", QCOM_RPM_TEST_899, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test900", QCOM_RPM_TEST_900, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test901", QCOM_RPM_TEST_901, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test902", QCOM_RPM_TEST_902, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test903", QCOM_RPM_TEST_903, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test904", QCOM_RPM_TEST_904, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test905", QCOM_RPM_TEST_905, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test906", QCOM_RPM_TEST_906, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test907", QCOM_RPM_TEST_907, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test908", QCOM_RPM_TEST_908, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test909", QCOM_RPM_TEST_909, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test910", QCOM_RPM_TEST_910, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test911", QCOM_RPM_TEST_911, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test912", QCOM_RPM_TEST_912, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test913", QCOM_RPM_TEST_913, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test914", QCOM_RPM_TEST_914, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test915", QCOM_RPM_TEST_915, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test916", QCOM_RPM_TEST_916, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test917", QCOM_RPM_TEST_917, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test918", QCOM_RPM_TEST_918, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test919", QCOM_RPM_TEST_919, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test920", QCOM_RPM_TEST_920, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test921", QCOM_RPM_TEST_921, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test922", QCOM_RPM_TEST_922, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test923", QCOM_RPM_TEST_923, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test924", QCOM_RPM_TEST_924, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test925", QCOM_RPM_TEST_925, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test926", QCOM_RPM_TEST_926, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test927", QCOM_RPM_TEST_927, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test928", QCOM_RPM_TEST_928, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test929", QCOM_RPM_TEST_929, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test930", QCOM_RPM_TEST_930, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test931", QCOM_RPM_TEST_931, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test932", QCOM_RPM_TEST_932, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test933", QCOM_RPM_TEST_933, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test934", QCOM_RPM_TEST_934, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test935", QCOM_RPM_TEST_935, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test936", QCOM_RPM_TEST_936, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test937", QCOM_RPM_TEST_937, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test938", QCOM_RPM_TEST_938, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test939", QCOM_RPM_TEST_939, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test940", QCOM_RPM_TEST_940, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test941", QCOM_RPM_TEST_941, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test942", QCOM_RPM_TEST_942, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test943", QCOM_RPM_TEST_943, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test944", QCOM_RPM_TEST_944, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test945", QCOM_RPM_TEST_945, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test946", QCOM_RPM_TEST_946, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test947", QCOM_RPM_TEST_947, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test948", QCOM_RPM_TEST_948, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test949", QCOM_RPM_TEST_949, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test950", QCOM_RPM_TEST_950, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test951", QCOM_RPM_TEST_951, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test952", QCOM_RPM_TEST_952, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test953", QCOM_RPM_TEST_953, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test954", QCOM_RPM_TEST_954, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test955", QCOM_RPM_TEST_955, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test956", QCOM_RPM_TEST_956, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test957", QCOM_RPM_TEST_957, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test958", QCOM_RPM_TEST_958, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test959", QCOM_RPM_TEST_959, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test960", QCOM_RPM_TEST_960, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test961", QCOM_RPM_TEST_961, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test962", QCOM_RPM_TEST_962, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test963", QCOM_RPM_TEST_963, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test964", QCOM_RPM_TEST_964, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test965", QCOM_RPM_TEST_965, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test966", QCOM_RPM_TEST_966, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test967", QCOM_RPM_TEST_967, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test968", QCOM_RPM_TEST_968, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test969", QCOM_RPM_TEST_969, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test970", QCOM_RPM_TEST_970, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test971", QCOM_RPM_TEST_971, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test972", QCOM_RPM_TEST_972, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test973", QCOM_RPM_TEST_973, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test974", QCOM_RPM_TEST_974, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test975", QCOM_RPM_TEST_975, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test976", QCOM_RPM_TEST_976, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test977", QCOM_RPM_TEST_977, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test978", QCOM_RPM_TEST_978, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test979", QCOM_RPM_TEST_979, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test980", QCOM_RPM_TEST_980, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test981", QCOM_RPM_TEST_981, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test982", QCOM_RPM_TEST_982, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test983", QCOM_RPM_TEST_983, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test984", QCOM_RPM_TEST_984, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test985", QCOM_RPM_TEST_985, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test986", QCOM_RPM_TEST_986, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test987", QCOM_RPM_TEST_987, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test988", QCOM_RPM_TEST_988, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test989", QCOM_RPM_TEST_989, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test990", QCOM_RPM_TEST_990, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test991", QCOM_RPM_TEST_991, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test992", QCOM_RPM_TEST_992, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test993", QCOM_RPM_TEST_993, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test994", QCOM_RPM_TEST_994, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test995", QCOM_RPM_TEST_995, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test996", QCOM_RPM_TEST_996, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test997", QCOM_RPM_TEST_997, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test998", QCOM_RPM_TEST_998, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test999", QCOM_RPM_TEST_999, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1000", QCOM_RPM_TEST_1000, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1001", QCOM_RPM_TEST_1001, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1002", QCOM_RPM_TEST_1002, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1003", QCOM_RPM_TEST_1003, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1004", QCOM_RPM_TEST_1004, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1005", QCOM_RPM_TEST_1005, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1006", QCOM_RPM_TEST_1006, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1007", QCOM_RPM_TEST_1007, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1008", QCOM_RPM_TEST_1008, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1009", QCOM_RPM_TEST_1009, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1010", QCOM_RPM_TEST_1010, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1011", QCOM_RPM_TEST_1011, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1012", QCOM_RPM_TEST_1012, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1013", QCOM_RPM_TEST_1013, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1014", QCOM_RPM_TEST_1014, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1015", QCOM_RPM_TEST_1015, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1016", QCOM_RPM_TEST_1016, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1017", QCOM_RPM_TEST_1017, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1018", QCOM_RPM_TEST_1018, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1019", QCOM_RPM_TEST_1019, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1020", QCOM_RPM_TEST_1020, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1021", QCOM_RPM_TEST_1021, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1022", QCOM_RPM_TEST_1022, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1023", QCOM_RPM_TEST_1023, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1024", QCOM_RPM_TEST_1024, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1025", QCOM_RPM_TEST_1025, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1026", QCOM_RPM_TEST_1026, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1027", QCOM_RPM_TEST_1027, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1028", QCOM_RPM_TEST_1028, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1029", QCOM_RPM_TEST_1029, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1030", QCOM_RPM_TEST_1030, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1031", QCOM_RPM_TEST_1031, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1032", QCOM_RPM_TEST_1032, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1033", QCOM_RPM_TEST_1033, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1034", QCOM_RPM_TEST_1034, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1035", QCOM_RPM_TEST_1035, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1036", QCOM_RPM_TEST_1036, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1037", QCOM_RPM_TEST_1037, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1038", QCOM_RPM_TEST_1038, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1039", QCOM_RPM_TEST_1039, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1040", QCOM_RPM_TEST_1040, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1041", QCOM_RPM_TEST_1041, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1042", QCOM_RPM_TEST_1042, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1043", QCOM_RPM_TEST_1043, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1044", QCOM_RPM_TEST_1044, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1045", QCOM_RPM_TEST_1045, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1046", QCOM_RPM_TEST_1046, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1047", QCOM_RPM_TEST_1047, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1048", QCOM_RPM_TEST_1048, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1049", QCOM_RPM_TEST_1049, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1050", QCOM_RPM_TEST_1050, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1051", QCOM_RPM_TEST_1051, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1052", QCOM_RPM_TEST_1052, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1053", QCOM_RPM_TEST_1053, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1054", QCOM_RPM_TEST_1054, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1055", QCOM_RPM_TEST_1055, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1056", QCOM_RPM_TEST_1056, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1057", QCOM_RPM_TEST_1057, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1058", QCOM_RPM_TEST_1058, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1059", QCOM_RPM_TEST_1059, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1060", QCOM_RPM_TEST_1060, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1061", QCOM_RPM_TEST_1061, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1062", QCOM_RPM_TEST_1062, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1063", QCOM_RPM_TEST_1063, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1064", QCOM_RPM_TEST_1064, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1065", QCOM_RPM_TEST_1065, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1066", QCOM_RPM_TEST_1066, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1067", QCOM_RPM_TEST_1067, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1068", QCOM_RPM_TEST_1068, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1069", QCOM_RPM_TEST_1069, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1070", QCOM_RPM_TEST_1070, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1071", QCOM_RPM_TEST_1071, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1072", QCOM_RPM_TEST_1072, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1073", QCOM_RPM_TEST_1073, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1074", QCOM_RPM_TEST_1074, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1075", QCOM_RPM_TEST_1075, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1076", QCOM_RPM_TEST_1076, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1077", QCOM_RPM_TEST_1077, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1078", QCOM_RPM_TEST_1078, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1079", QCOM_RPM_TEST_1079, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1080", QCOM_RPM_TEST_1080, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1081", QCOM_RPM_TEST_1081, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1082", QCOM_RPM_TEST_1082, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1083", QCOM_RPM_TEST_1083, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1084", QCOM_RPM_TEST_1084, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1085", QCOM_RPM_TEST_1085, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1086", QCOM_RPM_TEST_1086, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1087", QCOM_RPM_TEST_1087, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1088", QCOM_RPM_TEST_1088, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1089", QCOM_RPM_TEST_1089, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1090", QCOM_RPM_TEST_1090, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1091", QCOM_RPM_TEST_1091, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1092", QCOM_RPM_TEST_1092, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1093", QCOM_RPM_TEST_1093, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1094", QCOM_RPM_TEST_1094, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1095", QCOM_RPM_TEST_1095, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1096", QCOM_RPM_TEST_1096, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1097", QCOM_RPM_TEST_1097, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1098", QCOM_RPM_TEST_1098, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1099", QCOM_RPM_TEST_1099, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1100", QCOM_RPM_TEST_1100, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1101", QCOM_RPM_TEST_1101, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1102", QCOM_RPM_TEST_1102, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1103", QCOM_RPM_TEST_1103, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1104", QCOM_RPM_TEST_1104, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1105", QCOM_RPM_TEST_1105, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1106", QCOM_RPM_TEST_1106, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1107", QCOM_RPM_TEST_1107, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1108", QCOM_RPM_TEST_1108, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1109", QCOM_RPM_TEST_1109, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1110", QCOM_RPM_TEST_1110, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1111", QCOM_RPM_TEST_1111, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1112", QCOM_RPM_TEST_1112, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1113", QCOM_RPM_TEST_1113, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1114", QCOM_RPM_TEST_1114, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1115", QCOM_RPM_TEST_1115, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1116", QCOM_RPM_TEST_1116, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1117", QCOM_RPM_TEST_1117, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1118", QCOM_RPM_TEST_1118, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1119", QCOM_RPM_TEST_1119, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1120", QCOM_RPM_TEST_1120, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1121", QCOM_RPM_TEST_1121, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1122", QCOM_RPM_TEST_1122, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1123", QCOM_RPM_TEST_1123, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1124", QCOM_RPM_TEST_1124, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1125", QCOM_RPM_TEST_1125, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1126", QCOM_RPM_TEST_1126, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1127", QCOM_RPM_TEST_1127, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1128", QCOM_RPM_TEST_1128, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1129", QCOM_RPM_TEST_1129, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1130", QCOM_RPM_TEST_1130, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1131", QCOM_RPM_TEST_1131, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1132", QCOM_RPM_TEST_1132, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1133", QCOM_RPM_TEST_1133, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1134", QCOM_RPM_TEST_1134, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1135", QCOM_RPM_TEST_1135, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1136", QCOM_RPM_TEST_1136, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1137", QCOM_RPM_TEST_1137, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1138", QCOM_RPM_TEST_1138, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1139", QCOM_RPM_TEST_1139, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1140", QCOM_RPM_TEST_1140, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1141", QCOM_RPM_TEST_1141, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1142", QCOM_RPM_TEST_1142, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1143", QCOM_RPM_TEST_1143, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1144", QCOM_RPM_TEST_1144, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1145", QCOM_RPM_TEST_1145, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1146", QCOM_RPM_TEST_1146, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1147", QCOM_RPM_TEST_1147, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1148", QCOM_RPM_TEST_1148, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1149", QCOM_RPM_TEST_1149, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1150", QCOM_RPM_TEST_1150, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1151", QCOM_RPM_TEST_1151, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1152", QCOM_RPM_TEST_1152, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1153", QCOM_RPM_TEST_1153, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1154", QCOM_RPM_TEST_1154, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1155", QCOM_RPM_TEST_1155, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1156", QCOM_RPM_TEST_1156, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1157", QCOM_RPM_TEST_1157, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1158", QCOM_RPM_TEST_1158, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1159", QCOM_RPM_TEST_1159, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1160", QCOM_RPM_TEST_1160, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1161", QCOM_RPM_TEST_1161, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1162", QCOM_RPM_TEST_1162, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1163", QCOM_RPM_TEST_1163, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1164", QCOM_RPM_TEST_1164, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1165", QCOM_RPM_TEST_1165, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1166", QCOM_RPM_TEST_1166, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1167", QCOM_RPM_TEST_1167, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1168", QCOM_RPM_TEST_1168, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1169", QCOM_RPM_TEST_1169, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1170", QCOM_RPM_TEST_1170, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1171", QCOM_RPM_TEST_1171, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1172", QCOM_RPM_TEST_1172, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1173", QCOM_RPM_TEST_1173, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1174", QCOM_RPM_TEST_1174, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1175", QCOM_RPM_TEST_1175, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1176", QCOM_RPM_TEST_1176, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1177", QCOM_RPM_TEST_1177, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1178", QCOM_RPM_TEST_1178, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1179", QCOM_RPM_TEST_1179, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1180", QCOM_RPM_TEST_1180, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1181", QCOM_RPM_TEST_1181, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1182", QCOM_RPM_TEST_1182, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1183", QCOM_RPM_TEST_1183, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1184", QCOM_RPM_TEST_1184, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1185", QCOM_RPM_TEST_1185, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1186", QCOM_RPM_TEST_1186, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1187", QCOM_RPM_TEST_1187, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1188", QCOM_RPM_TEST_1188, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1189", QCOM_RPM_TEST_1189, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1190", QCOM_RPM_TEST_1190, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1191", QCOM_RPM_TEST_1191, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1192", QCOM_RPM_TEST_1192, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1193", QCOM_RPM_TEST_1193, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1194", QCOM_RPM_TEST_1194, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1195", QCOM_RPM_TEST_1195, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1196", QCOM_RPM_TEST_1196, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1197", QCOM_RPM_TEST_1197, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1198", QCOM_RPM_TEST_1198, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1199", QCOM_RPM_TEST_1199, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1200", QCOM_RPM_TEST_1200, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1201", QCOM_RPM_TEST_1201, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1202", QCOM_RPM_TEST_1202, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1203", QCOM_RPM_TEST_1203, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1204", QCOM_RPM_TEST_1204, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1205", QCOM_RPM_TEST_1205, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1206", QCOM_RPM_TEST_1206, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1207", QCOM_RPM_TEST_1207, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1208", QCOM_RPM_TEST_1208, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1209", QCOM_RPM_TEST_1209, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1210", QCOM_RPM_TEST_1210, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1211", QCOM_RPM_TEST_1211, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1212", QCOM_RPM_TEST_1212, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1213", QCOM_RPM_TEST_1213, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1214", QCOM_RPM_TEST_1214, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1215", QCOM_RPM_TEST_1215, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1216", QCOM_RPM_TEST_1216, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1217", QCOM_RPM_TEST_1217, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1218", QCOM_RPM_TEST_1218, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1219", QCOM_RPM_TEST_1219, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1220", QCOM_RPM_TEST_1220, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1221", QCOM_RPM_TEST_1221, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1222", QCOM_RPM_TEST_1222, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1223", QCOM_RPM_TEST_1223, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1224", QCOM_RPM_TEST_1224, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1225", QCOM_RPM_TEST_1225, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1226", QCOM_RPM_TEST_1226, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1227", QCOM_RPM_TEST_1227, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1228", QCOM_RPM_TEST_1228, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1229", QCOM_RPM_TEST_1229, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1230", QCOM_RPM_TEST_1230, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1231", QCOM_RPM_TEST_1231, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1232", QCOM_RPM_TEST_1232, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1233", QCOM_RPM_TEST_1233, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1234", QCOM_RPM_TEST_1234, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1235", QCOM_RPM_TEST_1235, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1236", QCOM_RPM_TEST_1236, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1237", QCOM_RPM_TEST_1237, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1238", QCOM_RPM_TEST_1238, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1239", QCOM_RPM_TEST_1239, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1240", QCOM_RPM_TEST_1240, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1241", QCOM_RPM_TEST_1241, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1242", QCOM_RPM_TEST_1242, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1243", QCOM_RPM_TEST_1243, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1244", QCOM_RPM_TEST_1244, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1245", QCOM_RPM_TEST_1245, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1246", QCOM_RPM_TEST_1246, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1247", QCOM_RPM_TEST_1247, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1248", QCOM_RPM_TEST_1248, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1249", QCOM_RPM_TEST_1249, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1250", QCOM_RPM_TEST_1250, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1251", QCOM_RPM_TEST_1251, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1252", QCOM_RPM_TEST_1252, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1253", QCOM_RPM_TEST_1253, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1254", QCOM_RPM_TEST_1254, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1255", QCOM_RPM_TEST_1255, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1256", QCOM_RPM_TEST_1256, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1257", QCOM_RPM_TEST_1257, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1258", QCOM_RPM_TEST_1258, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1259", QCOM_RPM_TEST_1259, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1260", QCOM_RPM_TEST_1260, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1261", QCOM_RPM_TEST_1261, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1262", QCOM_RPM_TEST_1262, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1263", QCOM_RPM_TEST_1263, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1264", QCOM_RPM_TEST_1264, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1265", QCOM_RPM_TEST_1265, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1266", QCOM_RPM_TEST_1266, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1267", QCOM_RPM_TEST_1267, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1268", QCOM_RPM_TEST_1268, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1269", QCOM_RPM_TEST_1269, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1270", QCOM_RPM_TEST_1270, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1271", QCOM_RPM_TEST_1271, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1272", QCOM_RPM_TEST_1272, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1273", QCOM_RPM_TEST_1273, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1274", QCOM_RPM_TEST_1274, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1275", QCOM_RPM_TEST_1275, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1276", QCOM_RPM_TEST_1276, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1277", QCOM_RPM_TEST_1277, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1278", QCOM_RPM_TEST_1278, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1279", QCOM_RPM_TEST_1279, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1280", QCOM_RPM_TEST_1280, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1281", QCOM_RPM_TEST_1281, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1282", QCOM_RPM_TEST_1282, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1283", QCOM_RPM_TEST_1283, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1284", QCOM_RPM_TEST_1284, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1285", QCOM_RPM_TEST_1285, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1286", QCOM_RPM_TEST_1286, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1287", QCOM_RPM_TEST_1287, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1288", QCOM_RPM_TEST_1288, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1289", QCOM_RPM_TEST_1289, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1290", QCOM_RPM_TEST_1290, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1291", QCOM_RPM_TEST_1291, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1292", QCOM_RPM_TEST_1292, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1293", QCOM_RPM_TEST_1293, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1294", QCOM_RPM_TEST_1294, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1295", QCOM_RPM_TEST_1295, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1296", QCOM_RPM_TEST_1296, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1297", QCOM_RPM_TEST_1297, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1298", QCOM_RPM_TEST_1298, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1299", QCOM_RPM_TEST_1299, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1300", QCOM_RPM_TEST_1300, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1301", QCOM_RPM_TEST_1301, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1302", QCOM_RPM_TEST_1302, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1303", QCOM_RPM_TEST_1303, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1304", QCOM_RPM_TEST_1304, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1305", QCOM_RPM_TEST_1305, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1306", QCOM_RPM_TEST_1306, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1307", QCOM_RPM_TEST_1307, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1308", QCOM_RPM_TEST_1308, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1309", QCOM_RPM_TEST_1309, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1310", QCOM_RPM_TEST_1310, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1311", QCOM_RPM_TEST_1311, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1312", QCOM_RPM_TEST_1312, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1313", QCOM_RPM_TEST_1313, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1314", QCOM_RPM_TEST_1314, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1315", QCOM_RPM_TEST_1315, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1316", QCOM_RPM_TEST_1316, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1317", QCOM_RPM_TEST_1317, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1318", QCOM_RPM_TEST_1318, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1319", QCOM_RPM_TEST_1319, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1320", QCOM_RPM_TEST_1320, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1321", QCOM_RPM_TEST_1321, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1322", QCOM_RPM_TEST_1322, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1323", QCOM_RPM_TEST_1323, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1324", QCOM_RPM_TEST_1324, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1325", QCOM_RPM_TEST_1325, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1326", QCOM_RPM_TEST_1326, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1327", QCOM_RPM_TEST_1327, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1328", QCOM_RPM_TEST_1328, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1329", QCOM_RPM_TEST_1329, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1330", QCOM_RPM_TEST_1330, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1331", QCOM_RPM_TEST_1331, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1332", QCOM_RPM_TEST_1332, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1333", QCOM_RPM_TEST_1333, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1334", QCOM_RPM_TEST_1334, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1335", QCOM_RPM_TEST_1335, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1336", QCOM_RPM_TEST_1336, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1337", QCOM_RPM_TEST_1337, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1338", QCOM_RPM_TEST_1338, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1339", QCOM_RPM_TEST_1339, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1340", QCOM_RPM_TEST_1340, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1341", QCOM_RPM_TEST_1341, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1342", QCOM_RPM_TEST_1342, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1343", QCOM_RPM_TEST_1343, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1344", QCOM_RPM_TEST_1344, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1345", QCOM_RPM_TEST_1345, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1346", QCOM_RPM_TEST_1346, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1347", QCOM_RPM_TEST_1347, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1348", QCOM_RPM_TEST_1348, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1349", QCOM_RPM_TEST_1349, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1350", QCOM_RPM_TEST_1350, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1351", QCOM_RPM_TEST_1351, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1352", QCOM_RPM_TEST_1352, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1353", QCOM_RPM_TEST_1353, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1354", QCOM_RPM_TEST_1354, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1355", QCOM_RPM_TEST_1355, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1356", QCOM_RPM_TEST_1356, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1357", QCOM_RPM_TEST_1357, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1358", QCOM_RPM_TEST_1358, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1359", QCOM_RPM_TEST_1359, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1360", QCOM_RPM_TEST_1360, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1361", QCOM_RPM_TEST_1361, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1362", QCOM_RPM_TEST_1362, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1363", QCOM_RPM_TEST_1363, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1364", QCOM_RPM_TEST_1364, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1365", QCOM_RPM_TEST_1365, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1366", QCOM_RPM_TEST_1366, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1367", QCOM_RPM_TEST_1367, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1368", QCOM_RPM_TEST_1368, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1369", QCOM_RPM_TEST_1369, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1370", QCOM_RPM_TEST_1370, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1371", QCOM_RPM_TEST_1371, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1372", QCOM_RPM_TEST_1372, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1373", QCOM_RPM_TEST_1373, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1374", QCOM_RPM_TEST_1374, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1375", QCOM_RPM_TEST_1375, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1376", QCOM_RPM_TEST_1376, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1377", QCOM_RPM_TEST_1377, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1378", QCOM_RPM_TEST_1378, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1379", QCOM_RPM_TEST_1379, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1380", QCOM_RPM_TEST_1380, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1381", QCOM_RPM_TEST_1381, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1382", QCOM_RPM_TEST_1382, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1383", QCOM_RPM_TEST_1383, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1384", QCOM_RPM_TEST_1384, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1385", QCOM_RPM_TEST_1385, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1386", QCOM_RPM_TEST_1386, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1387", QCOM_RPM_TEST_1387, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1388", QCOM_RPM_TEST_1388, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1389", QCOM_RPM_TEST_1389, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1390", QCOM_RPM_TEST_1390, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1391", QCOM_RPM_TEST_1391, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1392", QCOM_RPM_TEST_1392, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1393", QCOM_RPM_TEST_1393, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1394", QCOM_RPM_TEST_1394, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1395", QCOM_RPM_TEST_1395, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1396", QCOM_RPM_TEST_1396, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1397", QCOM_RPM_TEST_1397, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1398", QCOM_RPM_TEST_1398, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1399", QCOM_RPM_TEST_1399, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1400", QCOM_RPM_TEST_1400, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1401", QCOM_RPM_TEST_1401, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1402", QCOM_RPM_TEST_1402, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1403", QCOM_RPM_TEST_1403, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1404", QCOM_RPM_TEST_1404, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1405", QCOM_RPM_TEST_1405, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1406", QCOM_RPM_TEST_1406, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1407", QCOM_RPM_TEST_1407, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1408", QCOM_RPM_TEST_1408, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1409", QCOM_RPM_TEST_1409, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1410", QCOM_RPM_TEST_1410, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1411", QCOM_RPM_TEST_1411, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1412", QCOM_RPM_TEST_1412, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1413", QCOM_RPM_TEST_1413, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1414", QCOM_RPM_TEST_1414, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1415", QCOM_RPM_TEST_1415, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1416", QCOM_RPM_TEST_1416, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1417", QCOM_RPM_TEST_1417, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1418", QCOM_RPM_TEST_1418, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1419", QCOM_RPM_TEST_1419, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1420", QCOM_RPM_TEST_1420, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1421", QCOM_RPM_TEST_1421, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1422", QCOM_RPM_TEST_1422, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1423", QCOM_RPM_TEST_1423, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1424", QCOM_RPM_TEST_1424, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1425", QCOM_RPM_TEST_1425, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1426", QCOM_RPM_TEST_1426, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1427", QCOM_RPM_TEST_1427, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1428", QCOM_RPM_TEST_1428, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1429", QCOM_RPM_TEST_1429, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1430", QCOM_RPM_TEST_1430, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1431", QCOM_RPM_TEST_1431, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1432", QCOM_RPM_TEST_1432, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1433", QCOM_RPM_TEST_1433, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1434", QCOM_RPM_TEST_1434, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1435", QCOM_RPM_TEST_1435, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1436", QCOM_RPM_TEST_1436, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1437", QCOM_RPM_TEST_1437, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1438", QCOM_RPM_TEST_1438, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1439", QCOM_RPM_TEST_1439, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1440", QCOM_RPM_TEST_1440, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1441", QCOM_RPM_TEST_1441, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1442", QCOM_RPM_TEST_1442, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1443", QCOM_RPM_TEST_1443, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1444", QCOM_RPM_TEST_1444, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1445", QCOM_RPM_TEST_1445, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1446", QCOM_RPM_TEST_1446, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1447", QCOM_RPM_TEST_1447, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1448", QCOM_RPM_TEST_1448, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1449", QCOM_RPM_TEST_1449, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1450", QCOM_RPM_TEST_1450, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1451", QCOM_RPM_TEST_1451, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1452", QCOM_RPM_TEST_1452, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1453", QCOM_RPM_TEST_1453, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1454", QCOM_RPM_TEST_1454, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1455", QCOM_RPM_TEST_1455, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1456", QCOM_RPM_TEST_1456, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1457", QCOM_RPM_TEST_1457, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1458", QCOM_RPM_TEST_1458, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1459", QCOM_RPM_TEST_1459, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1460", QCOM_RPM_TEST_1460, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1461", QCOM_RPM_TEST_1461, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1462", QCOM_RPM_TEST_1462, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1463", QCOM_RPM_TEST_1463, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1464", QCOM_RPM_TEST_1464, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1465", QCOM_RPM_TEST_1465, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1466", QCOM_RPM_TEST_1466, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1467", QCOM_RPM_TEST_1467, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1468", QCOM_RPM_TEST_1468, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1469", QCOM_RPM_TEST_1469, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1470", QCOM_RPM_TEST_1470, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1471", QCOM_RPM_TEST_1471, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1472", QCOM_RPM_TEST_1472, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1473", QCOM_RPM_TEST_1473, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1474", QCOM_RPM_TEST_1474, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1475", QCOM_RPM_TEST_1475, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1476", QCOM_RPM_TEST_1476, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1477", QCOM_RPM_TEST_1477, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1478", QCOM_RPM_TEST_1478, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1479", QCOM_RPM_TEST_1479, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1480", QCOM_RPM_TEST_1480, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1481", QCOM_RPM_TEST_1481, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1482", QCOM_RPM_TEST_1482, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1483", QCOM_RPM_TEST_1483, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1484", QCOM_RPM_TEST_1484, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1485", QCOM_RPM_TEST_1485, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1486", QCOM_RPM_TEST_1486, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1487", QCOM_RPM_TEST_1487, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1488", QCOM_RPM_TEST_1488, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1489", QCOM_RPM_TEST_1489, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1490", QCOM_RPM_TEST_1490, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1491", QCOM_RPM_TEST_1491, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1492", QCOM_RPM_TEST_1492, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1493", QCOM_RPM_TEST_1493, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1494", QCOM_RPM_TEST_1494, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1495", QCOM_RPM_TEST_1495, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1496", QCOM_RPM_TEST_1496, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1497", QCOM_RPM_TEST_1497, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1498", QCOM_RPM_TEST_1498, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1499", QCOM_RPM_TEST_1499, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1500", QCOM_RPM_TEST_1500, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1501", QCOM_RPM_TEST_1501, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1502", QCOM_RPM_TEST_1502, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1503", QCOM_RPM_TEST_1503, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1504", QCOM_RPM_TEST_1504, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1505", QCOM_RPM_TEST_1505, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1506", QCOM_RPM_TEST_1506, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1507", QCOM_RPM_TEST_1507, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1508", QCOM_RPM_TEST_1508, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1509", QCOM_RPM_TEST_1509, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1510", QCOM_RPM_TEST_1510, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1511", QCOM_RPM_TEST_1511, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1512", QCOM_RPM_TEST_1512, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1513", QCOM_RPM_TEST_1513, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1514", QCOM_RPM_TEST_1514, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1515", QCOM_RPM_TEST_1515, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1516", QCOM_RPM_TEST_1516, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1517", QCOM_RPM_TEST_1517, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1518", QCOM_RPM_TEST_1518, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1519", QCOM_RPM_TEST_1519, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1520", QCOM_RPM_TEST_1520, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1521", QCOM_RPM_TEST_1521, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1522", QCOM_RPM_TEST_1522, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1523", QCOM_RPM_TEST_1523, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1524", QCOM_RPM_TEST_1524, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1525", QCOM_RPM_TEST_1525, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1526", QCOM_RPM_TEST_1526, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1527", QCOM_RPM_TEST_1527, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1528", QCOM_RPM_TEST_1528, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1529", QCOM_RPM_TEST_1529, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1530", QCOM_RPM_TEST_1530, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1531", QCOM_RPM_TEST_1531, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1532", QCOM_RPM_TEST_1532, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1533", QCOM_RPM_TEST_1533, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1534", QCOM_RPM_TEST_1534, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1535", QCOM_RPM_TEST_1535, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1536", QCOM_RPM_TEST_1536, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1537", QCOM_RPM_TEST_1537, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1538", QCOM_RPM_TEST_1538, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1539", QCOM_RPM_TEST_1539, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1540", QCOM_RPM_TEST_1540, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1541", QCOM_RPM_TEST_1541, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1542", QCOM_RPM_TEST_1542, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1543", QCOM_RPM_TEST_1543, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1544", QCOM_RPM_TEST_1544, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1545", QCOM_RPM_TEST_1545, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1546", QCOM_RPM_TEST_1546, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1547", QCOM_RPM_TEST_1547, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1548", QCOM_RPM_TEST_1548, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1549", QCOM_RPM_TEST_1549, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1550", QCOM_RPM_TEST_1550, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1551", QCOM_RPM_TEST_1551, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1552", QCOM_RPM_TEST_1552, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1553", QCOM_RPM_TEST_1553, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1554", QCOM_RPM_TEST_1554, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1555", QCOM_RPM_TEST_1555, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1556", QCOM_RPM_TEST_1556, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1557", QCOM_RPM_TEST_1557, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1558", QCOM_RPM_TEST_1558, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1559", QCOM_RPM_TEST_1559, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1560", QCOM_RPM_TEST_1560, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1561", QCOM_RPM_TEST_1561, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1562", QCOM_RPM_TEST_1562, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1563", QCOM_RPM_TEST_1563, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1564", QCOM_RPM_TEST_1564, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1565", QCOM_RPM_TEST_1565, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1566", QCOM_RPM_TEST_1566, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1567", QCOM_RPM_TEST_1567, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1568", QCOM_RPM_TEST_1568, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1569", QCOM_RPM_TEST_1569, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1570", QCOM_RPM_TEST_1570, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1571", QCOM_RPM_TEST_1571, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1572", QCOM_RPM_TEST_1572, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1573", QCOM_RPM_TEST_1573, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1574", QCOM_RPM_TEST_1574, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1575", QCOM_RPM_TEST_1575, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1576", QCOM_RPM_TEST_1576, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1577", QCOM_RPM_TEST_1577, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1578", QCOM_RPM_TEST_1578, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1579", QCOM_RPM_TEST_1579, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1580", QCOM_RPM_TEST_1580, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1581", QCOM_RPM_TEST_1581, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1582", QCOM_RPM_TEST_1582, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1583", QCOM_RPM_TEST_1583, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1584", QCOM_RPM_TEST_1584, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1585", QCOM_RPM_TEST_1585, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1586", QCOM_RPM_TEST_1586, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1587", QCOM_RPM_TEST_1587, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1588", QCOM_RPM_TEST_1588, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1589", QCOM_RPM_TEST_1589, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1590", QCOM_RPM_TEST_1590, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1591", QCOM_RPM_TEST_1591, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1592", QCOM_RPM_TEST_1592, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1593", QCOM_RPM_TEST_1593, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1594", QCOM_RPM_TEST_1594, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1595", QCOM_RPM_TEST_1595, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1596", QCOM_RPM_TEST_1596, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1597", QCOM_RPM_TEST_1597, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1598", QCOM_RPM_TEST_1598, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1599", QCOM_RPM_TEST_1599, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1600", QCOM_RPM_TEST_1600, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1601", QCOM_RPM_TEST_1601, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1602", QCOM_RPM_TEST_1602, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1603", QCOM_RPM_TEST_1603, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1604", QCOM_RPM_TEST_1604, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1605", QCOM_RPM_TEST_1605, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1606", QCOM_RPM_TEST_1606, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1607", QCOM_RPM_TEST_1607, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1608", QCOM_RPM_TEST_1608, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1609", QCOM_RPM_TEST_1609, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1610", QCOM_RPM_TEST_1610, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1611", QCOM_RPM_TEST_1611, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1612", QCOM_RPM_TEST_1612, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1613", QCOM_RPM_TEST_1613, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1614", QCOM_RPM_TEST_1614, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1615", QCOM_RPM_TEST_1615, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1616", QCOM_RPM_TEST_1616, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1617", QCOM_RPM_TEST_1617, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1618", QCOM_RPM_TEST_1618, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1619", QCOM_RPM_TEST_1619, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1620", QCOM_RPM_TEST_1620, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1621", QCOM_RPM_TEST_1621, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1622", QCOM_RPM_TEST_1622, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1623", QCOM_RPM_TEST_1623, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1624", QCOM_RPM_TEST_1624, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1625", QCOM_RPM_TEST_1625, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1626", QCOM_RPM_TEST_1626, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1627", QCOM_RPM_TEST_1627, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1628", QCOM_RPM_TEST_1628, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1629", QCOM_RPM_TEST_1629, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1630", QCOM_RPM_TEST_1630, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1631", QCOM_RPM_TEST_1631, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1632", QCOM_RPM_TEST_1632, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1633", QCOM_RPM_TEST_1633, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1634", QCOM_RPM_TEST_1634, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1635", QCOM_RPM_TEST_1635, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1636", QCOM_RPM_TEST_1636, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1637", QCOM_RPM_TEST_1637, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1638", QCOM_RPM_TEST_1638, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1639", QCOM_RPM_TEST_1639, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1640", QCOM_RPM_TEST_1640, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1641", QCOM_RPM_TEST_1641, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1642", QCOM_RPM_TEST_1642, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1643", QCOM_RPM_TEST_1643, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1644", QCOM_RPM_TEST_1644, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1645", QCOM_RPM_TEST_1645, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1646", QCOM_RPM_TEST_1646, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1647", QCOM_RPM_TEST_1647, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1648", QCOM_RPM_TEST_1648, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1649", QCOM_RPM_TEST_1649, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1650", QCOM_RPM_TEST_1650, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1651", QCOM_RPM_TEST_1651, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1652", QCOM_RPM_TEST_1652, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1653", QCOM_RPM_TEST_1653, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1654", QCOM_RPM_TEST_1654, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1655", QCOM_RPM_TEST_1655, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1656", QCOM_RPM_TEST_1656, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1657", QCOM_RPM_TEST_1657, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1658", QCOM_RPM_TEST_1658, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1659", QCOM_RPM_TEST_1659, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1660", QCOM_RPM_TEST_1660, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1661", QCOM_RPM_TEST_1661, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1662", QCOM_RPM_TEST_1662, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1663", QCOM_RPM_TEST_1663, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1664", QCOM_RPM_TEST_1664, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1665", QCOM_RPM_TEST_1665, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1666", QCOM_RPM_TEST_1666, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1667", QCOM_RPM_TEST_1667, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1668", QCOM_RPM_TEST_1668, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1669", QCOM_RPM_TEST_1669, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1670", QCOM_RPM_TEST_1670, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1671", QCOM_RPM_TEST_1671, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1672", QCOM_RPM_TEST_1672, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1673", QCOM_RPM_TEST_1673, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1674", QCOM_RPM_TEST_1674, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1675", QCOM_RPM_TEST_1675, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1676", QCOM_RPM_TEST_1676, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1677", QCOM_RPM_TEST_1677, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1678", QCOM_RPM_TEST_1678, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1679", QCOM_RPM_TEST_1679, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1680", QCOM_RPM_TEST_1680, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1681", QCOM_RPM_TEST_1681, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1682", QCOM_RPM_TEST_1682, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1683", QCOM_RPM_TEST_1683, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1684", QCOM_RPM_TEST_1684, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1685", QCOM_RPM_TEST_1685, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1686", QCOM_RPM_TEST_1686, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1687", QCOM_RPM_TEST_1687, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1688", QCOM_RPM_TEST_1688, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1689", QCOM_RPM_TEST_1689, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1690", QCOM_RPM_TEST_1690, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1691", QCOM_RPM_TEST_1691, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1692", QCOM_RPM_TEST_1692, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1693", QCOM_RPM_TEST_1693, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1694", QCOM_RPM_TEST_1694, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1695", QCOM_RPM_TEST_1695, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1696", QCOM_RPM_TEST_1696, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1697", QCOM_RPM_TEST_1697, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1698", QCOM_RPM_TEST_1698, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1699", QCOM_RPM_TEST_1699, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1700", QCOM_RPM_TEST_1700, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1701", QCOM_RPM_TEST_1701, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1702", QCOM_RPM_TEST_1702, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1703", QCOM_RPM_TEST_1703, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1704", QCOM_RPM_TEST_1704, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1705", QCOM_RPM_TEST_1705, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1706", QCOM_RPM_TEST_1706, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1707", QCOM_RPM_TEST_1707, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1708", QCOM_RPM_TEST_1708, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1709", QCOM_RPM_TEST_1709, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1710", QCOM_RPM_TEST_1710, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1711", QCOM_RPM_TEST_1711, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1712", QCOM_RPM_TEST_1712, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1713", QCOM_RPM_TEST_1713, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1714", QCOM_RPM_TEST_1714, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1715", QCOM_RPM_TEST_1715, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1716", QCOM_RPM_TEST_1716, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1717", QCOM_RPM_TEST_1717, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1718", QCOM_RPM_TEST_1718, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1719", QCOM_RPM_TEST_1719, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1720", QCOM_RPM_TEST_1720, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1721", QCOM_RPM_TEST_1721, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1722", QCOM_RPM_TEST_1722, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1723", QCOM_RPM_TEST_1723, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1724", QCOM_RPM_TEST_1724, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1725", QCOM_RPM_TEST_1725, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1726", QCOM_RPM_TEST_1726, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1727", QCOM_RPM_TEST_1727, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1728", QCOM_RPM_TEST_1728, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1729", QCOM_RPM_TEST_1729, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1730", QCOM_RPM_TEST_1730, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1731", QCOM_RPM_TEST_1731, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1732", QCOM_RPM_TEST_1732, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1733", QCOM_RPM_TEST_1733, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1734", QCOM_RPM_TEST_1734, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1735", QCOM_RPM_TEST_1735, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1736", QCOM_RPM_TEST_1736, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1737", QCOM_RPM_TEST_1737, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1738", QCOM_RPM_TEST_1738, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1739", QCOM_RPM_TEST_1739, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1740", QCOM_RPM_TEST_1740, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1741", QCOM_RPM_TEST_1741, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1742", QCOM_RPM_TEST_1742, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1743", QCOM_RPM_TEST_1743, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1744", QCOM_RPM_TEST_1744, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1745", QCOM_RPM_TEST_1745, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1746", QCOM_RPM_TEST_1746, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1747", QCOM_RPM_TEST_1747, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1748", QCOM_RPM_TEST_1748, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1749", QCOM_RPM_TEST_1749, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1750", QCOM_RPM_TEST_1750, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1751", QCOM_RPM_TEST_1751, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1752", QCOM_RPM_TEST_1752, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1753", QCOM_RPM_TEST_1753, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1754", QCOM_RPM_TEST_1754, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1755", QCOM_RPM_TEST_1755, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1756", QCOM_RPM_TEST_1756, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1757", QCOM_RPM_TEST_1757, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1758", QCOM_RPM_TEST_1758, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1759", QCOM_RPM_TEST_1759, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1760", QCOM_RPM_TEST_1760, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1761", QCOM_RPM_TEST_1761, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1762", QCOM_RPM_TEST_1762, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1763", QCOM_RPM_TEST_1763, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1764", QCOM_RPM_TEST_1764, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1765", QCOM_RPM_TEST_1765, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1766", QCOM_RPM_TEST_1766, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1767", QCOM_RPM_TEST_1767, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1768", QCOM_RPM_TEST_1768, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1769", QCOM_RPM_TEST_1769, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1770", QCOM_RPM_TEST_1770, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1771", QCOM_RPM_TEST_1771, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1772", QCOM_RPM_TEST_1772, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1773", QCOM_RPM_TEST_1773, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1774", QCOM_RPM_TEST_1774, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1775", QCOM_RPM_TEST_1775, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1776", QCOM_RPM_TEST_1776, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1777", QCOM_RPM_TEST_1777, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1778", QCOM_RPM_TEST_1778, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1779", QCOM_RPM_TEST_1779, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1780", QCOM_RPM_TEST_1780, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1781", QCOM_RPM_TEST_1781, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1782", QCOM_RPM_TEST_1782, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1783", QCOM_RPM_TEST_1783, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1784", QCOM_RPM_TEST_1784, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1785", QCOM_RPM_TEST_1785, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1786", QCOM_RPM_TEST_1786, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1787", QCOM_RPM_TEST_1787, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1788", QCOM_RPM_TEST_1788, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1789", QCOM_RPM_TEST_1789, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1790", QCOM_RPM_TEST_1790, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1791", QCOM_RPM_TEST_1791, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1792", QCOM_RPM_TEST_1792, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1793", QCOM_RPM_TEST_1793, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1794", QCOM_RPM_TEST_1794, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1795", QCOM_RPM_TEST_1795, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1796", QCOM_RPM_TEST_1796, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1797", QCOM_RPM_TEST_1797, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1798", QCOM_RPM_TEST_1798, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1799", QCOM_RPM_TEST_1799, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1800", QCOM_RPM_TEST_1800, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1801", QCOM_RPM_TEST_1801, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1802", QCOM_RPM_TEST_1802, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1803", QCOM_RPM_TEST_1803, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1804", QCOM_RPM_TEST_1804, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1805", QCOM_RPM_TEST_1805, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1806", QCOM_RPM_TEST_1806, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1807", QCOM_RPM_TEST_1807, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1808", QCOM_RPM_TEST_1808, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1809", QCOM_RPM_TEST_1809, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1810", QCOM_RPM_TEST_1810, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1811", QCOM_RPM_TEST_1811, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1812", QCOM_RPM_TEST_1812, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1813", QCOM_RPM_TEST_1813, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1814", QCOM_RPM_TEST_1814, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1815", QCOM_RPM_TEST_1815, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1816", QCOM_RPM_TEST_1816, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1817", QCOM_RPM_TEST_1817, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1818", QCOM_RPM_TEST_1818, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1819", QCOM_RPM_TEST_1819, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1820", QCOM_RPM_TEST_1820, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1821", QCOM_RPM_TEST_1821, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1822", QCOM_RPM_TEST_1822, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1823", QCOM_RPM_TEST_1823, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1824", QCOM_RPM_TEST_1824, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1825", QCOM_RPM_TEST_1825, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1826", QCOM_RPM_TEST_1826, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1827", QCOM_RPM_TEST_1827, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1828", QCOM_RPM_TEST_1828, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1829", QCOM_RPM_TEST_1829, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1830", QCOM_RPM_TEST_1830, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1831", QCOM_RPM_TEST_1831, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1832", QCOM_RPM_TEST_1832, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1833", QCOM_RPM_TEST_1833, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1834", QCOM_RPM_TEST_1834, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1835", QCOM_RPM_TEST_1835, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1836", QCOM_RPM_TEST_1836, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1837", QCOM_RPM_TEST_1837, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1838", QCOM_RPM_TEST_1838, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1839", QCOM_RPM_TEST_1839, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1840", QCOM_RPM_TEST_1840, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1841", QCOM_RPM_TEST_1841, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1842", QCOM_RPM_TEST_1842, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1843", QCOM_RPM_TEST_1843, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1844", QCOM_RPM_TEST_1844, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1845", QCOM_RPM_TEST_1845, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1846", QCOM_RPM_TEST_1846, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1847", QCOM_RPM_TEST_1847, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1848", QCOM_RPM_TEST_1848, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1849", QCOM_RPM_TEST_1849, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1850", QCOM_RPM_TEST_1850, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1851", QCOM_RPM_TEST_1851, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1852", QCOM_RPM_TEST_1852, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1853", QCOM_RPM_TEST_1853, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1854", QCOM_RPM_TEST_1854, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1855", QCOM_RPM_TEST_1855, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1856", QCOM_RPM_TEST_1856, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1857", QCOM_RPM_TEST_1857, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1858", QCOM_RPM_TEST_1858, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1859", QCOM_RPM_TEST_1859, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1860", QCOM_RPM_TEST_1860, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1861", QCOM_RPM_TEST_1861, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1862", QCOM_RPM_TEST_1862, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1863", QCOM_RPM_TEST_1863, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1864", QCOM_RPM_TEST_1864, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1865", QCOM_RPM_TEST_1865, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1866", QCOM_RPM_TEST_1866, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1867", QCOM_RPM_TEST_1867, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1868", QCOM_RPM_TEST_1868, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1869", QCOM_RPM_TEST_1869, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1870", QCOM_RPM_TEST_1870, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1871", QCOM_RPM_TEST_1871, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1872", QCOM_RPM_TEST_1872, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1873", QCOM_RPM_TEST_1873, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1874", QCOM_RPM_TEST_1874, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1875", QCOM_RPM_TEST_1875, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1876", QCOM_RPM_TEST_1876, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1877", QCOM_RPM_TEST_1877, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1878", QCOM_RPM_TEST_1878, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1879", QCOM_RPM_TEST_1879, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1880", QCOM_RPM_TEST_1880, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1881", QCOM_RPM_TEST_1881, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1882", QCOM_RPM_TEST_1882, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1883", QCOM_RPM_TEST_1883, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1884", QCOM_RPM_TEST_1884, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1885", QCOM_RPM_TEST_1885, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1886", QCOM_RPM_TEST_1886, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1887", QCOM_RPM_TEST_1887, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1888", QCOM_RPM_TEST_1888, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1889", QCOM_RPM_TEST_1889, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1890", QCOM_RPM_TEST_1890, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1891", QCOM_RPM_TEST_1891, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1892", QCOM_RPM_TEST_1892, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1893", QCOM_RPM_TEST_1893, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1894", QCOM_RPM_TEST_1894, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1895", QCOM_RPM_TEST_1895, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1896", QCOM_RPM_TEST_1896, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1897", QCOM_RPM_TEST_1897, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1898", QCOM_RPM_TEST_1898, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1899", QCOM_RPM_TEST_1899, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1900", QCOM_RPM_TEST_1900, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1901", QCOM_RPM_TEST_1901, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1902", QCOM_RPM_TEST_1902, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1903", QCOM_RPM_TEST_1903, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1904", QCOM_RPM_TEST_1904, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1905", QCOM_RPM_TEST_1905, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1906", QCOM_RPM_TEST_1906, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1907", QCOM_RPM_TEST_1907, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1908", QCOM_RPM_TEST_1908, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1909", QCOM_RPM_TEST_1909, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1910", QCOM_RPM_TEST_1910, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1911", QCOM_RPM_TEST_1911, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1912", QCOM_RPM_TEST_1912, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1913", QCOM_RPM_TEST_1913, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1914", QCOM_RPM_TEST_1914, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1915", QCOM_RPM_TEST_1915, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1916", QCOM_RPM_TEST_1916, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1917", QCOM_RPM_TEST_1917, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1918", QCOM_RPM_TEST_1918, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1919", QCOM_RPM_TEST_1919, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1920", QCOM_RPM_TEST_1920, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1921", QCOM_RPM_TEST_1921, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1922", QCOM_RPM_TEST_1922, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1923", QCOM_RPM_TEST_1923, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1924", QCOM_RPM_TEST_1924, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1925", QCOM_RPM_TEST_1925, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1926", QCOM_RPM_TEST_1926, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1927", QCOM_RPM_TEST_1927, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1928", QCOM_RPM_TEST_1928, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1929", QCOM_RPM_TEST_1929, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1930", QCOM_RPM_TEST_1930, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1931", QCOM_RPM_TEST_1931, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1932", QCOM_RPM_TEST_1932, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1933", QCOM_RPM_TEST_1933, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1934", QCOM_RPM_TEST_1934, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1935", QCOM_RPM_TEST_1935, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1936", QCOM_RPM_TEST_1936, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1937", QCOM_RPM_TEST_1937, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1938", QCOM_RPM_TEST_1938, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1939", QCOM_RPM_TEST_1939, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1940", QCOM_RPM_TEST_1940, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1941", QCOM_RPM_TEST_1941, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1942", QCOM_RPM_TEST_1942, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1943", QCOM_RPM_TEST_1943, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1944", QCOM_RPM_TEST_1944, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1945", QCOM_RPM_TEST_1945, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1946", QCOM_RPM_TEST_1946, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1947", QCOM_RPM_TEST_1947, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1948", QCOM_RPM_TEST_1948, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1949", QCOM_RPM_TEST_1949, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1950", QCOM_RPM_TEST_1950, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1951", QCOM_RPM_TEST_1951, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1952", QCOM_RPM_TEST_1952, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1953", QCOM_RPM_TEST_1953, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1954", QCOM_RPM_TEST_1954, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1955", QCOM_RPM_TEST_1955, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1956", QCOM_RPM_TEST_1956, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1957", QCOM_RPM_TEST_1957, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1958", QCOM_RPM_TEST_1958, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1959", QCOM_RPM_TEST_1959, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1960", QCOM_RPM_TEST_1960, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1961", QCOM_RPM_TEST_1961, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1962", QCOM_RPM_TEST_1962, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1963", QCOM_RPM_TEST_1963, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1964", QCOM_RPM_TEST_1964, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1965", QCOM_RPM_TEST_1965, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1966", QCOM_RPM_TEST_1966, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1967", QCOM_RPM_TEST_1967, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1968", QCOM_RPM_TEST_1968, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1969", QCOM_RPM_TEST_1969, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1970", QCOM_RPM_TEST_1970, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1971", QCOM_RPM_TEST_1971, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1972", QCOM_RPM_TEST_1972, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1973", QCOM_RPM_TEST_1973, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1974", QCOM_RPM_TEST_1974, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1975", QCOM_RPM_TEST_1975, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1976", QCOM_RPM_TEST_1976, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1977", QCOM_RPM_TEST_1977, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1978", QCOM_RPM_TEST_1978, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1979", QCOM_RPM_TEST_1979, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1980", QCOM_RPM_TEST_1980, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1981", QCOM_RPM_TEST_1981, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1982", QCOM_RPM_TEST_1982, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1983", QCOM_RPM_TEST_1983, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1984", QCOM_RPM_TEST_1984, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1985", QCOM_RPM_TEST_1985, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1986", QCOM_RPM_TEST_1986, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1987", QCOM_RPM_TEST_1987, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1988", QCOM_RPM_TEST_1988, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1989", QCOM_RPM_TEST_1989, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1990", QCOM_RPM_TEST_1990, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1991", QCOM_RPM_TEST_1991, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1992", QCOM_RPM_TEST_1992, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1993", QCOM_RPM_TEST_1993, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1994", QCOM_RPM_TEST_1994, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1995", QCOM_RPM_TEST_1995, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1996", QCOM_RPM_TEST_1996, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1997", QCOM_RPM_TEST_1997, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1998", QCOM_RPM_TEST_1998, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test1999", QCOM_RPM_TEST_1999, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2000", QCOM_RPM_TEST_2000, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2001", QCOM_RPM_TEST_2001, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2002", QCOM_RPM_TEST_2002, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2003", QCOM_RPM_TEST_2003, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2004", QCOM_RPM_TEST_2004, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2005", QCOM_RPM_TEST_2005, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2006", QCOM_RPM_TEST_2006, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2007", QCOM_RPM_TEST_2007, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2008", QCOM_RPM_TEST_2008, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2009", QCOM_RPM_TEST_2009, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2010", QCOM_RPM_TEST_2010, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2011", QCOM_RPM_TEST_2011, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2012", QCOM_RPM_TEST_2012, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2013", QCOM_RPM_TEST_2013, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2014", QCOM_RPM_TEST_2014, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2015", QCOM_RPM_TEST_2015, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2016", QCOM_RPM_TEST_2016, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2017", QCOM_RPM_TEST_2017, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2018", QCOM_RPM_TEST_2018, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2019", QCOM_RPM_TEST_2019, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2020", QCOM_RPM_TEST_2020, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2021", QCOM_RPM_TEST_2021, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2022", QCOM_RPM_TEST_2022, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2023", QCOM_RPM_TEST_2023, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2024", QCOM_RPM_TEST_2024, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2025", QCOM_RPM_TEST_2025, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2026", QCOM_RPM_TEST_2026, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2027", QCOM_RPM_TEST_2027, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2028", QCOM_RPM_TEST_2028, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2029", QCOM_RPM_TEST_2029, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2030", QCOM_RPM_TEST_2030, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2031", QCOM_RPM_TEST_2031, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2032", QCOM_RPM_TEST_2032, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2033", QCOM_RPM_TEST_2033, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2034", QCOM_RPM_TEST_2034, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2035", QCOM_RPM_TEST_2035, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2036", QCOM_RPM_TEST_2036, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2037", QCOM_RPM_TEST_2037, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2038", QCOM_RPM_TEST_2038, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2039", QCOM_RPM_TEST_2039, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2040", QCOM_RPM_TEST_2040, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2041", QCOM_RPM_TEST_2041, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2042", QCOM_RPM_TEST_2042, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2043", QCOM_RPM_TEST_2043, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2044", QCOM_RPM_TEST_2044, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2045", QCOM_RPM_TEST_2045, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2046", QCOM_RPM_TEST_2046, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2047", QCOM_RPM_TEST_2047, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2048", QCOM_RPM_TEST_2048, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2049", QCOM_RPM_TEST_2049, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2050", QCOM_RPM_TEST_2050, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2051", QCOM_RPM_TEST_2051, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2052", QCOM_RPM_TEST_2052, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2053", QCOM_RPM_TEST_2053, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2054", QCOM_RPM_TEST_2054, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2055", QCOM_RPM_TEST_2055, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2056", QCOM_RPM_TEST_2056, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2057", QCOM_RPM_TEST_2057, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2058", QCOM_RPM_TEST_2058, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2059", QCOM_RPM_TEST_2059, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2060", QCOM_RPM_TEST_2060, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2061", QCOM_RPM_TEST_2061, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2062", QCOM_RPM_TEST_2062, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2063", QCOM_RPM_TEST_2063, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2064", QCOM_RPM_TEST_2064, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2065", QCOM_RPM_TEST_2065, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2066", QCOM_RPM_TEST_2066, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2067", QCOM_RPM_TEST_2067, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2068", QCOM_RPM_TEST_2068, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2069", QCOM_RPM_TEST_2069, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2070", QCOM_RPM_TEST_2070, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2071", QCOM_RPM_TEST_2071, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2072", QCOM_RPM_TEST_2072, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2073", QCOM_RPM_TEST_2073, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2074", QCOM_RPM_TEST_2074, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2075", QCOM_RPM_TEST_2075, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2076", QCOM_RPM_TEST_2076, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2077", QCOM_RPM_TEST_2077, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2078", QCOM_RPM_TEST_2078, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2079", QCOM_RPM_TEST_2079, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2080", QCOM_RPM_TEST_2080, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2081", QCOM_RPM_TEST_2081, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2082", QCOM_RPM_TEST_2082, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2083", QCOM_RPM_TEST_2083, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2084", QCOM_RPM_TEST_2084, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2085", QCOM_RPM_TEST_2085, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2086", QCOM_RPM_TEST_2086, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2087", QCOM_RPM_TEST_2087, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2088", QCOM_RPM_TEST_2088, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2089", QCOM_RPM_TEST_2089, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2090", QCOM_RPM_TEST_2090, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2091", QCOM_RPM_TEST_2091, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2092", QCOM_RPM_TEST_2092, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2093", QCOM_RPM_TEST_2093, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2094", QCOM_RPM_TEST_2094, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2095", QCOM_RPM_TEST_2095, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2096", QCOM_RPM_TEST_2096, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2097", QCOM_RPM_TEST_2097, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2098", QCOM_RPM_TEST_2098, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2099", QCOM_RPM_TEST_2099, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2100", QCOM_RPM_TEST_2100, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2101", QCOM_RPM_TEST_2101, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2102", QCOM_RPM_TEST_2102, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2103", QCOM_RPM_TEST_2103, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2104", QCOM_RPM_TEST_2104, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2105", QCOM_RPM_TEST_2105, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2106", QCOM_RPM_TEST_2106, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2107", QCOM_RPM_TEST_2107, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2108", QCOM_RPM_TEST_2108, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2109", QCOM_RPM_TEST_2109, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2110", QCOM_RPM_TEST_2110, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2111", QCOM_RPM_TEST_2111, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2112", QCOM_RPM_TEST_2112, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2113", QCOM_RPM_TEST_2113, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2114", QCOM_RPM_TEST_2114, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2115", QCOM_RPM_TEST_2115, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2116", QCOM_RPM_TEST_2116, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2117", QCOM_RPM_TEST_2117, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2118", QCOM_RPM_TEST_2118, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2119", QCOM_RPM_TEST_2119, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2120", QCOM_RPM_TEST_2120, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2121", QCOM_RPM_TEST_2121, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2122", QCOM_RPM_TEST_2122, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2123", QCOM_RPM_TEST_2123, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2124", QCOM_RPM_TEST_2124, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2125", QCOM_RPM_TEST_2125, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2126", QCOM_RPM_TEST_2126, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2127", QCOM_RPM_TEST_2127, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2128", QCOM_RPM_TEST_2128, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2129", QCOM_RPM_TEST_2129, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2130", QCOM_RPM_TEST_2130, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2131", QCOM_RPM_TEST_2131, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2132", QCOM_RPM_TEST_2132, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2133", QCOM_RPM_TEST_2133, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2134", QCOM_RPM_TEST_2134, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2135", QCOM_RPM_TEST_2135, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2136", QCOM_RPM_TEST_2136, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2137", QCOM_RPM_TEST_2137, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2138", QCOM_RPM_TEST_2138, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2139", QCOM_RPM_TEST_2139, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2140", QCOM_RPM_TEST_2140, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2141", QCOM_RPM_TEST_2141, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2142", QCOM_RPM_TEST_2142, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2143", QCOM_RPM_TEST_2143, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2144", QCOM_RPM_TEST_2144, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2145", QCOM_RPM_TEST_2145, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2146", QCOM_RPM_TEST_2146, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2147", QCOM_RPM_TEST_2147, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2148", QCOM_RPM_TEST_2148, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2149", QCOM_RPM_TEST_2149, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2150", QCOM_RPM_TEST_2150, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2151", QCOM_RPM_TEST_2151, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2152", QCOM_RPM_TEST_2152, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2153", QCOM_RPM_TEST_2153, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2154", QCOM_RPM_TEST_2154, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2155", QCOM_RPM_TEST_2155, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2156", QCOM_RPM_TEST_2156, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2157", QCOM_RPM_TEST_2157, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2158", QCOM_RPM_TEST_2158, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2159", QCOM_RPM_TEST_2159, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2160", QCOM_RPM_TEST_2160, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2161", QCOM_RPM_TEST_2161, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2162", QCOM_RPM_TEST_2162, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2163", QCOM_RPM_TEST_2163, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2164", QCOM_RPM_TEST_2164, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2165", QCOM_RPM_TEST_2165, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2166", QCOM_RPM_TEST_2166, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2167", QCOM_RPM_TEST_2167, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2168", QCOM_RPM_TEST_2168, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2169", QCOM_RPM_TEST_2169, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2170", QCOM_RPM_TEST_2170, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2171", QCOM_RPM_TEST_2171, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2172", QCOM_RPM_TEST_2172, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2173", QCOM_RPM_TEST_2173, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2174", QCOM_RPM_TEST_2174, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2175", QCOM_RPM_TEST_2175, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2176", QCOM_RPM_TEST_2176, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2177", QCOM_RPM_TEST_2177, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2178", QCOM_RPM_TEST_2178, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2179", QCOM_RPM_TEST_2179, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2180", QCOM_RPM_TEST_2180, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2181", QCOM_RPM_TEST_2181, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2182", QCOM_RPM_TEST_2182, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2183", QCOM_RPM_TEST_2183, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2184", QCOM_RPM_TEST_2184, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2185", QCOM_RPM_TEST_2185, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2186", QCOM_RPM_TEST_2186, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2187", QCOM_RPM_TEST_2187, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2188", QCOM_RPM_TEST_2188, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2189", QCOM_RPM_TEST_2189, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2190", QCOM_RPM_TEST_2190, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2191", QCOM_RPM_TEST_2191, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2192", QCOM_RPM_TEST_2192, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2193", QCOM_RPM_TEST_2193, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2194", QCOM_RPM_TEST_2194, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2195", QCOM_RPM_TEST_2195, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2196", QCOM_RPM_TEST_2196, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2197", QCOM_RPM_TEST_2197, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2198", QCOM_RPM_TEST_2198, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2199", QCOM_RPM_TEST_2199, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2200", QCOM_RPM_TEST_2200, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2201", QCOM_RPM_TEST_2201, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2202", QCOM_RPM_TEST_2202, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2203", QCOM_RPM_TEST_2203, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2204", QCOM_RPM_TEST_2204, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2205", QCOM_RPM_TEST_2205, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2206", QCOM_RPM_TEST_2206, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2207", QCOM_RPM_TEST_2207, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2208", QCOM_RPM_TEST_2208, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2209", QCOM_RPM_TEST_2209, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2210", QCOM_RPM_TEST_2210, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2211", QCOM_RPM_TEST_2211, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2212", QCOM_RPM_TEST_2212, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2213", QCOM_RPM_TEST_2213, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2214", QCOM_RPM_TEST_2214, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2215", QCOM_RPM_TEST_2215, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2216", QCOM_RPM_TEST_2216, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2217", QCOM_RPM_TEST_2217, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2218", QCOM_RPM_TEST_2218, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2219", QCOM_RPM_TEST_2219, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2220", QCOM_RPM_TEST_2220, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2221", QCOM_RPM_TEST_2221, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2222", QCOM_RPM_TEST_2222, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2223", QCOM_RPM_TEST_2223, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2224", QCOM_RPM_TEST_2224, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2225", QCOM_RPM_TEST_2225, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2226", QCOM_RPM_TEST_2226, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2227", QCOM_RPM_TEST_2227, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2228", QCOM_RPM_TEST_2228, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2229", QCOM_RPM_TEST_2229, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2230", QCOM_RPM_TEST_2230, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2231", QCOM_RPM_TEST_2231, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2232", QCOM_RPM_TEST_2232, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2233", QCOM_RPM_TEST_2233, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2234", QCOM_RPM_TEST_2234, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2235", QCOM_RPM_TEST_2235, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2236", QCOM_RPM_TEST_2236, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2237", QCOM_RPM_TEST_2237, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2238", QCOM_RPM_TEST_2238, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2239", QCOM_RPM_TEST_2239, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2240", QCOM_RPM_TEST_2240, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2241", QCOM_RPM_TEST_2241, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2242", QCOM_RPM_TEST_2242, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2243", QCOM_RPM_TEST_2243, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2244", QCOM_RPM_TEST_2244, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2245", QCOM_RPM_TEST_2245, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2246", QCOM_RPM_TEST_2246, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2247", QCOM_RPM_TEST_2247, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2248", QCOM_RPM_TEST_2248, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2249", QCOM_RPM_TEST_2249, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2250", QCOM_RPM_TEST_2250, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2251", QCOM_RPM_TEST_2251, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2252", QCOM_RPM_TEST_2252, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2253", QCOM_RPM_TEST_2253, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2254", QCOM_RPM_TEST_2254, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2255", QCOM_RPM_TEST_2255, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2256", QCOM_RPM_TEST_2256, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2257", QCOM_RPM_TEST_2257, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2258", QCOM_RPM_TEST_2258, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2259", QCOM_RPM_TEST_2259, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2260", QCOM_RPM_TEST_2260, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2261", QCOM_RPM_TEST_2261, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2262", QCOM_RPM_TEST_2262, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2263", QCOM_RPM_TEST_2263, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2264", QCOM_RPM_TEST_2264, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2265", QCOM_RPM_TEST_2265, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2266", QCOM_RPM_TEST_2266, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2267", QCOM_RPM_TEST_2267, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2268", QCOM_RPM_TEST_2268, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2269", QCOM_RPM_TEST_2269, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2270", QCOM_RPM_TEST_2270, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2271", QCOM_RPM_TEST_2271, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2272", QCOM_RPM_TEST_2272, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2273", QCOM_RPM_TEST_2273, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2274", QCOM_RPM_TEST_2274, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2275", QCOM_RPM_TEST_2275, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2276", QCOM_RPM_TEST_2276, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2277", QCOM_RPM_TEST_2277, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2278", QCOM_RPM_TEST_2278, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2279", QCOM_RPM_TEST_2279, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2280", QCOM_RPM_TEST_2280, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2281", QCOM_RPM_TEST_2281, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2282", QCOM_RPM_TEST_2282, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2283", QCOM_RPM_TEST_2283, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2284", QCOM_RPM_TEST_2284, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2285", QCOM_RPM_TEST_2285, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2286", QCOM_RPM_TEST_2286, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2287", QCOM_RPM_TEST_2287, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2288", QCOM_RPM_TEST_2288, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2289", QCOM_RPM_TEST_2289, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2290", QCOM_RPM_TEST_2290, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2291", QCOM_RPM_TEST_2291, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2292", QCOM_RPM_TEST_2292, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2293", QCOM_RPM_TEST_2293, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2294", QCOM_RPM_TEST_2294, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2295", QCOM_RPM_TEST_2295, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2296", QCOM_RPM_TEST_2296, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2297", QCOM_RPM_TEST_2297, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2298", QCOM_RPM_TEST_2298, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2299", QCOM_RPM_TEST_2299, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2300", QCOM_RPM_TEST_2300, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2301", QCOM_RPM_TEST_2301, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2302", QCOM_RPM_TEST_2302, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2303", QCOM_RPM_TEST_2303, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2304", QCOM_RPM_TEST_2304, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2305", QCOM_RPM_TEST_2305, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2306", QCOM_RPM_TEST_2306, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2307", QCOM_RPM_TEST_2307, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2308", QCOM_RPM_TEST_2308, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2309", QCOM_RPM_TEST_2309, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2310", QCOM_RPM_TEST_2310, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2311", QCOM_RPM_TEST_2311, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2312", QCOM_RPM_TEST_2312, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2313", QCOM_RPM_TEST_2313, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2314", QCOM_RPM_TEST_2314, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2315", QCOM_RPM_TEST_2315, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2316", QCOM_RPM_TEST_2316, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2317", QCOM_RPM_TEST_2317, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2318", QCOM_RPM_TEST_2318, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2319", QCOM_RPM_TEST_2319, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2320", QCOM_RPM_TEST_2320, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2321", QCOM_RPM_TEST_2321, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2322", QCOM_RPM_TEST_2322, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2323", QCOM_RPM_TEST_2323, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2324", QCOM_RPM_TEST_2324, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2325", QCOM_RPM_TEST_2325, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2326", QCOM_RPM_TEST_2326, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2327", QCOM_RPM_TEST_2327, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2328", QCOM_RPM_TEST_2328, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2329", QCOM_RPM_TEST_2329, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2330", QCOM_RPM_TEST_2330, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2331", QCOM_RPM_TEST_2331, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2332", QCOM_RPM_TEST_2332, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2333", QCOM_RPM_TEST_2333, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2334", QCOM_RPM_TEST_2334, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2335", QCOM_RPM_TEST_2335, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2336", QCOM_RPM_TEST_2336, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2337", QCOM_RPM_TEST_2337, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2338", QCOM_RPM_TEST_2338, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2339", QCOM_RPM_TEST_2339, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2340", QCOM_RPM_TEST_2340, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2341", QCOM_RPM_TEST_2341, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2342", QCOM_RPM_TEST_2342, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2343", QCOM_RPM_TEST_2343, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2344", QCOM_RPM_TEST_2344, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2345", QCOM_RPM_TEST_2345, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2346", QCOM_RPM_TEST_2346, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2347", QCOM_RPM_TEST_2347, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2348", QCOM_RPM_TEST_2348, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2349", QCOM_RPM_TEST_2349, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2350", QCOM_RPM_TEST_2350, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2351", QCOM_RPM_TEST_2351, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2352", QCOM_RPM_TEST_2352, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2353", QCOM_RPM_TEST_2353, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2354", QCOM_RPM_TEST_2354, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2355", QCOM_RPM_TEST_2355, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2356", QCOM_RPM_TEST_2356, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2357", QCOM_RPM_TEST_2357, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2358", QCOM_RPM_TEST_2358, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2359", QCOM_RPM_TEST_2359, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2360", QCOM_RPM_TEST_2360, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2361", QCOM_RPM_TEST_2361, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2362", QCOM_RPM_TEST_2362, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2363", QCOM_RPM_TEST_2363, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2364", QCOM_RPM_TEST_2364, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2365", QCOM_RPM_TEST_2365, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2366", QCOM_RPM_TEST_2366, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2367", QCOM_RPM_TEST_2367, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2368", QCOM_RPM_TEST_2368, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2369", QCOM_RPM_TEST_2369, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2370", QCOM_RPM_TEST_2370, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2371", QCOM_RPM_TEST_2371, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2372", QCOM_RPM_TEST_2372, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2373", QCOM_RPM_TEST_2373, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2374", QCOM_RPM_TEST_2374, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2375", QCOM_RPM_TEST_2375, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2376", QCOM_RPM_TEST_2376, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2377", QCOM_RPM_TEST_2377, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2378", QCOM_RPM_TEST_2378, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2379", QCOM_RPM_TEST_2379, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2380", QCOM_RPM_TEST_2380, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2381", QCOM_RPM_TEST_2381, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2382", QCOM_RPM_TEST_2382, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2383", QCOM_RPM_TEST_2383, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2384", QCOM_RPM_TEST_2384, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2385", QCOM_RPM_TEST_2385, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2386", QCOM_RPM_TEST_2386, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2387", QCOM_RPM_TEST_2387, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2388", QCOM_RPM_TEST_2388, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2389", QCOM_RPM_TEST_2389, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2390", QCOM_RPM_TEST_2390, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2391", QCOM_RPM_TEST_2391, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2392", QCOM_RPM_TEST_2392, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2393", QCOM_RPM_TEST_2393, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2394", QCOM_RPM_TEST_2394, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2395", QCOM_RPM_TEST_2395, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2396", QCOM_RPM_TEST_2396, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2397", QCOM_RPM_TEST_2397, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2398", QCOM_RPM_TEST_2398, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2399", QCOM_RPM_TEST_2399, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2400", QCOM_RPM_TEST_2400, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2401", QCOM_RPM_TEST_2401, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2402", QCOM_RPM_TEST_2402, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2403", QCOM_RPM_TEST_2403, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2404", QCOM_RPM_TEST_2404, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2405", QCOM_RPM_TEST_2405, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2406", QCOM_RPM_TEST_2406, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2407", QCOM_RPM_TEST_2407, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2408", QCOM_RPM_TEST_2408, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2409", QCOM_RPM_TEST_2409, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2410", QCOM_RPM_TEST_2410, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2411", QCOM_RPM_TEST_2411, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2412", QCOM_RPM_TEST_2412, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2413", QCOM_RPM_TEST_2413, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2414", QCOM_RPM_TEST_2414, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2415", QCOM_RPM_TEST_2415, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2416", QCOM_RPM_TEST_2416, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2417", QCOM_RPM_TEST_2417, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2418", QCOM_RPM_TEST_2418, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2419", QCOM_RPM_TEST_2419, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2420", QCOM_RPM_TEST_2420, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2421", QCOM_RPM_TEST_2421, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2422", QCOM_RPM_TEST_2422, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2423", QCOM_RPM_TEST_2423, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2424", QCOM_RPM_TEST_2424, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2425", QCOM_RPM_TEST_2425, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2426", QCOM_RPM_TEST_2426, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2427", QCOM_RPM_TEST_2427, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2428", QCOM_RPM_TEST_2428, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2429", QCOM_RPM_TEST_2429, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2430", QCOM_RPM_TEST_2430, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2431", QCOM_RPM_TEST_2431, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2432", QCOM_RPM_TEST_2432, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2433", QCOM_RPM_TEST_2433, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2434", QCOM_RPM_TEST_2434, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2435", QCOM_RPM_TEST_2435, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2436", QCOM_RPM_TEST_2436, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2437", QCOM_RPM_TEST_2437, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2438", QCOM_RPM_TEST_2438, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2439", QCOM_RPM_TEST_2439, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2440", QCOM_RPM_TEST_2440, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2441", QCOM_RPM_TEST_2441, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2442", QCOM_RPM_TEST_2442, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2443", QCOM_RPM_TEST_2443, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2444", QCOM_RPM_TEST_2444, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2445", QCOM_RPM_TEST_2445, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2446", QCOM_RPM_TEST_2446, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2447", QCOM_RPM_TEST_2447, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2448", QCOM_RPM_TEST_2448, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2449", QCOM_RPM_TEST_2449, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2450", QCOM_RPM_TEST_2450, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2451", QCOM_RPM_TEST_2451, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2452", QCOM_RPM_TEST_2452, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2453", QCOM_RPM_TEST_2453, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2454", QCOM_RPM_TEST_2454, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2455", QCOM_RPM_TEST_2455, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2456", QCOM_RPM_TEST_2456, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2457", QCOM_RPM_TEST_2457, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2458", QCOM_RPM_TEST_2458, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2459", QCOM_RPM_TEST_2459, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2460", QCOM_RPM_TEST_2460, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2461", QCOM_RPM_TEST_2461, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2462", QCOM_RPM_TEST_2462, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2463", QCOM_RPM_TEST_2463, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2464", QCOM_RPM_TEST_2464, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2465", QCOM_RPM_TEST_2465, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2466", QCOM_RPM_TEST_2466, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2467", QCOM_RPM_TEST_2467, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2468", QCOM_RPM_TEST_2468, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2469", QCOM_RPM_TEST_2469, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2470", QCOM_RPM_TEST_2470, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2471", QCOM_RPM_TEST_2471, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2472", QCOM_RPM_TEST_2472, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2473", QCOM_RPM_TEST_2473, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2474", QCOM_RPM_TEST_2474, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2475", QCOM_RPM_TEST_2475, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2476", QCOM_RPM_TEST_2476, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2477", QCOM_RPM_TEST_2477, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2478", QCOM_RPM_TEST_2478, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2479", QCOM_RPM_TEST_2479, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2480", QCOM_RPM_TEST_2480, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2481", QCOM_RPM_TEST_2481, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2482", QCOM_RPM_TEST_2482, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2483", QCOM_RPM_TEST_2483, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2484", QCOM_RPM_TEST_2484, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2485", QCOM_RPM_TEST_2485, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2486", QCOM_RPM_TEST_2486, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2487", QCOM_RPM_TEST_2487, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2488", QCOM_RPM_TEST_2488, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2489", QCOM_RPM_TEST_2489, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2490", QCOM_RPM_TEST_2490, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2491", QCOM_RPM_TEST_2491, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2492", QCOM_RPM_TEST_2492, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2493", QCOM_RPM_TEST_2493, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2494", QCOM_RPM_TEST_2494, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2495", QCOM_RPM_TEST_2495, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2496", QCOM_RPM_TEST_2496, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2497", QCOM_RPM_TEST_2497, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2498", QCOM_RPM_TEST_2498, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2499", QCOM_RPM_TEST_2499, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2500", QCOM_RPM_TEST_2500, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2501", QCOM_RPM_TEST_2501, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2502", QCOM_RPM_TEST_2502, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2503", QCOM_RPM_TEST_2503, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2504", QCOM_RPM_TEST_2504, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2505", QCOM_RPM_TEST_2505, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2506", QCOM_RPM_TEST_2506, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2507", QCOM_RPM_TEST_2507, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2508", QCOM_RPM_TEST_2508, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2509", QCOM_RPM_TEST_2509, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2510", QCOM_RPM_TEST_2510, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2511", QCOM_RPM_TEST_2511, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2512", QCOM_RPM_TEST_2512, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2513", QCOM_RPM_TEST_2513, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2514", QCOM_RPM_TEST_2514, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2515", QCOM_RPM_TEST_2515, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2516", QCOM_RPM_TEST_2516, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2517", QCOM_RPM_TEST_2517, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2518", QCOM_RPM_TEST_2518, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2519", QCOM_RPM_TEST_2519, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2520", QCOM_RPM_TEST_2520, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2521", QCOM_RPM_TEST_2521, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2522", QCOM_RPM_TEST_2522, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2523", QCOM_RPM_TEST_2523, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2524", QCOM_RPM_TEST_2524, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2525", QCOM_RPM_TEST_2525, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2526", QCOM_RPM_TEST_2526, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2527", QCOM_RPM_TEST_2527, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2528", QCOM_RPM_TEST_2528, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2529", QCOM_RPM_TEST_2529, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2530", QCOM_RPM_TEST_2530, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2531", QCOM_RPM_TEST_2531, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2532", QCOM_RPM_TEST_2532, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2533", QCOM_RPM_TEST_2533, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2534", QCOM_RPM_TEST_2534, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2535", QCOM_RPM_TEST_2535, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2536", QCOM_RPM_TEST_2536, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2537", QCOM_RPM_TEST_2537, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2538", QCOM_RPM_TEST_2538, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2539", QCOM_RPM_TEST_2539, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2540", QCOM_RPM_TEST_2540, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2541", QCOM_RPM_TEST_2541, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2542", QCOM_RPM_TEST_2542, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2543", QCOM_RPM_TEST_2543, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2544", QCOM_RPM_TEST_2544, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2545", QCOM_RPM_TEST_2545, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2546", QCOM_RPM_TEST_2546, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2547", QCOM_RPM_TEST_2547, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2548", QCOM_RPM_TEST_2548, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2549", QCOM_RPM_TEST_2549, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2550", QCOM_RPM_TEST_2550, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2551", QCOM_RPM_TEST_2551, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2552", QCOM_RPM_TEST_2552, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2553", QCOM_RPM_TEST_2553, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2554", QCOM_RPM_TEST_2554, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2555", QCOM_RPM_TEST_2555, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2556", QCOM_RPM_TEST_2556, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2557", QCOM_RPM_TEST_2557, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2558", QCOM_RPM_TEST_2558, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+    { "test2559", QCOM_RPM_TEST_2559, &pm8921_pldo, "vdd_l1_l2_l12_l18" },
+
+    {}};
 
 static const struct rpm_regulator_data rpm_smb208_regulators[] = {
-	{ "s1a",  QCOM_RPM_SMB208_S1a, &smb208_smps, "vin_s1a" },
-	{ "s1b",  QCOM_RPM_SMB208_S1b, &smb208_smps, "vin_s1b" },
-	{ "s2a",  QCOM_RPM_SMB208_S2a, &smb208_smps, "vin_s2a" },
-	{ "s2b",  QCOM_RPM_SMB208_S2b, &smb208_smps, "vin_s2b" },
-	{ }
-};
+    {"s1a", QCOM_RPM_SMB208_S1a, &smb208_smps, "vin_s1a"},
+    {"s1b", QCOM_RPM_SMB208_S1b, &smb208_smps, "vin_s1b"},
+    {"s2a", QCOM_RPM_SMB208_S2a, &smb208_smps, "vin_s2a"},
+    {"s2b", QCOM_RPM_SMB208_S2b, &smb208_smps, "vin_s2b"},
+    {}};
 
 static const struct of_device_id rpm_of_match[] = {
-	{ .compatible = "qcom,rpm-pm8018-regulators",
-	  .data = &rpm_pm8018_regulators },
-	{ .compatible = "qcom,rpm-pm8058-regulators",
-	  .data = &rpm_pm8058_regulators },
-	{ .compatible = "qcom,rpm-pm8901-regulators",
-	  .data = &rpm_pm8901_regulators },
-	{ .compatible = "qcom,rpm-pm8921-regulators",
-	  .data = &rpm_pm8921_regulators },
-	{ .compatible = "qcom,rpm-pm8917-regulators",
-	  .data = &rpm_pm8917_regulators },
-	{ .compatible = "qcom,rpm-smb208-regulators",
-	  .data = &rpm_smb208_regulators },
-	{}
-};
+    {.compatible = "qcom,rpm-pm8018-regulators",
+     .data = &rpm_pm8018_regulators},
+    {.compatible = "qcom,rpm-pm8058-regulators",
+     .data = &rpm_pm8058_regulators},
+    {.compatible = "qcom,rpm-pm8901-regulators",
+     .data = &rpm_pm8901_regulators},
+    {.compatible = "qcom,rpm-pm8921-regulators",
+     .data = &rpm_pm8921_regulators},
+    {.compatible = "qcom,rpm-pm8917-regulators",
+     .data = &rpm_pm8917_regulators},
+    {.compatible = "qcom,rpm-smb208-regulators",
+     .data = &rpm_smb208_regulators},
+    {}};
 MODULE_DEVICE_TABLE(of, rpm_of_match);
 
-static int rpm_reg_probe(struct platform_device *pdev)
-{
-	const struct rpm_regulator_data *reg;
-	struct regulator_config config = { };
-	struct regulator_dev *rdev;
-	struct qcom_rpm_reg *vreg;
-	struct qcom_rpm *rpm;
+static int rpm_reg_probe(struct platform_device *pdev) {
+  const struct rpm_regulator_data *reg;
+  struct regulator_config config = {};
+  struct regulator_dev *rdev;
+  struct qcom_rpm_reg *vreg;
+  struct qcom_rpm *rpm;
+  int ret;
 
-	rpm = dev_get_drvdata(pdev->dev.parent);
-	if (!rpm) {
-		dev_err(&pdev->dev, "unable to retrieve handle to rpm\n");
-		return -ENODEV;
-	}
+  rpm = dev_get_drvdata(pdev->dev.parent);
+  if (!rpm) {
+    dev_err(&pdev->dev, "unable to retrieve handle to rpm\n");
+    return -ENODEV;
+  }
 
-	reg = device_get_match_data(&pdev->dev);
-	if (!reg) {
-		dev_err(&pdev->dev, "failed to match device\n");
-		return -ENODEV;
-	}
+  reg = device_get_match_data(&pdev->dev);
+  if (!reg) {
+    dev_err(&pdev->dev, "failed to match device\n");
+    return -ENODEV;
+  }
 
-	for (; reg->name; reg++) {
-		vreg = devm_kmemdup(&pdev->dev, reg->template, sizeof(*vreg), GFP_KERNEL);
-		if (!vreg)
-			return -ENOMEM;
+  ret = device_create_file(&pdev->dev, &dev_attr_debug_data);
+  if (ret) {
+    dev_err(&pdev->dev, "Failed to create debug_data attribute\n");
+    return ret;
+  }
 
-		mutex_init(&vreg->lock);
+  for (; reg->name; reg++) {
+    vreg = devm_kmemdup(&pdev->dev, reg->template, sizeof(*vreg), GFP_KERNEL);
+    if (!vreg)
+      return -ENOMEM;
 
-		vreg->dev = &pdev->dev;
-		vreg->resource = reg->resource;
-		vreg->rpm = rpm;
+    mutex_init(&vreg->lock);
 
-		vreg->desc.id = -1;
-		vreg->desc.owner = THIS_MODULE;
-		vreg->desc.type = REGULATOR_VOLTAGE;
-		vreg->desc.name = reg->name;
-		vreg->desc.supply_name = reg->supply;
-		vreg->desc.of_match = reg->name;
-		vreg->desc.of_parse_cb = rpm_reg_of_parse;
+    vreg->dev = &pdev->dev;
+    vreg->resource = reg->resource;
+    vreg->rpm = rpm;
 
-		config.dev = &pdev->dev;
-		config.driver_data = vreg;
-		rdev = devm_regulator_register(&pdev->dev, &vreg->desc, &config);
-		if (IS_ERR(rdev)) {
-			dev_err(&pdev->dev, "failed to register %s\n", reg->name);
-			return PTR_ERR(rdev);
-		}
-	}
+    vreg->desc.id = -1;
+    vreg->desc.owner = THIS_MODULE;
+    vreg->desc.type = REGULATOR_VOLTAGE;
+    vreg->desc.name = reg->name;
+    vreg->desc.supply_name = reg->supply;
+    vreg->desc.of_match = reg->name;
+    vreg->desc.of_parse_cb = rpm_reg_of_parse;
 
-	return 0;
+    config.dev = &pdev->dev;
+    config.driver_data = vreg;
+    rdev = devm_regulator_register(&pdev->dev, &vreg->desc, &config);
+    if (IS_ERR(rdev)) {
+      dev_err(&pdev->dev, "failed to register %s\n", reg->name);
+      return PTR_ERR(rdev);
+    }
+  }
+
+  return 0;
 }
 
 static struct platform_driver rpm_reg_driver = {
-	.probe          = rpm_reg_probe,
-	.driver  = {
-		.name  = "qcom_rpm_reg",
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
-		.of_match_table = of_match_ptr(rpm_of_match),
-	},
+    .probe = rpm_reg_probe,
+    .driver =
+        {
+            .name = "qcom_rpm_reg",
+            .probe_type = PROBE_PREFER_ASYNCHRONOUS,
+            .of_match_table = of_match_ptr(rpm_of_match),
+        },
 };
 
-static int __init rpm_reg_init(void)
-{
-	return platform_driver_register(&rpm_reg_driver);
+static int __init rpm_reg_init(void) {
+  return platform_driver_register(&rpm_reg_driver);
 }
 subsys_initcall(rpm_reg_init);
 
-static void __exit rpm_reg_exit(void)
-{
-	platform_driver_unregister(&rpm_reg_driver);
+static void __exit rpm_reg_exit(void) {
+  platform_driver_unregister(&rpm_reg_driver);
 }
 module_exit(rpm_reg_exit)
 
-MODULE_DESCRIPTION("Qualcomm RPM regulator driver");
+    MODULE_DESCRIPTION("Qualcomm RPM regulator driver");
 MODULE_LICENSE("GPL v2");

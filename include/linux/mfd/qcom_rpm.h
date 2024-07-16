@@ -6,9 +6,19 @@
 
 struct qcom_rpm;
 
-#define QCOM_RPM_ACTIVE_STATE	0
-#define QCOM_RPM_SLEEP_STATE	1
+#define QCOM_RPM_ACTIVE_STATE 0
+#define QCOM_RPM_SLEEP_STATE 1
 
-int qcom_rpm_write(struct qcom_rpm *rpm, int state, int resource, u32 *buf, size_t count);
+struct qcom_rpm_resource {
+	unsigned target_id;
+	unsigned status_id;
+	unsigned select_id;
+	unsigned size;
+};
+
+int qcom_rpm_write(struct qcom_rpm *rpm, int state, int resource, u32 *buf,
+		   size_t count);
+int qcom_rpm_write_raw(struct qcom_rpm *rpm, int state,
+		       struct qcom_rpm_resource *res, u32 *buf);
 
 #endif

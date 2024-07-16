@@ -1,14 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * MIPI-DSI based s6e8fa0 AMOLED LCD 4.99 inch panel driver.
+ * MIPI-DSI based s6e8fa0 AMOLED LCD 4.99 inch panel driver
  *
  * Copyright (c) 2015 Samsung Electronics Co., Ltd
- *
- * Chanho Park <chanho61.park@samsung.com>
+ * Copyright (c) 2024 Maximilian Gaedig <mg@maximiliangaedig.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
-*/
+ */
 
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_panel.h>
@@ -69,6 +69,7 @@ static inline struct s6e8fa0 *panel_to_s6e8fa0(struct drm_panel *panel)
 
 static int s6e8fa0_clear_error(struct s6e8fa0 *ctx)
 {
+	printk("s6e8fa0_clear_error, ret: %d", ctx->error);
 	int ret = ctx->error;
 
 	ctx->error = 0;
@@ -80,11 +81,14 @@ static void s6e8fa0_dcs_write(struct s6e8fa0 *ctx, const void *data, size_t len)
 	struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
 	ssize_t ret;
 
-	if (ctx->error < 0)
+	if (ctx->error < 0) {
+		printk("(ctx->error < 0) dcs_write: %d", ctx->error);
 		return;
+	}
 
 	ret = mipi_dsi_dcs_write_buffer(dsi, data, len);
 	if (ret < 0) {
+		printk("dev_err in write\n");
 		dev_err(ctx->dev, "error %zd writing dcs seq: %*ph\n", ret,
 			(int)len, data);
 		ctx->error = ret;
@@ -140,6 +144,7 @@ static void s6e8fa0_seq_test_key_on_fc(struct s6e8fa0 *ctx)
 static void s6e8fa0_set_maximum_return_packet_size(struct s6e8fa0 *ctx,
 						   u16 size)
 {
+	printk("s6e8fa0_set_maximum_return_packet_size");
 	struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
 	int ret;
 
@@ -157,6 +162,7 @@ static void s6e8fa0_set_maximum_return_packet_size(struct s6e8fa0 *ctx,
 
 static void s6e8fa0_read_mtp_id(struct s6e8fa0 *ctx)
 {
+	printk("s6e8fa0_read_mtp_id");
 	int ret;
 	int id_len = ARRAY_SIZE(ctx->id);
 
@@ -170,11 +176,13 @@ static void s6e8fa0_read_mtp_id(struct s6e8fa0 *ctx)
 
 static void s6e8fa0_set_sequence(struct s6e8fa0 *ctx)
 {
+	printk("s6e8fa0_set_sequence");
 	s6e8fa0_set_maximum_return_packet_size(ctx, 3);
 	s6e8fa0_read_mtp_id(ctx);
 
-	if (ctx->error != 0)
+	if (ctx->error != 0) {
 		return;
+	}
 
 	usleep_range(17000, 18000);
 
@@ -227,28 +235,31 @@ static int s6e8fa0_get_brightness(struct backlight_device *bl_dev)
 
 static int s6e8fa0_set_brightness(struct backlight_device *bl_dev)
 {
+	printk("HI from brightness\n");
 	struct s6e8fa0 *ctx = (struct s6e8fa0 *)bl_get_data(bl_dev);
 	int brightness = bl_dev->props.brightness;
+	printk("brightness: %d\n", brightness);
 	/* FIXME: MIPI_DSI_DCS_SHORT_WRITE_PARAM is not working properly, the
 	 * panel is turned on from Power key source.
 	 */
-	u8 gamma_update[3] = {
-		0x51,
-	};
+	u8 gamma_update[3] = { 0xF7, 0x03 };
 
 	if (brightness < MIN_BRIGHTNESS ||
 	    brightness > bl_dev->props.max_brightness) {
+		printk("brightness < MIN_BRIGHTNESS || brightness > bl_dev->props.max_brightness\n");
 		dev_err(ctx->dev, "Invalid brightness: %u\n", brightness);
 		return -EINVAL;
 	}
 
 	if (!ctx->is_power_on) {
+		printk("!ctx->is_power_on\n");
 		return -ENODEV;
 	}
 
 	/* TODO: support only over 60nit */
-	gamma_update[1] = brightness;
+	gamma_update[2] = brightness;
 	s6e8fa0_dcs_write(ctx, gamma_update, ARRAY_SIZE(gamma_update));
+	printk("write()\n");
 
 	return 0;
 }
@@ -260,14 +271,17 @@ static const struct backlight_ops s6e8fa0_bl_ops = {
 
 static int s6e8fa0_power_on(struct s6e8fa0 *ctx)
 {
+	printk("s6e8fa0_power_on");
 	int ret;
 
 	if (ctx->is_power_on)
 		return 0;
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
-	if (ret < 0)
+	if (ret < 0) {
+		printk("ret<0 regulator_bulk_enable: %d", ret);
 		return ret;
+	}
 	msleep(ctx->power_on_delay);
 
 	gpiod_set_value(ctx->reset_gpio, 0);
@@ -283,6 +297,7 @@ static int s6e8fa0_power_on(struct s6e8fa0 *ctx)
 
 static int s6e8fa0_power_off(struct s6e8fa0 *ctx)
 {
+	printk("s6e8fa0_power_off");
 	if (!ctx->is_power_on)
 		return 0;
 
@@ -297,6 +312,7 @@ static int s6e8fa0_power_off(struct s6e8fa0 *ctx)
 
 static int s6e8fa0_disable(struct drm_panel *panel)
 {
+	printk("s6e8fa0_disable");
 	struct s6e8fa0 *ctx = panel_to_s6e8fa0(panel);
 
 	s6e8fa0_dcs_write_seq_static(ctx, MIPI_DCS_SET_DISPLAY_OFF);
@@ -316,6 +332,7 @@ static int s6e8fa0_disable(struct drm_panel *panel)
 
 static int s6e8fa0_unprepare(struct drm_panel *panel)
 {
+	printk("s6e8fa0_unprepare");
 	struct s6e8fa0 *ctx = panel_to_s6e8fa0(panel);
 	int ret;
 
@@ -330,6 +347,7 @@ static int s6e8fa0_unprepare(struct drm_panel *panel)
 
 static int s6e8fa0_prepare(struct drm_panel *panel)
 {
+	printk("s6e8fa0_prepare");
 	struct s6e8fa0 *ctx = panel_to_s6e8fa0(panel);
 	int ret;
 
@@ -348,6 +366,8 @@ static int s6e8fa0_prepare(struct drm_panel *panel)
 
 static int s6e8fa0_enable(struct drm_panel *panel)
 {
+	printk("s6e8fa0_enable");
+
 	struct s6e8fa0 *ctx = panel_to_s6e8fa0(panel);
 
 	s6e8fa0_dcs_write_seq_static(ctx, MIPI_DCS_SET_DISPLAY_ON);
@@ -369,6 +389,7 @@ static int s6e8fa0_enable(struct drm_panel *panel)
 static int s6e8fa0_get_modes(struct drm_panel *panel,
 			     struct drm_connector *connector)
 {
+	printk("s6e8fa0_get_modes");
 	struct s6e8fa0 *ctx = panel_to_s6e8fa0(panel);
 	struct drm_display_mode *mode;
 
@@ -422,6 +443,7 @@ static int s6e8fa0_parse_dt(struct s6e8fa0 *ctx)
 
 static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 {
+	printk("s6e8fa0_probe");
 	struct device *dev = &dsi->dev;
 	struct s6e8fa0 *ctx;
 	int ret;
@@ -454,8 +476,6 @@ static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 				      ctx->supplies);
 	if (ret < 0)
 		dev_warn(dev, "failed to get regulators: %d\n", ret);
-
-
 
 	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(ctx->reset_gpio)) {
@@ -491,6 +511,7 @@ static int s6e8fa0_probe(struct mipi_dsi_device *dsi)
 
 static void s6e8fa0_remove(struct mipi_dsi_device *dsi)
 {
+	printk("s6e8fa0_remove");
 	struct s6e8fa0 *ctx = mipi_dsi_get_drvdata(dsi);
 
 	mipi_dsi_detach(dsi);
@@ -501,6 +522,7 @@ static void s6e8fa0_remove(struct mipi_dsi_device *dsi)
 
 static void s6e8fa0_shutdown(struct mipi_dsi_device *dsi)
 {
+	printk("s6e8fa0_shutdown");
 	struct s6e8fa0 *ctx = mipi_dsi_get_drvdata(dsi);
 
 	s6e8fa0_power_off(ctx);

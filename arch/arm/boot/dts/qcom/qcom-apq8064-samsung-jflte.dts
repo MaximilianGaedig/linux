@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-#include "qcom-apq8064-v2.0.dtsi"
+#include "qcom-apq8064-pm8917.dtsi"
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/common.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
 
@@ -11,88 +12,2594 @@
 	aliases {
 		serial0 = &gsbi7_serial;
 		serial1 = &gsbi6_serial;
-
-		// display0 = &framebuffer0;
 	};
 
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
 
-
-	// chosen {
-	// 	#address-cells = <1>;
-	// 	#size-cells = <1>;
-	// 	ranges;
-	//
-	// 	stdout-path = "display0";
-	//
-	// 	// framebuffer0: framebuffer@3200000 {
-	// 	// 	compatible = "simple-framebuffer";
-	// 	// 	reg = <0x03200000 0x800000>;
-	// 	// 	width = <1920>;
-	// 	// 	height = <1080>;
-	// 	// 	stride = <(1920 * 3)>;
-	// 	// 	format = "r8g8b8";
-	// 	// };
-	// };
-	
-	// leds {
-	// 	compatible = "gpio-leds";
-	// 	pinctrl-names = "default";
-	// 	pinctrl-0 = <&notify_led>;
-	//
-	// 	led-user {
-	// 		label = "user0";
-	// 		color = <LED_COLOR_ID_GREEN>;
-	// 		gpios = <&pm8921_gpio 18 GPIO_ACTIVE_HIGH>;
-	// 		default-state = "on";
-	// 	};
-	// };
-
-	// reserved-memory {
-	// 	#address-cells = <1>;
-	// 	#size-cells = <1>;
-	// 	ranges;
-	//
-	// 	framebuffer@3200000 {
-	// 		reg = <0x03200000 0x800000>;
-	// 		no-map;
-	// 	};
-	//
-	// };
-
-	// reserved-memory {
-	// 	#address-cells = <1>;
-	// 	#size-cells = <1>;
-	// 	ranges;
-	//
-	// 	ramoops@88d00000{
-	// 		compatible = "ramoops";
-	// 		reg = <0x88d00000 0x100000>;
-	// 		record-size     = <0x00020000>;
-	// 		console-size    = <0x00020000>;
-	// 		ftrace-size     = <0x00020000>;
-	// 	};
-	// };
-
 	soc {
 		rpm@108000 {
 			regulators {
-				vdd_l1_l2_l12_l18-supply = <&pm8921_s4>;
-				vin_lvs1_3_6-supply = <&pm8921_s4>;
-				vin_lvs4_5_7-supply = <&pm8921_s4>;
+				vdd_l1_l2_l12_l18-supply = <&pmic_s4>;
+
+				vin_lvs1_3_6-supply = <&pmic_s4>;
+				vin_lvs4_5_7-supply = <&pmic_s4>;
 
 
-				vdd_l24-supply = <&pm8921_s1>;
-				vdd_l25-supply = <&pm8921_s1>;
-				vin_lvs2-supply = <&pm8921_s1>;
+				vdd_l24-supply = <&pmic_s1>;
+				vdd_l25-supply = <&pmic_s1>;
+				vin_lvs2-supply = <&pmic_s1>;
 
-				vdd_l26-supply = <&pm8921_s7>;
-				vdd_l27-supply = <&pm8921_s7>;
-				vdd_l28-supply = <&pm8921_s7>;
+				vdd_l26-supply = <&pmic_s7>;
+				vdd_l27-supply = <&pmic_s7>;
+				vdd_l28-supply = <&pmic_s7>;
 
-				vdd_ncp-supply = <&pm8921_l6>;
+				vdd_ncp-supply = <&pmic_l6>;
+				// TEST_HERE
+test0 {regulator-always-on;};
+test1 {regulator-always-on;};
+test2 {regulator-always-on;};
+test3 {regulator-always-on;};
+test4 {regulator-always-on;};
+test5 {regulator-always-on;};
+test6 {regulator-always-on;};
+test7 {regulator-always-on;};
+test8 {regulator-always-on;};
+test9 {regulator-always-on;};
+test10 {regulator-always-on;};
+test11 {regulator-always-on;};
+test12 {regulator-always-on;};
+test13 {regulator-always-on;};
+test14 {regulator-always-on;};
+test15 {regulator-always-on;};
+test16 {regulator-always-on;};
+test17 {regulator-always-on;};
+test18 {regulator-always-on;};
+test19 {regulator-always-on;};
+test20 {regulator-always-on;};
+test21 {regulator-always-on;};
+test22 {regulator-always-on;};
+test23 {regulator-always-on;};
+test24 {regulator-always-on;};
+test25 {regulator-always-on;};
+test26 {regulator-always-on;};
+test27 {regulator-always-on;};
+test28 {regulator-always-on;};
+test29 {regulator-always-on;};
+test30 {regulator-always-on;};
+test31 {regulator-always-on;};
+test32 {regulator-always-on;};
+test33 {regulator-always-on;};
+test34 {regulator-always-on;};
+test35 {regulator-always-on;};
+test36 {regulator-always-on;};
+test37 {regulator-always-on;};
+test38 {regulator-always-on;};
+test39 {regulator-always-on;};
+test40 {regulator-always-on;};
+test41 {regulator-always-on;};
+test42 {regulator-always-on;};
+test43 {regulator-always-on;};
+test44 {regulator-always-on;};
+test45 {regulator-always-on;};
+test46 {regulator-always-on;};
+test47 {regulator-always-on;};
+test48 {regulator-always-on;};
+test49 {regulator-always-on;};
+test50 {regulator-always-on;};
+test51 {regulator-always-on;};
+test52 {regulator-always-on;};
+test53 {regulator-always-on;};
+test54 {regulator-always-on;};
+test55 {regulator-always-on;};
+test56 {regulator-always-on;};
+test57 {regulator-always-on;};
+test58 {regulator-always-on;};
+test59 {regulator-always-on;};
+test60 {regulator-always-on;};
+test61 {regulator-always-on;};
+test62 {regulator-always-on;};
+test63 {regulator-always-on;};
+test64 {regulator-always-on;};
+test65 {regulator-always-on;};
+test66 {regulator-always-on;};
+test67 {regulator-always-on;};
+test68 {regulator-always-on;};
+test69 {regulator-always-on;};
+test70 {regulator-always-on;};
+test71 {regulator-always-on;};
+test72 {regulator-always-on;};
+test73 {regulator-always-on;};
+test74 {regulator-always-on;};
+test75 {regulator-always-on;};
+test76 {regulator-always-on;};
+test77 {regulator-always-on;};
+test78 {regulator-always-on;};
+test79 {regulator-always-on;};
+test80 {regulator-always-on;};
+test81 {regulator-always-on;};
+test82 {regulator-always-on;};
+test83 {regulator-always-on;};
+test84 {regulator-always-on;};
+test85 {regulator-always-on;};
+test86 {regulator-always-on;};
+test87 {regulator-always-on;};
+test88 {regulator-always-on;};
+test89 {regulator-always-on;};
+test90 {regulator-always-on;};
+test91 {regulator-always-on;};
+test92 {regulator-always-on;};
+test93 {regulator-always-on;};
+test94 {regulator-always-on;};
+test95 {regulator-always-on;};
+test96 {regulator-always-on;};
+test97 {regulator-always-on;};
+test98 {regulator-always-on;};
+test99 {regulator-always-on;};
+test100 {regulator-always-on;};
+test101 {regulator-always-on;};
+test102 {regulator-always-on;};
+test103 {regulator-always-on;};
+test104 {regulator-always-on;};
+test105 {regulator-always-on;};
+test106 {regulator-always-on;};
+test107 {regulator-always-on;};
+test108 {regulator-always-on;};
+test109 {regulator-always-on;};
+test110 {regulator-always-on;};
+test111 {regulator-always-on;};
+test112 {regulator-always-on;};
+test113 {regulator-always-on;};
+test114 {regulator-always-on;};
+test115 {regulator-always-on;};
+test116 {regulator-always-on;};
+test117 {regulator-always-on;};
+test118 {regulator-always-on;};
+test119 {regulator-always-on;};
+test120 {regulator-always-on;};
+test121 {regulator-always-on;};
+test122 {regulator-always-on;};
+test123 {regulator-always-on;};
+test124 {regulator-always-on;};
+test125 {regulator-always-on;};
+test126 {regulator-always-on;};
+test127 {regulator-always-on;};
+test128 {regulator-always-on;};
+test129 {regulator-always-on;};
+test130 {regulator-always-on;};
+test131 {regulator-always-on;};
+test132 {regulator-always-on;};
+test133 {regulator-always-on;};
+test134 {regulator-always-on;};
+test135 {regulator-always-on;};
+test136 {regulator-always-on;};
+test137 {regulator-always-on;};
+test138 {regulator-always-on;};
+test139 {regulator-always-on;};
+test140 {regulator-always-on;};
+test141 {regulator-always-on;};
+test142 {regulator-always-on;};
+test143 {regulator-always-on;};
+test144 {regulator-always-on;};
+test145 {regulator-always-on;};
+test146 {regulator-always-on;};
+test147 {regulator-always-on;};
+test148 {regulator-always-on;};
+test149 {regulator-always-on;};
+test150 {regulator-always-on;};
+test151 {regulator-always-on;};
+test152 {regulator-always-on;};
+test153 {regulator-always-on;};
+test154 {regulator-always-on;};
+test155 {regulator-always-on;};
+test156 {regulator-always-on;};
+test157 {regulator-always-on;};
+test158 {regulator-always-on;};
+test159 {regulator-always-on;};
+test160 {regulator-always-on;};
+test161 {regulator-always-on;};
+test162 {regulator-always-on;};
+test163 {regulator-always-on;};
+test164 {regulator-always-on;};
+test165 {regulator-always-on;};
+test166 {regulator-always-on;};
+test167 {regulator-always-on;};
+test168 {regulator-always-on;};
+test169 {regulator-always-on;};
+test170 {regulator-always-on;};
+test171 {regulator-always-on;};
+test172 {regulator-always-on;};
+test173 {regulator-always-on;};
+test174 {regulator-always-on;};
+test175 {regulator-always-on;};
+test176 {regulator-always-on;};
+test177 {regulator-always-on;};
+test178 {regulator-always-on;};
+test179 {regulator-always-on;};
+test180 {regulator-always-on;};
+test181 {regulator-always-on;};
+test182 {regulator-always-on;};
+test183 {regulator-always-on;};
+test184 {regulator-always-on;};
+test185 {regulator-always-on;};
+test186 {regulator-always-on;};
+test187 {regulator-always-on;};
+test188 {regulator-always-on;};
+test189 {regulator-always-on;};
+test190 {regulator-always-on;};
+test191 {regulator-always-on;};
+test192 {regulator-always-on;};
+test193 {regulator-always-on;};
+test194 {regulator-always-on;};
+test195 {regulator-always-on;};
+test196 {regulator-always-on;};
+test197 {regulator-always-on;};
+test198 {regulator-always-on;};
+test199 {regulator-always-on;};
+test200 {regulator-always-on;};
+test201 {regulator-always-on;};
+test202 {regulator-always-on;};
+test203 {regulator-always-on;};
+test204 {regulator-always-on;};
+test205 {regulator-always-on;};
+test206 {regulator-always-on;};
+test207 {regulator-always-on;};
+test208 {regulator-always-on;};
+test209 {regulator-always-on;};
+test210 {regulator-always-on;};
+test211 {regulator-always-on;};
+test212 {regulator-always-on;};
+test213 {regulator-always-on;};
+test214 {regulator-always-on;};
+test215 {regulator-always-on;};
+test216 {regulator-always-on;};
+test217 {regulator-always-on;};
+test218 {regulator-always-on;};
+test219 {regulator-always-on;};
+test220 {regulator-always-on;};
+test221 {regulator-always-on;};
+test222 {regulator-always-on;};
+test223 {regulator-always-on;};
+test224 {regulator-always-on;};
+test225 {regulator-always-on;};
+test226 {regulator-always-on;};
+test227 {regulator-always-on;};
+test228 {regulator-always-on;};
+test229 {regulator-always-on;};
+test230 {regulator-always-on;};
+test231 {regulator-always-on;};
+test232 {regulator-always-on;};
+test233 {regulator-always-on;};
+test234 {regulator-always-on;};
+test235 {regulator-always-on;};
+test236 {regulator-always-on;};
+test237 {regulator-always-on;};
+test238 {regulator-always-on;};
+test239 {regulator-always-on;};
+test240 {regulator-always-on;};
+test241 {regulator-always-on;};
+test242 {regulator-always-on;};
+test243 {regulator-always-on;};
+test244 {regulator-always-on;};
+test245 {regulator-always-on;};
+test246 {regulator-always-on;};
+test247 {regulator-always-on;};
+test248 {regulator-always-on;};
+test249 {regulator-always-on;};
+test250 {regulator-always-on;};
+test251 {regulator-always-on;};
+test252 {regulator-always-on;};
+test253 {regulator-always-on;};
+test254 {regulator-always-on;};
+test255 {regulator-always-on;};
+test256 {regulator-always-on;};
+test257 {regulator-always-on;};
+test258 {regulator-always-on;};
+test259 {regulator-always-on;};
+test260 {regulator-always-on;};
+test261 {regulator-always-on;};
+test262 {regulator-always-on;};
+test263 {regulator-always-on;};
+test264 {regulator-always-on;};
+test265 {regulator-always-on;};
+test266 {regulator-always-on;};
+test267 {regulator-always-on;};
+test268 {regulator-always-on;};
+test269 {regulator-always-on;};
+test270 {regulator-always-on;};
+test271 {regulator-always-on;};
+test272 {regulator-always-on;};
+test273 {regulator-always-on;};
+test274 {regulator-always-on;};
+test275 {regulator-always-on;};
+test276 {regulator-always-on;};
+test277 {regulator-always-on;};
+test278 {regulator-always-on;};
+test279 {regulator-always-on;};
+test280 {regulator-always-on;};
+test281 {regulator-always-on;};
+test282 {regulator-always-on;};
+test283 {regulator-always-on;};
+test284 {regulator-always-on;};
+test285 {regulator-always-on;};
+test286 {regulator-always-on;};
+test287 {regulator-always-on;};
+test288 {regulator-always-on;};
+test289 {regulator-always-on;};
+test290 {regulator-always-on;};
+test291 {regulator-always-on;};
+test292 {regulator-always-on;};
+test293 {regulator-always-on;};
+test294 {regulator-always-on;};
+test295 {regulator-always-on;};
+test296 {regulator-always-on;};
+test297 {regulator-always-on;};
+test298 {regulator-always-on;};
+test299 {regulator-always-on;};
+test300 {regulator-always-on;};
+test301 {regulator-always-on;};
+test302 {regulator-always-on;};
+test303 {regulator-always-on;};
+test304 {regulator-always-on;};
+test305 {regulator-always-on;};
+test306 {regulator-always-on;};
+test307 {regulator-always-on;};
+test308 {regulator-always-on;};
+test309 {regulator-always-on;};
+test310 {regulator-always-on;};
+test311 {regulator-always-on;};
+test312 {regulator-always-on;};
+test313 {regulator-always-on;};
+test314 {regulator-always-on;};
+test315 {regulator-always-on;};
+test316 {regulator-always-on;};
+test317 {regulator-always-on;};
+test318 {regulator-always-on;};
+test319 {regulator-always-on;};
+test320 {regulator-always-on;};
+test321 {regulator-always-on;};
+test322 {regulator-always-on;};
+test323 {regulator-always-on;};
+test324 {regulator-always-on;};
+test325 {regulator-always-on;};
+test326 {regulator-always-on;};
+test327 {regulator-always-on;};
+test328 {regulator-always-on;};
+test329 {regulator-always-on;};
+test330 {regulator-always-on;};
+test331 {regulator-always-on;};
+test332 {regulator-always-on;};
+test333 {regulator-always-on;};
+test334 {regulator-always-on;};
+test335 {regulator-always-on;};
+test336 {regulator-always-on;};
+test337 {regulator-always-on;};
+test338 {regulator-always-on;};
+test339 {regulator-always-on;};
+test340 {regulator-always-on;};
+test341 {regulator-always-on;};
+test342 {regulator-always-on;};
+test343 {regulator-always-on;};
+test344 {regulator-always-on;};
+test345 {regulator-always-on;};
+test346 {regulator-always-on;};
+test347 {regulator-always-on;};
+test348 {regulator-always-on;};
+test349 {regulator-always-on;};
+test350 {regulator-always-on;};
+test351 {regulator-always-on;};
+test352 {regulator-always-on;};
+test353 {regulator-always-on;};
+test354 {regulator-always-on;};
+test355 {regulator-always-on;};
+test356 {regulator-always-on;};
+test357 {regulator-always-on;};
+test358 {regulator-always-on;};
+test359 {regulator-always-on;};
+test360 {regulator-always-on;};
+test361 {regulator-always-on;};
+test362 {regulator-always-on;};
+test363 {regulator-always-on;};
+test364 {regulator-always-on;};
+test365 {regulator-always-on;};
+test366 {regulator-always-on;};
+test367 {regulator-always-on;};
+test368 {regulator-always-on;};
+test369 {regulator-always-on;};
+test370 {regulator-always-on;};
+test371 {regulator-always-on;};
+test372 {regulator-always-on;};
+test373 {regulator-always-on;};
+test374 {regulator-always-on;};
+test375 {regulator-always-on;};
+test376 {regulator-always-on;};
+test377 {regulator-always-on;};
+test378 {regulator-always-on;};
+test379 {regulator-always-on;};
+test380 {regulator-always-on;};
+test381 {regulator-always-on;};
+test382 {regulator-always-on;};
+test383 {regulator-always-on;};
+test384 {regulator-always-on;};
+test385 {regulator-always-on;};
+test386 {regulator-always-on;};
+test387 {regulator-always-on;};
+test388 {regulator-always-on;};
+test389 {regulator-always-on;};
+test390 {regulator-always-on;};
+test391 {regulator-always-on;};
+test392 {regulator-always-on;};
+test393 {regulator-always-on;};
+test394 {regulator-always-on;};
+test395 {regulator-always-on;};
+test396 {regulator-always-on;};
+test397 {regulator-always-on;};
+test398 {regulator-always-on;};
+test399 {regulator-always-on;};
+test400 {regulator-always-on;};
+test401 {regulator-always-on;};
+test402 {regulator-always-on;};
+test403 {regulator-always-on;};
+test404 {regulator-always-on;};
+test405 {regulator-always-on;};
+test406 {regulator-always-on;};
+test407 {regulator-always-on;};
+test408 {regulator-always-on;};
+test409 {regulator-always-on;};
+test410 {regulator-always-on;};
+test411 {regulator-always-on;};
+test412 {regulator-always-on;};
+test413 {regulator-always-on;};
+test414 {regulator-always-on;};
+test415 {regulator-always-on;};
+test416 {regulator-always-on;};
+test417 {regulator-always-on;};
+test418 {regulator-always-on;};
+test419 {regulator-always-on;};
+test420 {regulator-always-on;};
+test421 {regulator-always-on;};
+test422 {regulator-always-on;};
+test423 {regulator-always-on;};
+test424 {regulator-always-on;};
+test425 {regulator-always-on;};
+test426 {regulator-always-on;};
+test427 {regulator-always-on;};
+test428 {regulator-always-on;};
+test429 {regulator-always-on;};
+test430 {regulator-always-on;};
+test431 {regulator-always-on;};
+test432 {regulator-always-on;};
+test433 {regulator-always-on;};
+test434 {regulator-always-on;};
+test435 {regulator-always-on;};
+test436 {regulator-always-on;};
+test437 {regulator-always-on;};
+test438 {regulator-always-on;};
+test439 {regulator-always-on;};
+test440 {regulator-always-on;};
+test441 {regulator-always-on;};
+test442 {regulator-always-on;};
+test443 {regulator-always-on;};
+test444 {regulator-always-on;};
+test445 {regulator-always-on;};
+test446 {regulator-always-on;};
+test447 {regulator-always-on;};
+test448 {regulator-always-on;};
+test449 {regulator-always-on;};
+test450 {regulator-always-on;};
+test451 {regulator-always-on;};
+test452 {regulator-always-on;};
+test453 {regulator-always-on;};
+test454 {regulator-always-on;};
+test455 {regulator-always-on;};
+test456 {regulator-always-on;};
+test457 {regulator-always-on;};
+test458 {regulator-always-on;};
+test459 {regulator-always-on;};
+test460 {regulator-always-on;};
+test461 {regulator-always-on;};
+test462 {regulator-always-on;};
+test463 {regulator-always-on;};
+test464 {regulator-always-on;};
+test465 {regulator-always-on;};
+test466 {regulator-always-on;};
+test467 {regulator-always-on;};
+test468 {regulator-always-on;};
+test469 {regulator-always-on;};
+test470 {regulator-always-on;};
+test471 {regulator-always-on;};
+test472 {regulator-always-on;};
+test473 {regulator-always-on;};
+test474 {regulator-always-on;};
+test475 {regulator-always-on;};
+test476 {regulator-always-on;};
+test477 {regulator-always-on;};
+test478 {regulator-always-on;};
+test479 {regulator-always-on;};
+test480 {regulator-always-on;};
+test481 {regulator-always-on;};
+test482 {regulator-always-on;};
+test483 {regulator-always-on;};
+test484 {regulator-always-on;};
+test485 {regulator-always-on;};
+test486 {regulator-always-on;};
+test487 {regulator-always-on;};
+test488 {regulator-always-on;};
+test489 {regulator-always-on;};
+test490 {regulator-always-on;};
+test491 {regulator-always-on;};
+test492 {regulator-always-on;};
+test493 {regulator-always-on;};
+test494 {regulator-always-on;};
+test495 {regulator-always-on;};
+test496 {regulator-always-on;};
+test497 {regulator-always-on;};
+test498 {regulator-always-on;};
+test499 {regulator-always-on;};
+test500 {regulator-always-on;};
+test501 {regulator-always-on;};
+test502 {regulator-always-on;};
+test503 {regulator-always-on;};
+test504 {regulator-always-on;};
+test505 {regulator-always-on;};
+test506 {regulator-always-on;};
+test507 {regulator-always-on;};
+test508 {regulator-always-on;};
+test509 {regulator-always-on;};
+test510 {regulator-always-on;};
+test511 {regulator-always-on;};
+test512 {regulator-always-on;};
+test513 {regulator-always-on;};
+test514 {regulator-always-on;};
+test515 {regulator-always-on;};
+test516 {regulator-always-on;};
+test517 {regulator-always-on;};
+test518 {regulator-always-on;};
+test519 {regulator-always-on;};
+test520 {regulator-always-on;};
+test521 {regulator-always-on;};
+test522 {regulator-always-on;};
+test523 {regulator-always-on;};
+test524 {regulator-always-on;};
+test525 {regulator-always-on;};
+test526 {regulator-always-on;};
+test527 {regulator-always-on;};
+test528 {regulator-always-on;};
+test529 {regulator-always-on;};
+test530 {regulator-always-on;};
+test531 {regulator-always-on;};
+test532 {regulator-always-on;};
+test533 {regulator-always-on;};
+test534 {regulator-always-on;};
+test535 {regulator-always-on;};
+test536 {regulator-always-on;};
+test537 {regulator-always-on;};
+test538 {regulator-always-on;};
+test539 {regulator-always-on;};
+test540 {regulator-always-on;};
+test541 {regulator-always-on;};
+test542 {regulator-always-on;};
+test543 {regulator-always-on;};
+test544 {regulator-always-on;};
+test545 {regulator-always-on;};
+test546 {regulator-always-on;};
+test547 {regulator-always-on;};
+test548 {regulator-always-on;};
+test549 {regulator-always-on;};
+test550 {regulator-always-on;};
+test551 {regulator-always-on;};
+test552 {regulator-always-on;};
+test553 {regulator-always-on;};
+test554 {regulator-always-on;};
+test555 {regulator-always-on;};
+test556 {regulator-always-on;};
+test557 {regulator-always-on;};
+test558 {regulator-always-on;};
+test559 {regulator-always-on;};
+test560 {regulator-always-on;};
+test561 {regulator-always-on;};
+test562 {regulator-always-on;};
+test563 {regulator-always-on;};
+test564 {regulator-always-on;};
+test565 {regulator-always-on;};
+test566 {regulator-always-on;};
+test567 {regulator-always-on;};
+test568 {regulator-always-on;};
+test569 {regulator-always-on;};
+test570 {regulator-always-on;};
+test571 {regulator-always-on;};
+test572 {regulator-always-on;};
+test573 {regulator-always-on;};
+test574 {regulator-always-on;};
+test575 {regulator-always-on;};
+test576 {regulator-always-on;};
+test577 {regulator-always-on;};
+test578 {regulator-always-on;};
+test579 {regulator-always-on;};
+test580 {regulator-always-on;};
+test581 {regulator-always-on;};
+test582 {regulator-always-on;};
+test583 {regulator-always-on;};
+test584 {regulator-always-on;};
+test585 {regulator-always-on;};
+test586 {regulator-always-on;};
+test587 {regulator-always-on;};
+test588 {regulator-always-on;};
+test589 {regulator-always-on;};
+test590 {regulator-always-on;};
+test591 {regulator-always-on;};
+test592 {regulator-always-on;};
+test593 {regulator-always-on;};
+test594 {regulator-always-on;};
+test595 {regulator-always-on;};
+test596 {regulator-always-on;};
+test597 {regulator-always-on;};
+test598 {regulator-always-on;};
+test599 {regulator-always-on;};
+test600 {regulator-always-on;};
+test601 {regulator-always-on;};
+test602 {regulator-always-on;};
+test603 {regulator-always-on;};
+test604 {regulator-always-on;};
+test605 {regulator-always-on;};
+test606 {regulator-always-on;};
+test607 {regulator-always-on;};
+test608 {regulator-always-on;};
+test609 {regulator-always-on;};
+test610 {regulator-always-on;};
+test611 {regulator-always-on;};
+test612 {regulator-always-on;};
+test613 {regulator-always-on;};
+test614 {regulator-always-on;};
+test615 {regulator-always-on;};
+test616 {regulator-always-on;};
+test617 {regulator-always-on;};
+test618 {regulator-always-on;};
+test619 {regulator-always-on;};
+test620 {regulator-always-on;};
+test621 {regulator-always-on;};
+test622 {regulator-always-on;};
+test623 {regulator-always-on;};
+test624 {regulator-always-on;};
+test625 {regulator-always-on;};
+test626 {regulator-always-on;};
+test627 {regulator-always-on;};
+test628 {regulator-always-on;};
+test629 {regulator-always-on;};
+test630 {regulator-always-on;};
+test631 {regulator-always-on;};
+test632 {regulator-always-on;};
+test633 {regulator-always-on;};
+test634 {regulator-always-on;};
+test635 {regulator-always-on;};
+test636 {regulator-always-on;};
+test637 {regulator-always-on;};
+test638 {regulator-always-on;};
+test639 {regulator-always-on;};
+test640 {regulator-always-on;};
+test641 {regulator-always-on;};
+test642 {regulator-always-on;};
+test643 {regulator-always-on;};
+test644 {regulator-always-on;};
+test645 {regulator-always-on;};
+test646 {regulator-always-on;};
+test647 {regulator-always-on;};
+test648 {regulator-always-on;};
+test649 {regulator-always-on;};
+test650 {regulator-always-on;};
+test651 {regulator-always-on;};
+test652 {regulator-always-on;};
+test653 {regulator-always-on;};
+test654 {regulator-always-on;};
+test655 {regulator-always-on;};
+test656 {regulator-always-on;};
+test657 {regulator-always-on;};
+test658 {regulator-always-on;};
+test659 {regulator-always-on;};
+test660 {regulator-always-on;};
+test661 {regulator-always-on;};
+test662 {regulator-always-on;};
+test663 {regulator-always-on;};
+test664 {regulator-always-on;};
+test665 {regulator-always-on;};
+test666 {regulator-always-on;};
+test667 {regulator-always-on;};
+test668 {regulator-always-on;};
+test669 {regulator-always-on;};
+test670 {regulator-always-on;};
+test671 {regulator-always-on;};
+test672 {regulator-always-on;};
+test673 {regulator-always-on;};
+test674 {regulator-always-on;};
+test675 {regulator-always-on;};
+test676 {regulator-always-on;};
+test677 {regulator-always-on;};
+test678 {regulator-always-on;};
+test679 {regulator-always-on;};
+test680 {regulator-always-on;};
+test681 {regulator-always-on;};
+test682 {regulator-always-on;};
+test683 {regulator-always-on;};
+test684 {regulator-always-on;};
+test685 {regulator-always-on;};
+test686 {regulator-always-on;};
+test687 {regulator-always-on;};
+test688 {regulator-always-on;};
+test689 {regulator-always-on;};
+test690 {regulator-always-on;};
+test691 {regulator-always-on;};
+test692 {regulator-always-on;};
+test693 {regulator-always-on;};
+test694 {regulator-always-on;};
+test695 {regulator-always-on;};
+test696 {regulator-always-on;};
+test697 {regulator-always-on;};
+test698 {regulator-always-on;};
+test699 {regulator-always-on;};
+test700 {regulator-always-on;};
+test701 {regulator-always-on;};
+test702 {regulator-always-on;};
+test703 {regulator-always-on;};
+test704 {regulator-always-on;};
+test705 {regulator-always-on;};
+test706 {regulator-always-on;};
+test707 {regulator-always-on;};
+test708 {regulator-always-on;};
+test709 {regulator-always-on;};
+test710 {regulator-always-on;};
+test711 {regulator-always-on;};
+test712 {regulator-always-on;};
+test713 {regulator-always-on;};
+test714 {regulator-always-on;};
+test715 {regulator-always-on;};
+test716 {regulator-always-on;};
+test717 {regulator-always-on;};
+test718 {regulator-always-on;};
+test719 {regulator-always-on;};
+test720 {regulator-always-on;};
+test721 {regulator-always-on;};
+test722 {regulator-always-on;};
+test723 {regulator-always-on;};
+test724 {regulator-always-on;};
+test725 {regulator-always-on;};
+test726 {regulator-always-on;};
+test727 {regulator-always-on;};
+test728 {regulator-always-on;};
+test729 {regulator-always-on;};
+test730 {regulator-always-on;};
+test731 {regulator-always-on;};
+test732 {regulator-always-on;};
+test733 {regulator-always-on;};
+test734 {regulator-always-on;};
+test735 {regulator-always-on;};
+test736 {regulator-always-on;};
+test737 {regulator-always-on;};
+test738 {regulator-always-on;};
+test739 {regulator-always-on;};
+test740 {regulator-always-on;};
+test741 {regulator-always-on;};
+test742 {regulator-always-on;};
+test743 {regulator-always-on;};
+test744 {regulator-always-on;};
+test745 {regulator-always-on;};
+test746 {regulator-always-on;};
+test747 {regulator-always-on;};
+test748 {regulator-always-on;};
+test749 {regulator-always-on;};
+test750 {regulator-always-on;};
+test751 {regulator-always-on;};
+test752 {regulator-always-on;};
+test753 {regulator-always-on;};
+test754 {regulator-always-on;};
+test755 {regulator-always-on;};
+test756 {regulator-always-on;};
+test757 {regulator-always-on;};
+test758 {regulator-always-on;};
+test759 {regulator-always-on;};
+test760 {regulator-always-on;};
+test761 {regulator-always-on;};
+test762 {regulator-always-on;};
+test763 {regulator-always-on;};
+test764 {regulator-always-on;};
+test765 {regulator-always-on;};
+test766 {regulator-always-on;};
+test767 {regulator-always-on;};
+test768 {regulator-always-on;};
+test769 {regulator-always-on;};
+test770 {regulator-always-on;};
+test771 {regulator-always-on;};
+test772 {regulator-always-on;};
+test773 {regulator-always-on;};
+test774 {regulator-always-on;};
+test775 {regulator-always-on;};
+test776 {regulator-always-on;};
+test777 {regulator-always-on;};
+test778 {regulator-always-on;};
+test779 {regulator-always-on;};
+test780 {regulator-always-on;};
+test781 {regulator-always-on;};
+test782 {regulator-always-on;};
+test783 {regulator-always-on;};
+test784 {regulator-always-on;};
+test785 {regulator-always-on;};
+test786 {regulator-always-on;};
+test787 {regulator-always-on;};
+test788 {regulator-always-on;};
+test789 {regulator-always-on;};
+test790 {regulator-always-on;};
+test791 {regulator-always-on;};
+test792 {regulator-always-on;};
+test793 {regulator-always-on;};
+test794 {regulator-always-on;};
+test795 {regulator-always-on;};
+test796 {regulator-always-on;};
+test797 {regulator-always-on;};
+test798 {regulator-always-on;};
+test799 {regulator-always-on;};
+test800 {regulator-always-on;};
+test801 {regulator-always-on;};
+test802 {regulator-always-on;};
+test803 {regulator-always-on;};
+test804 {regulator-always-on;};
+test805 {regulator-always-on;};
+test806 {regulator-always-on;};
+test807 {regulator-always-on;};
+test808 {regulator-always-on;};
+test809 {regulator-always-on;};
+test810 {regulator-always-on;};
+test811 {regulator-always-on;};
+test812 {regulator-always-on;};
+test813 {regulator-always-on;};
+test814 {regulator-always-on;};
+test815 {regulator-always-on;};
+test816 {regulator-always-on;};
+test817 {regulator-always-on;};
+test818 {regulator-always-on;};
+test819 {regulator-always-on;};
+test820 {regulator-always-on;};
+test821 {regulator-always-on;};
+test822 {regulator-always-on;};
+test823 {regulator-always-on;};
+test824 {regulator-always-on;};
+test825 {regulator-always-on;};
+test826 {regulator-always-on;};
+test827 {regulator-always-on;};
+test828 {regulator-always-on;};
+test829 {regulator-always-on;};
+test830 {regulator-always-on;};
+test831 {regulator-always-on;};
+test832 {regulator-always-on;};
+test833 {regulator-always-on;};
+test834 {regulator-always-on;};
+test835 {regulator-always-on;};
+test836 {regulator-always-on;};
+test837 {regulator-always-on;};
+test838 {regulator-always-on;};
+test839 {regulator-always-on;};
+test840 {regulator-always-on;};
+test841 {regulator-always-on;};
+test842 {regulator-always-on;};
+test843 {regulator-always-on;};
+test844 {regulator-always-on;};
+test845 {regulator-always-on;};
+test846 {regulator-always-on;};
+test847 {regulator-always-on;};
+test848 {regulator-always-on;};
+test849 {regulator-always-on;};
+test850 {regulator-always-on;};
+test851 {regulator-always-on;};
+test852 {regulator-always-on;};
+test853 {regulator-always-on;};
+test854 {regulator-always-on;};
+test855 {regulator-always-on;};
+test856 {regulator-always-on;};
+test857 {regulator-always-on;};
+test858 {regulator-always-on;};
+test859 {regulator-always-on;};
+test860 {regulator-always-on;};
+test861 {regulator-always-on;};
+test862 {regulator-always-on;};
+test863 {regulator-always-on;};
+test864 {regulator-always-on;};
+test865 {regulator-always-on;};
+test866 {regulator-always-on;};
+test867 {regulator-always-on;};
+test868 {regulator-always-on;};
+test869 {regulator-always-on;};
+test870 {regulator-always-on;};
+test871 {regulator-always-on;};
+test872 {regulator-always-on;};
+test873 {regulator-always-on;};
+test874 {regulator-always-on;};
+test875 {regulator-always-on;};
+test876 {regulator-always-on;};
+test877 {regulator-always-on;};
+test878 {regulator-always-on;};
+test879 {regulator-always-on;};
+test880 {regulator-always-on;};
+test881 {regulator-always-on;};
+test882 {regulator-always-on;};
+test883 {regulator-always-on;};
+test884 {regulator-always-on;};
+test885 {regulator-always-on;};
+test886 {regulator-always-on;};
+test887 {regulator-always-on;};
+test888 {regulator-always-on;};
+test889 {regulator-always-on;};
+test890 {regulator-always-on;};
+test891 {regulator-always-on;};
+test892 {regulator-always-on;};
+test893 {regulator-always-on;};
+test894 {regulator-always-on;};
+test895 {regulator-always-on;};
+test896 {regulator-always-on;};
+test897 {regulator-always-on;};
+test898 {regulator-always-on;};
+test899 {regulator-always-on;};
+test900 {regulator-always-on;};
+test901 {regulator-always-on;};
+test902 {regulator-always-on;};
+test903 {regulator-always-on;};
+test904 {regulator-always-on;};
+test905 {regulator-always-on;};
+test906 {regulator-always-on;};
+test907 {regulator-always-on;};
+test908 {regulator-always-on;};
+test909 {regulator-always-on;};
+test910 {regulator-always-on;};
+test911 {regulator-always-on;};
+test912 {regulator-always-on;};
+test913 {regulator-always-on;};
+test914 {regulator-always-on;};
+test915 {regulator-always-on;};
+test916 {regulator-always-on;};
+test917 {regulator-always-on;};
+test918 {regulator-always-on;};
+test919 {regulator-always-on;};
+test920 {regulator-always-on;};
+test921 {regulator-always-on;};
+test922 {regulator-always-on;};
+test923 {regulator-always-on;};
+test924 {regulator-always-on;};
+test925 {regulator-always-on;};
+test926 {regulator-always-on;};
+test927 {regulator-always-on;};
+test928 {regulator-always-on;};
+test929 {regulator-always-on;};
+test930 {regulator-always-on;};
+test931 {regulator-always-on;};
+test932 {regulator-always-on;};
+test933 {regulator-always-on;};
+test934 {regulator-always-on;};
+test935 {regulator-always-on;};
+test936 {regulator-always-on;};
+test937 {regulator-always-on;};
+test938 {regulator-always-on;};
+test939 {regulator-always-on;};
+test940 {regulator-always-on;};
+test941 {regulator-always-on;};
+test942 {regulator-always-on;};
+test943 {regulator-always-on;};
+test944 {regulator-always-on;};
+test945 {regulator-always-on;};
+test946 {regulator-always-on;};
+test947 {regulator-always-on;};
+test948 {regulator-always-on;};
+test949 {regulator-always-on;};
+test950 {regulator-always-on;};
+test951 {regulator-always-on;};
+test952 {regulator-always-on;};
+test953 {regulator-always-on;};
+test954 {regulator-always-on;};
+test955 {regulator-always-on;};
+test956 {regulator-always-on;};
+test957 {regulator-always-on;};
+test958 {regulator-always-on;};
+test959 {regulator-always-on;};
+test960 {regulator-always-on;};
+test961 {regulator-always-on;};
+test962 {regulator-always-on;};
+test963 {regulator-always-on;};
+test964 {regulator-always-on;};
+test965 {regulator-always-on;};
+test966 {regulator-always-on;};
+test967 {regulator-always-on;};
+test968 {regulator-always-on;};
+test969 {regulator-always-on;};
+test970 {regulator-always-on;};
+test971 {regulator-always-on;};
+test972 {regulator-always-on;};
+test973 {regulator-always-on;};
+test974 {regulator-always-on;};
+test975 {regulator-always-on;};
+test976 {regulator-always-on;};
+test977 {regulator-always-on;};
+test978 {regulator-always-on;};
+test979 {regulator-always-on;};
+test980 {regulator-always-on;};
+test981 {regulator-always-on;};
+test982 {regulator-always-on;};
+test983 {regulator-always-on;};
+test984 {regulator-always-on;};
+test985 {regulator-always-on;};
+test986 {regulator-always-on;};
+test987 {regulator-always-on;};
+test988 {regulator-always-on;};
+test989 {regulator-always-on;};
+test990 {regulator-always-on;};
+test991 {regulator-always-on;};
+test992 {regulator-always-on;};
+test993 {regulator-always-on;};
+test994 {regulator-always-on;};
+test995 {regulator-always-on;};
+test996 {regulator-always-on;};
+test997 {regulator-always-on;};
+test998 {regulator-always-on;};
+test999 {regulator-always-on;};
+test1000 {regulator-always-on;};
+test1001 {regulator-always-on;};
+test1002 {regulator-always-on;};
+test1003 {regulator-always-on;};
+test1004 {regulator-always-on;};
+test1005 {regulator-always-on;};
+test1006 {regulator-always-on;};
+test1007 {regulator-always-on;};
+test1008 {regulator-always-on;};
+test1009 {regulator-always-on;};
+test1010 {regulator-always-on;};
+test1011 {regulator-always-on;};
+test1012 {regulator-always-on;};
+test1013 {regulator-always-on;};
+test1014 {regulator-always-on;};
+test1015 {regulator-always-on;};
+test1016 {regulator-always-on;};
+test1017 {regulator-always-on;};
+test1018 {regulator-always-on;};
+test1019 {regulator-always-on;};
+test1020 {regulator-always-on;};
+test1021 {regulator-always-on;};
+test1022 {regulator-always-on;};
+test1023 {regulator-always-on;};
+test1024 {regulator-always-on;};
+test1025 {regulator-always-on;};
+test1026 {regulator-always-on;};
+test1027 {regulator-always-on;};
+test1028 {regulator-always-on;};
+test1029 {regulator-always-on;};
+test1030 {regulator-always-on;};
+test1031 {regulator-always-on;};
+test1032 {regulator-always-on;};
+test1033 {regulator-always-on;};
+test1034 {regulator-always-on;};
+test1035 {regulator-always-on;};
+test1036 {regulator-always-on;};
+test1037 {regulator-always-on;};
+test1038 {regulator-always-on;};
+test1039 {regulator-always-on;};
+test1040 {regulator-always-on;};
+test1041 {regulator-always-on;};
+test1042 {regulator-always-on;};
+test1043 {regulator-always-on;};
+test1044 {regulator-always-on;};
+test1045 {regulator-always-on;};
+test1046 {regulator-always-on;};
+test1047 {regulator-always-on;};
+test1048 {regulator-always-on;};
+test1049 {regulator-always-on;};
+test1050 {regulator-always-on;};
+test1051 {regulator-always-on;};
+test1052 {regulator-always-on;};
+test1053 {regulator-always-on;};
+test1054 {regulator-always-on;};
+test1055 {regulator-always-on;};
+test1056 {regulator-always-on;};
+test1057 {regulator-always-on;};
+test1058 {regulator-always-on;};
+test1059 {regulator-always-on;};
+test1060 {regulator-always-on;};
+test1061 {regulator-always-on;};
+test1062 {regulator-always-on;};
+test1063 {regulator-always-on;};
+test1064 {regulator-always-on;};
+test1065 {regulator-always-on;};
+test1066 {regulator-always-on;};
+test1067 {regulator-always-on;};
+test1068 {regulator-always-on;};
+test1069 {regulator-always-on;};
+test1070 {regulator-always-on;};
+test1071 {regulator-always-on;};
+test1072 {regulator-always-on;};
+test1073 {regulator-always-on;};
+test1074 {regulator-always-on;};
+test1075 {regulator-always-on;};
+test1076 {regulator-always-on;};
+test1077 {regulator-always-on;};
+test1078 {regulator-always-on;};
+test1079 {regulator-always-on;};
+test1080 {regulator-always-on;};
+test1081 {regulator-always-on;};
+test1082 {regulator-always-on;};
+test1083 {regulator-always-on;};
+test1084 {regulator-always-on;};
+test1085 {regulator-always-on;};
+test1086 {regulator-always-on;};
+test1087 {regulator-always-on;};
+test1088 {regulator-always-on;};
+test1089 {regulator-always-on;};
+test1090 {regulator-always-on;};
+test1091 {regulator-always-on;};
+test1092 {regulator-always-on;};
+test1093 {regulator-always-on;};
+test1094 {regulator-always-on;};
+test1095 {regulator-always-on;};
+test1096 {regulator-always-on;};
+test1097 {regulator-always-on;};
+test1098 {regulator-always-on;};
+test1099 {regulator-always-on;};
+test1100 {regulator-always-on;};
+test1101 {regulator-always-on;};
+test1102 {regulator-always-on;};
+test1103 {regulator-always-on;};
+test1104 {regulator-always-on;};
+test1105 {regulator-always-on;};
+test1106 {regulator-always-on;};
+test1107 {regulator-always-on;};
+test1108 {regulator-always-on;};
+test1109 {regulator-always-on;};
+test1110 {regulator-always-on;};
+test1111 {regulator-always-on;};
+test1112 {regulator-always-on;};
+test1113 {regulator-always-on;};
+test1114 {regulator-always-on;};
+test1115 {regulator-always-on;};
+test1116 {regulator-always-on;};
+test1117 {regulator-always-on;};
+test1118 {regulator-always-on;};
+test1119 {regulator-always-on;};
+test1120 {regulator-always-on;};
+test1121 {regulator-always-on;};
+test1122 {regulator-always-on;};
+test1123 {regulator-always-on;};
+test1124 {regulator-always-on;};
+test1125 {regulator-always-on;};
+test1126 {regulator-always-on;};
+test1127 {regulator-always-on;};
+test1128 {regulator-always-on;};
+test1129 {regulator-always-on;};
+test1130 {regulator-always-on;};
+test1131 {regulator-always-on;};
+test1132 {regulator-always-on;};
+test1133 {regulator-always-on;};
+test1134 {regulator-always-on;};
+test1135 {regulator-always-on;};
+test1136 {regulator-always-on;};
+test1137 {regulator-always-on;};
+test1138 {regulator-always-on;};
+test1139 {regulator-always-on;};
+test1140 {regulator-always-on;};
+test1141 {regulator-always-on;};
+test1142 {regulator-always-on;};
+test1143 {regulator-always-on;};
+test1144 {regulator-always-on;};
+test1145 {regulator-always-on;};
+test1146 {regulator-always-on;};
+test1147 {regulator-always-on;};
+test1148 {regulator-always-on;};
+test1149 {regulator-always-on;};
+test1150 {regulator-always-on;};
+test1151 {regulator-always-on;};
+test1152 {regulator-always-on;};
+test1153 {regulator-always-on;};
+test1154 {regulator-always-on;};
+test1155 {regulator-always-on;};
+test1156 {regulator-always-on;};
+test1157 {regulator-always-on;};
+test1158 {regulator-always-on;};
+test1159 {regulator-always-on;};
+test1160 {regulator-always-on;};
+test1161 {regulator-always-on;};
+test1162 {regulator-always-on;};
+test1163 {regulator-always-on;};
+test1164 {regulator-always-on;};
+test1165 {regulator-always-on;};
+test1166 {regulator-always-on;};
+test1167 {regulator-always-on;};
+test1168 {regulator-always-on;};
+test1169 {regulator-always-on;};
+test1170 {regulator-always-on;};
+test1171 {regulator-always-on;};
+test1172 {regulator-always-on;};
+test1173 {regulator-always-on;};
+test1174 {regulator-always-on;};
+test1175 {regulator-always-on;};
+test1176 {regulator-always-on;};
+test1177 {regulator-always-on;};
+test1178 {regulator-always-on;};
+test1179 {regulator-always-on;};
+test1180 {regulator-always-on;};
+test1181 {regulator-always-on;};
+test1182 {regulator-always-on;};
+test1183 {regulator-always-on;};
+test1184 {regulator-always-on;};
+test1185 {regulator-always-on;};
+test1186 {regulator-always-on;};
+test1187 {regulator-always-on;};
+test1188 {regulator-always-on;};
+test1189 {regulator-always-on;};
+test1190 {regulator-always-on;};
+test1191 {regulator-always-on;};
+test1192 {regulator-always-on;};
+test1193 {regulator-always-on;};
+test1194 {regulator-always-on;};
+test1195 {regulator-always-on;};
+test1196 {regulator-always-on;};
+test1197 {regulator-always-on;};
+test1198 {regulator-always-on;};
+test1199 {regulator-always-on;};
+test1200 {regulator-always-on;};
+test1201 {regulator-always-on;};
+test1202 {regulator-always-on;};
+test1203 {regulator-always-on;};
+test1204 {regulator-always-on;};
+test1205 {regulator-always-on;};
+test1206 {regulator-always-on;};
+test1207 {regulator-always-on;};
+test1208 {regulator-always-on;};
+test1209 {regulator-always-on;};
+test1210 {regulator-always-on;};
+test1211 {regulator-always-on;};
+test1212 {regulator-always-on;};
+test1213 {regulator-always-on;};
+test1214 {regulator-always-on;};
+test1215 {regulator-always-on;};
+test1216 {regulator-always-on;};
+test1217 {regulator-always-on;};
+test1218 {regulator-always-on;};
+test1219 {regulator-always-on;};
+test1220 {regulator-always-on;};
+test1221 {regulator-always-on;};
+test1222 {regulator-always-on;};
+test1223 {regulator-always-on;};
+test1224 {regulator-always-on;};
+test1225 {regulator-always-on;};
+test1226 {regulator-always-on;};
+test1227 {regulator-always-on;};
+test1228 {regulator-always-on;};
+test1229 {regulator-always-on;};
+test1230 {regulator-always-on;};
+test1231 {regulator-always-on;};
+test1232 {regulator-always-on;};
+test1233 {regulator-always-on;};
+test1234 {regulator-always-on;};
+test1235 {regulator-always-on;};
+test1236 {regulator-always-on;};
+test1237 {regulator-always-on;};
+test1238 {regulator-always-on;};
+test1239 {regulator-always-on;};
+test1240 {regulator-always-on;};
+test1241 {regulator-always-on;};
+test1242 {regulator-always-on;};
+test1243 {regulator-always-on;};
+test1244 {regulator-always-on;};
+test1245 {regulator-always-on;};
+test1246 {regulator-always-on;};
+test1247 {regulator-always-on;};
+test1248 {regulator-always-on;};
+test1249 {regulator-always-on;};
+test1250 {regulator-always-on;};
+test1251 {regulator-always-on;};
+test1252 {regulator-always-on;};
+test1253 {regulator-always-on;};
+test1254 {regulator-always-on;};
+test1255 {regulator-always-on;};
+test1256 {regulator-always-on;};
+test1257 {regulator-always-on;};
+test1258 {regulator-always-on;};
+test1259 {regulator-always-on;};
+test1260 {regulator-always-on;};
+test1261 {regulator-always-on;};
+test1262 {regulator-always-on;};
+test1263 {regulator-always-on;};
+test1264 {regulator-always-on;};
+test1265 {regulator-always-on;};
+test1266 {regulator-always-on;};
+test1267 {regulator-always-on;};
+test1268 {regulator-always-on;};
+test1269 {regulator-always-on;};
+test1270 {regulator-always-on;};
+test1271 {regulator-always-on;};
+test1272 {regulator-always-on;};
+test1273 {regulator-always-on;};
+test1274 {regulator-always-on;};
+test1275 {regulator-always-on;};
+test1276 {regulator-always-on;};
+test1277 {regulator-always-on;};
+test1278 {regulator-always-on;};
+test1279 {regulator-always-on;};
+test1280 {regulator-always-on;};
+test1281 {regulator-always-on;};
+test1282 {regulator-always-on;};
+test1283 {regulator-always-on;};
+test1284 {regulator-always-on;};
+test1285 {regulator-always-on;};
+test1286 {regulator-always-on;};
+test1287 {regulator-always-on;};
+test1288 {regulator-always-on;};
+test1289 {regulator-always-on;};
+test1290 {regulator-always-on;};
+test1291 {regulator-always-on;};
+test1292 {regulator-always-on;};
+test1293 {regulator-always-on;};
+test1294 {regulator-always-on;};
+test1295 {regulator-always-on;};
+test1296 {regulator-always-on;};
+test1297 {regulator-always-on;};
+test1298 {regulator-always-on;};
+test1299 {regulator-always-on;};
+test1300 {regulator-always-on;};
+test1301 {regulator-always-on;};
+test1302 {regulator-always-on;};
+test1303 {regulator-always-on;};
+test1304 {regulator-always-on;};
+test1305 {regulator-always-on;};
+test1306 {regulator-always-on;};
+test1307 {regulator-always-on;};
+test1308 {regulator-always-on;};
+test1309 {regulator-always-on;};
+test1310 {regulator-always-on;};
+test1311 {regulator-always-on;};
+test1312 {regulator-always-on;};
+test1313 {regulator-always-on;};
+test1314 {regulator-always-on;};
+test1315 {regulator-always-on;};
+test1316 {regulator-always-on;};
+test1317 {regulator-always-on;};
+test1318 {regulator-always-on;};
+test1319 {regulator-always-on;};
+test1320 {regulator-always-on;};
+test1321 {regulator-always-on;};
+test1322 {regulator-always-on;};
+test1323 {regulator-always-on;};
+test1324 {regulator-always-on;};
+test1325 {regulator-always-on;};
+test1326 {regulator-always-on;};
+test1327 {regulator-always-on;};
+test1328 {regulator-always-on;};
+test1329 {regulator-always-on;};
+test1330 {regulator-always-on;};
+test1331 {regulator-always-on;};
+test1332 {regulator-always-on;};
+test1333 {regulator-always-on;};
+test1334 {regulator-always-on;};
+test1335 {regulator-always-on;};
+test1336 {regulator-always-on;};
+test1337 {regulator-always-on;};
+test1338 {regulator-always-on;};
+test1339 {regulator-always-on;};
+test1340 {regulator-always-on;};
+test1341 {regulator-always-on;};
+test1342 {regulator-always-on;};
+test1343 {regulator-always-on;};
+test1344 {regulator-always-on;};
+test1345 {regulator-always-on;};
+test1346 {regulator-always-on;};
+test1347 {regulator-always-on;};
+test1348 {regulator-always-on;};
+test1349 {regulator-always-on;};
+test1350 {regulator-always-on;};
+test1351 {regulator-always-on;};
+test1352 {regulator-always-on;};
+test1353 {regulator-always-on;};
+test1354 {regulator-always-on;};
+test1355 {regulator-always-on;};
+test1356 {regulator-always-on;};
+test1357 {regulator-always-on;};
+test1358 {regulator-always-on;};
+test1359 {regulator-always-on;};
+test1360 {regulator-always-on;};
+test1361 {regulator-always-on;};
+test1362 {regulator-always-on;};
+test1363 {regulator-always-on;};
+test1364 {regulator-always-on;};
+test1365 {regulator-always-on;};
+test1366 {regulator-always-on;};
+test1367 {regulator-always-on;};
+test1368 {regulator-always-on;};
+test1369 {regulator-always-on;};
+test1370 {regulator-always-on;};
+test1371 {regulator-always-on;};
+test1372 {regulator-always-on;};
+test1373 {regulator-always-on;};
+test1374 {regulator-always-on;};
+test1375 {regulator-always-on;};
+test1376 {regulator-always-on;};
+test1377 {regulator-always-on;};
+test1378 {regulator-always-on;};
+test1379 {regulator-always-on;};
+test1380 {regulator-always-on;};
+test1381 {regulator-always-on;};
+test1382 {regulator-always-on;};
+test1383 {regulator-always-on;};
+test1384 {regulator-always-on;};
+test1385 {regulator-always-on;};
+test1386 {regulator-always-on;};
+test1387 {regulator-always-on;};
+test1388 {regulator-always-on;};
+test1389 {regulator-always-on;};
+test1390 {regulator-always-on;};
+test1391 {regulator-always-on;};
+test1392 {regulator-always-on;};
+test1393 {regulator-always-on;};
+test1394 {regulator-always-on;};
+test1395 {regulator-always-on;};
+test1396 {regulator-always-on;};
+test1397 {regulator-always-on;};
+test1398 {regulator-always-on;};
+test1399 {regulator-always-on;};
+test1400 {regulator-always-on;};
+test1401 {regulator-always-on;};
+test1402 {regulator-always-on;};
+test1403 {regulator-always-on;};
+test1404 {regulator-always-on;};
+test1405 {regulator-always-on;};
+test1406 {regulator-always-on;};
+test1407 {regulator-always-on;};
+test1408 {regulator-always-on;};
+test1409 {regulator-always-on;};
+test1410 {regulator-always-on;};
+test1411 {regulator-always-on;};
+test1412 {regulator-always-on;};
+test1413 {regulator-always-on;};
+test1414 {regulator-always-on;};
+test1415 {regulator-always-on;};
+test1416 {regulator-always-on;};
+test1417 {regulator-always-on;};
+test1418 {regulator-always-on;};
+test1419 {regulator-always-on;};
+test1420 {regulator-always-on;};
+test1421 {regulator-always-on;};
+test1422 {regulator-always-on;};
+test1423 {regulator-always-on;};
+test1424 {regulator-always-on;};
+test1425 {regulator-always-on;};
+test1426 {regulator-always-on;};
+test1427 {regulator-always-on;};
+test1428 {regulator-always-on;};
+test1429 {regulator-always-on;};
+test1430 {regulator-always-on;};
+test1431 {regulator-always-on;};
+test1432 {regulator-always-on;};
+test1433 {regulator-always-on;};
+test1434 {regulator-always-on;};
+test1435 {regulator-always-on;};
+test1436 {regulator-always-on;};
+test1437 {regulator-always-on;};
+test1438 {regulator-always-on;};
+test1439 {regulator-always-on;};
+test1440 {regulator-always-on;};
+test1441 {regulator-always-on;};
+test1442 {regulator-always-on;};
+test1443 {regulator-always-on;};
+test1444 {regulator-always-on;};
+test1445 {regulator-always-on;};
+test1446 {regulator-always-on;};
+test1447 {regulator-always-on;};
+test1448 {regulator-always-on;};
+test1449 {regulator-always-on;};
+test1450 {regulator-always-on;};
+test1451 {regulator-always-on;};
+test1452 {regulator-always-on;};
+test1453 {regulator-always-on;};
+test1454 {regulator-always-on;};
+test1455 {regulator-always-on;};
+test1456 {regulator-always-on;};
+test1457 {regulator-always-on;};
+test1458 {regulator-always-on;};
+test1459 {regulator-always-on;};
+test1460 {regulator-always-on;};
+test1461 {regulator-always-on;};
+test1462 {regulator-always-on;};
+test1463 {regulator-always-on;};
+test1464 {regulator-always-on;};
+test1465 {regulator-always-on;};
+test1466 {regulator-always-on;};
+test1467 {regulator-always-on;};
+test1468 {regulator-always-on;};
+test1469 {regulator-always-on;};
+test1470 {regulator-always-on;};
+test1471 {regulator-always-on;};
+test1472 {regulator-always-on;};
+test1473 {regulator-always-on;};
+test1474 {regulator-always-on;};
+test1475 {regulator-always-on;};
+test1476 {regulator-always-on;};
+test1477 {regulator-always-on;};
+test1478 {regulator-always-on;};
+test1479 {regulator-always-on;};
+test1480 {regulator-always-on;};
+test1481 {regulator-always-on;};
+test1482 {regulator-always-on;};
+test1483 {regulator-always-on;};
+test1484 {regulator-always-on;};
+test1485 {regulator-always-on;};
+test1486 {regulator-always-on;};
+test1487 {regulator-always-on;};
+test1488 {regulator-always-on;};
+test1489 {regulator-always-on;};
+test1490 {regulator-always-on;};
+test1491 {regulator-always-on;};
+test1492 {regulator-always-on;};
+test1493 {regulator-always-on;};
+test1494 {regulator-always-on;};
+test1495 {regulator-always-on;};
+test1496 {regulator-always-on;};
+test1497 {regulator-always-on;};
+test1498 {regulator-always-on;};
+test1499 {regulator-always-on;};
+test1500 {regulator-always-on;};
+test1501 {regulator-always-on;};
+test1502 {regulator-always-on;};
+test1503 {regulator-always-on;};
+test1504 {regulator-always-on;};
+test1505 {regulator-always-on;};
+test1506 {regulator-always-on;};
+test1507 {regulator-always-on;};
+test1508 {regulator-always-on;};
+test1509 {regulator-always-on;};
+test1510 {regulator-always-on;};
+test1511 {regulator-always-on;};
+test1512 {regulator-always-on;};
+test1513 {regulator-always-on;};
+test1514 {regulator-always-on;};
+test1515 {regulator-always-on;};
+test1516 {regulator-always-on;};
+test1517 {regulator-always-on;};
+test1518 {regulator-always-on;};
+test1519 {regulator-always-on;};
+test1520 {regulator-always-on;};
+test1521 {regulator-always-on;};
+test1522 {regulator-always-on;};
+test1523 {regulator-always-on;};
+test1524 {regulator-always-on;};
+test1525 {regulator-always-on;};
+test1526 {regulator-always-on;};
+test1527 {regulator-always-on;};
+test1528 {regulator-always-on;};
+test1529 {regulator-always-on;};
+test1530 {regulator-always-on;};
+test1531 {regulator-always-on;};
+test1532 {regulator-always-on;};
+test1533 {regulator-always-on;};
+test1534 {regulator-always-on;};
+test1535 {regulator-always-on;};
+test1536 {regulator-always-on;};
+test1537 {regulator-always-on;};
+test1538 {regulator-always-on;};
+test1539 {regulator-always-on;};
+test1540 {regulator-always-on;};
+test1541 {regulator-always-on;};
+test1542 {regulator-always-on;};
+test1543 {regulator-always-on;};
+test1544 {regulator-always-on;};
+test1545 {regulator-always-on;};
+test1546 {regulator-always-on;};
+test1547 {regulator-always-on;};
+test1548 {regulator-always-on;};
+test1549 {regulator-always-on;};
+test1550 {regulator-always-on;};
+test1551 {regulator-always-on;};
+test1552 {regulator-always-on;};
+test1553 {regulator-always-on;};
+test1554 {regulator-always-on;};
+test1555 {regulator-always-on;};
+test1556 {regulator-always-on;};
+test1557 {regulator-always-on;};
+test1558 {regulator-always-on;};
+test1559 {regulator-always-on;};
+test1560 {regulator-always-on;};
+test1561 {regulator-always-on;};
+test1562 {regulator-always-on;};
+test1563 {regulator-always-on;};
+test1564 {regulator-always-on;};
+test1565 {regulator-always-on;};
+test1566 {regulator-always-on;};
+test1567 {regulator-always-on;};
+test1568 {regulator-always-on;};
+test1569 {regulator-always-on;};
+test1570 {regulator-always-on;};
+test1571 {regulator-always-on;};
+test1572 {regulator-always-on;};
+test1573 {regulator-always-on;};
+test1574 {regulator-always-on;};
+test1575 {regulator-always-on;};
+test1576 {regulator-always-on;};
+test1577 {regulator-always-on;};
+test1578 {regulator-always-on;};
+test1579 {regulator-always-on;};
+test1580 {regulator-always-on;};
+test1581 {regulator-always-on;};
+test1582 {regulator-always-on;};
+test1583 {regulator-always-on;};
+test1584 {regulator-always-on;};
+test1585 {regulator-always-on;};
+test1586 {regulator-always-on;};
+test1587 {regulator-always-on;};
+test1588 {regulator-always-on;};
+test1589 {regulator-always-on;};
+test1590 {regulator-always-on;};
+test1591 {regulator-always-on;};
+test1592 {regulator-always-on;};
+test1593 {regulator-always-on;};
+test1594 {regulator-always-on;};
+test1595 {regulator-always-on;};
+test1596 {regulator-always-on;};
+test1597 {regulator-always-on;};
+test1598 {regulator-always-on;};
+test1599 {regulator-always-on;};
+test1600 {regulator-always-on;};
+test1601 {regulator-always-on;};
+test1602 {regulator-always-on;};
+test1603 {regulator-always-on;};
+test1604 {regulator-always-on;};
+test1605 {regulator-always-on;};
+test1606 {regulator-always-on;};
+test1607 {regulator-always-on;};
+test1608 {regulator-always-on;};
+test1609 {regulator-always-on;};
+test1610 {regulator-always-on;};
+test1611 {regulator-always-on;};
+test1612 {regulator-always-on;};
+test1613 {regulator-always-on;};
+test1614 {regulator-always-on;};
+test1615 {regulator-always-on;};
+test1616 {regulator-always-on;};
+test1617 {regulator-always-on;};
+test1618 {regulator-always-on;};
+test1619 {regulator-always-on;};
+test1620 {regulator-always-on;};
+test1621 {regulator-always-on;};
+test1622 {regulator-always-on;};
+test1623 {regulator-always-on;};
+test1624 {regulator-always-on;};
+test1625 {regulator-always-on;};
+test1626 {regulator-always-on;};
+test1627 {regulator-always-on;};
+test1628 {regulator-always-on;};
+test1629 {regulator-always-on;};
+test1630 {regulator-always-on;};
+test1631 {regulator-always-on;};
+test1632 {regulator-always-on;};
+test1633 {regulator-always-on;};
+test1634 {regulator-always-on;};
+test1635 {regulator-always-on;};
+test1636 {regulator-always-on;};
+test1637 {regulator-always-on;};
+test1638 {regulator-always-on;};
+test1639 {regulator-always-on;};
+test1640 {regulator-always-on;};
+test1641 {regulator-always-on;};
+test1642 {regulator-always-on;};
+test1643 {regulator-always-on;};
+test1644 {regulator-always-on;};
+test1645 {regulator-always-on;};
+test1646 {regulator-always-on;};
+test1647 {regulator-always-on;};
+test1648 {regulator-always-on;};
+test1649 {regulator-always-on;};
+test1650 {regulator-always-on;};
+test1651 {regulator-always-on;};
+test1652 {regulator-always-on;};
+test1653 {regulator-always-on;};
+test1654 {regulator-always-on;};
+test1655 {regulator-always-on;};
+test1656 {regulator-always-on;};
+test1657 {regulator-always-on;};
+test1658 {regulator-always-on;};
+test1659 {regulator-always-on;};
+test1660 {regulator-always-on;};
+test1661 {regulator-always-on;};
+test1662 {regulator-always-on;};
+test1663 {regulator-always-on;};
+test1664 {regulator-always-on;};
+test1665 {regulator-always-on;};
+test1666 {regulator-always-on;};
+test1667 {regulator-always-on;};
+test1668 {regulator-always-on;};
+test1669 {regulator-always-on;};
+test1670 {regulator-always-on;};
+test1671 {regulator-always-on;};
+test1672 {regulator-always-on;};
+test1673 {regulator-always-on;};
+test1674 {regulator-always-on;};
+test1675 {regulator-always-on;};
+test1676 {regulator-always-on;};
+test1677 {regulator-always-on;};
+test1678 {regulator-always-on;};
+test1679 {regulator-always-on;};
+test1680 {regulator-always-on;};
+test1681 {regulator-always-on;};
+test1682 {regulator-always-on;};
+test1683 {regulator-always-on;};
+test1684 {regulator-always-on;};
+test1685 {regulator-always-on;};
+test1686 {regulator-always-on;};
+test1687 {regulator-always-on;};
+test1688 {regulator-always-on;};
+test1689 {regulator-always-on;};
+test1690 {regulator-always-on;};
+test1691 {regulator-always-on;};
+test1692 {regulator-always-on;};
+test1693 {regulator-always-on;};
+test1694 {regulator-always-on;};
+test1695 {regulator-always-on;};
+test1696 {regulator-always-on;};
+test1697 {regulator-always-on;};
+test1698 {regulator-always-on;};
+test1699 {regulator-always-on;};
+test1700 {regulator-always-on;};
+test1701 {regulator-always-on;};
+test1702 {regulator-always-on;};
+test1703 {regulator-always-on;};
+test1704 {regulator-always-on;};
+test1705 {regulator-always-on;};
+test1706 {regulator-always-on;};
+test1707 {regulator-always-on;};
+test1708 {regulator-always-on;};
+test1709 {regulator-always-on;};
+test1710 {regulator-always-on;};
+test1711 {regulator-always-on;};
+test1712 {regulator-always-on;};
+test1713 {regulator-always-on;};
+test1714 {regulator-always-on;};
+test1715 {regulator-always-on;};
+test1716 {regulator-always-on;};
+test1717 {regulator-always-on;};
+test1718 {regulator-always-on;};
+test1719 {regulator-always-on;};
+test1720 {regulator-always-on;};
+test1721 {regulator-always-on;};
+test1722 {regulator-always-on;};
+test1723 {regulator-always-on;};
+test1724 {regulator-always-on;};
+test1725 {regulator-always-on;};
+test1726 {regulator-always-on;};
+test1727 {regulator-always-on;};
+test1728 {regulator-always-on;};
+test1729 {regulator-always-on;};
+test1730 {regulator-always-on;};
+test1731 {regulator-always-on;};
+test1732 {regulator-always-on;};
+test1733 {regulator-always-on;};
+test1734 {regulator-always-on;};
+test1735 {regulator-always-on;};
+test1736 {regulator-always-on;};
+test1737 {regulator-always-on;};
+test1738 {regulator-always-on;};
+test1739 {regulator-always-on;};
+test1740 {regulator-always-on;};
+test1741 {regulator-always-on;};
+test1742 {regulator-always-on;};
+test1743 {regulator-always-on;};
+test1744 {regulator-always-on;};
+test1745 {regulator-always-on;};
+test1746 {regulator-always-on;};
+test1747 {regulator-always-on;};
+test1748 {regulator-always-on;};
+test1749 {regulator-always-on;};
+test1750 {regulator-always-on;};
+test1751 {regulator-always-on;};
+test1752 {regulator-always-on;};
+test1753 {regulator-always-on;};
+test1754 {regulator-always-on;};
+test1755 {regulator-always-on;};
+test1756 {regulator-always-on;};
+test1757 {regulator-always-on;};
+test1758 {regulator-always-on;};
+test1759 {regulator-always-on;};
+test1760 {regulator-always-on;};
+test1761 {regulator-always-on;};
+test1762 {regulator-always-on;};
+test1763 {regulator-always-on;};
+test1764 {regulator-always-on;};
+test1765 {regulator-always-on;};
+test1766 {regulator-always-on;};
+test1767 {regulator-always-on;};
+test1768 {regulator-always-on;};
+test1769 {regulator-always-on;};
+test1770 {regulator-always-on;};
+test1771 {regulator-always-on;};
+test1772 {regulator-always-on;};
+test1773 {regulator-always-on;};
+test1774 {regulator-always-on;};
+test1775 {regulator-always-on;};
+test1776 {regulator-always-on;};
+test1777 {regulator-always-on;};
+test1778 {regulator-always-on;};
+test1779 {regulator-always-on;};
+test1780 {regulator-always-on;};
+test1781 {regulator-always-on;};
+test1782 {regulator-always-on;};
+test1783 {regulator-always-on;};
+test1784 {regulator-always-on;};
+test1785 {regulator-always-on;};
+test1786 {regulator-always-on;};
+test1787 {regulator-always-on;};
+test1788 {regulator-always-on;};
+test1789 {regulator-always-on;};
+test1790 {regulator-always-on;};
+test1791 {regulator-always-on;};
+test1792 {regulator-always-on;};
+test1793 {regulator-always-on;};
+test1794 {regulator-always-on;};
+test1795 {regulator-always-on;};
+test1796 {regulator-always-on;};
+test1797 {regulator-always-on;};
+test1798 {regulator-always-on;};
+test1799 {regulator-always-on;};
+test1800 {regulator-always-on;};
+test1801 {regulator-always-on;};
+test1802 {regulator-always-on;};
+test1803 {regulator-always-on;};
+test1804 {regulator-always-on;};
+test1805 {regulator-always-on;};
+test1806 {regulator-always-on;};
+test1807 {regulator-always-on;};
+test1808 {regulator-always-on;};
+test1809 {regulator-always-on;};
+test1810 {regulator-always-on;};
+test1811 {regulator-always-on;};
+test1812 {regulator-always-on;};
+test1813 {regulator-always-on;};
+test1814 {regulator-always-on;};
+test1815 {regulator-always-on;};
+test1816 {regulator-always-on;};
+test1817 {regulator-always-on;};
+test1818 {regulator-always-on;};
+test1819 {regulator-always-on;};
+test1820 {regulator-always-on;};
+test1821 {regulator-always-on;};
+test1822 {regulator-always-on;};
+test1823 {regulator-always-on;};
+test1824 {regulator-always-on;};
+test1825 {regulator-always-on;};
+test1826 {regulator-always-on;};
+test1827 {regulator-always-on;};
+test1828 {regulator-always-on;};
+test1829 {regulator-always-on;};
+test1830 {regulator-always-on;};
+test1831 {regulator-always-on;};
+test1832 {regulator-always-on;};
+test1833 {regulator-always-on;};
+test1834 {regulator-always-on;};
+test1835 {regulator-always-on;};
+test1836 {regulator-always-on;};
+test1837 {regulator-always-on;};
+test1838 {regulator-always-on;};
+test1839 {regulator-always-on;};
+test1840 {regulator-always-on;};
+test1841 {regulator-always-on;};
+test1842 {regulator-always-on;};
+test1843 {regulator-always-on;};
+test1844 {regulator-always-on;};
+test1845 {regulator-always-on;};
+test1846 {regulator-always-on;};
+test1847 {regulator-always-on;};
+test1848 {regulator-always-on;};
+test1849 {regulator-always-on;};
+test1850 {regulator-always-on;};
+test1851 {regulator-always-on;};
+test1852 {regulator-always-on;};
+test1853 {regulator-always-on;};
+test1854 {regulator-always-on;};
+test1855 {regulator-always-on;};
+test1856 {regulator-always-on;};
+test1857 {regulator-always-on;};
+test1858 {regulator-always-on;};
+test1859 {regulator-always-on;};
+test1860 {regulator-always-on;};
+test1861 {regulator-always-on;};
+test1862 {regulator-always-on;};
+test1863 {regulator-always-on;};
+test1864 {regulator-always-on;};
+test1865 {regulator-always-on;};
+test1866 {regulator-always-on;};
+test1867 {regulator-always-on;};
+test1868 {regulator-always-on;};
+test1869 {regulator-always-on;};
+test1870 {regulator-always-on;};
+test1871 {regulator-always-on;};
+test1872 {regulator-always-on;};
+test1873 {regulator-always-on;};
+test1874 {regulator-always-on;};
+test1875 {regulator-always-on;};
+test1876 {regulator-always-on;};
+test1877 {regulator-always-on;};
+test1878 {regulator-always-on;};
+test1879 {regulator-always-on;};
+test1880 {regulator-always-on;};
+test1881 {regulator-always-on;};
+test1882 {regulator-always-on;};
+test1883 {regulator-always-on;};
+test1884 {regulator-always-on;};
+test1885 {regulator-always-on;};
+test1886 {regulator-always-on;};
+test1887 {regulator-always-on;};
+test1888 {regulator-always-on;};
+test1889 {regulator-always-on;};
+test1890 {regulator-always-on;};
+test1891 {regulator-always-on;};
+test1892 {regulator-always-on;};
+test1893 {regulator-always-on;};
+test1894 {regulator-always-on;};
+test1895 {regulator-always-on;};
+test1896 {regulator-always-on;};
+test1897 {regulator-always-on;};
+test1898 {regulator-always-on;};
+test1899 {regulator-always-on;};
+test1900 {regulator-always-on;};
+test1901 {regulator-always-on;};
+test1902 {regulator-always-on;};
+test1903 {regulator-always-on;};
+test1904 {regulator-always-on;};
+test1905 {regulator-always-on;};
+test1906 {regulator-always-on;};
+test1907 {regulator-always-on;};
+test1908 {regulator-always-on;};
+test1909 {regulator-always-on;};
+test1910 {regulator-always-on;};
+test1911 {regulator-always-on;};
+test1912 {regulator-always-on;};
+test1913 {regulator-always-on;};
+test1914 {regulator-always-on;};
+test1915 {regulator-always-on;};
+test1916 {regulator-always-on;};
+test1917 {regulator-always-on;};
+test1918 {regulator-always-on;};
+test1919 {regulator-always-on;};
+test1920 {regulator-always-on;};
+test1921 {regulator-always-on;};
+test1922 {regulator-always-on;};
+test1923 {regulator-always-on;};
+test1924 {regulator-always-on;};
+test1925 {regulator-always-on;};
+test1926 {regulator-always-on;};
+test1927 {regulator-always-on;};
+test1928 {regulator-always-on;};
+test1929 {regulator-always-on;};
+test1930 {regulator-always-on;};
+test1931 {regulator-always-on;};
+test1932 {regulator-always-on;};
+test1933 {regulator-always-on;};
+test1934 {regulator-always-on;};
+test1935 {regulator-always-on;};
+test1936 {regulator-always-on;};
+test1937 {regulator-always-on;};
+test1938 {regulator-always-on;};
+test1939 {regulator-always-on;};
+test1940 {regulator-always-on;};
+test1941 {regulator-always-on;};
+test1942 {regulator-always-on;};
+test1943 {regulator-always-on;};
+test1944 {regulator-always-on;};
+test1945 {regulator-always-on;};
+test1946 {regulator-always-on;};
+test1947 {regulator-always-on;};
+test1948 {regulator-always-on;};
+test1949 {regulator-always-on;};
+test1950 {regulator-always-on;};
+test1951 {regulator-always-on;};
+test1952 {regulator-always-on;};
+test1953 {regulator-always-on;};
+test1954 {regulator-always-on;};
+test1955 {regulator-always-on;};
+test1956 {regulator-always-on;};
+test1957 {regulator-always-on;};
+test1958 {regulator-always-on;};
+test1959 {regulator-always-on;};
+test1960 {regulator-always-on;};
+test1961 {regulator-always-on;};
+test1962 {regulator-always-on;};
+test1963 {regulator-always-on;};
+test1964 {regulator-always-on;};
+test1965 {regulator-always-on;};
+test1966 {regulator-always-on;};
+test1967 {regulator-always-on;};
+test1968 {regulator-always-on;};
+test1969 {regulator-always-on;};
+test1970 {regulator-always-on;};
+test1971 {regulator-always-on;};
+test1972 {regulator-always-on;};
+test1973 {regulator-always-on;};
+test1974 {regulator-always-on;};
+test1975 {regulator-always-on;};
+test1976 {regulator-always-on;};
+test1977 {regulator-always-on;};
+test1978 {regulator-always-on;};
+test1979 {regulator-always-on;};
+test1980 {regulator-always-on;};
+test1981 {regulator-always-on;};
+test1982 {regulator-always-on;};
+test1983 {regulator-always-on;};
+test1984 {regulator-always-on;};
+test1985 {regulator-always-on;};
+test1986 {regulator-always-on;};
+test1987 {regulator-always-on;};
+test1988 {regulator-always-on;};
+test1989 {regulator-always-on;};
+test1990 {regulator-always-on;};
+test1991 {regulator-always-on;};
+test1992 {regulator-always-on;};
+test1993 {regulator-always-on;};
+test1994 {regulator-always-on;};
+test1995 {regulator-always-on;};
+test1996 {regulator-always-on;};
+test1997 {regulator-always-on;};
+test1998 {regulator-always-on;};
+test1999 {regulator-always-on;};
+test2000 {regulator-always-on;};
+test2001 {regulator-always-on;};
+test2002 {regulator-always-on;};
+test2003 {regulator-always-on;};
+test2004 {regulator-always-on;};
+test2005 {regulator-always-on;};
+test2006 {regulator-always-on;};
+test2007 {regulator-always-on;};
+test2008 {regulator-always-on;};
+test2009 {regulator-always-on;};
+test2010 {regulator-always-on;};
+test2011 {regulator-always-on;};
+test2012 {regulator-always-on;};
+test2013 {regulator-always-on;};
+test2014 {regulator-always-on;};
+test2015 {regulator-always-on;};
+test2016 {regulator-always-on;};
+test2017 {regulator-always-on;};
+test2018 {regulator-always-on;};
+test2019 {regulator-always-on;};
+test2020 {regulator-always-on;};
+test2021 {regulator-always-on;};
+test2022 {regulator-always-on;};
+test2023 {regulator-always-on;};
+test2024 {regulator-always-on;};
+test2025 {regulator-always-on;};
+test2026 {regulator-always-on;};
+test2027 {regulator-always-on;};
+test2028 {regulator-always-on;};
+test2029 {regulator-always-on;};
+test2030 {regulator-always-on;};
+test2031 {regulator-always-on;};
+test2032 {regulator-always-on;};
+test2033 {regulator-always-on;};
+test2034 {regulator-always-on;};
+test2035 {regulator-always-on;};
+test2036 {regulator-always-on;};
+test2037 {regulator-always-on;};
+test2038 {regulator-always-on;};
+test2039 {regulator-always-on;};
+test2040 {regulator-always-on;};
+test2041 {regulator-always-on;};
+test2042 {regulator-always-on;};
+test2043 {regulator-always-on;};
+test2044 {regulator-always-on;};
+test2045 {regulator-always-on;};
+test2046 {regulator-always-on;};
+test2047 {regulator-always-on;};
+test2048 {regulator-always-on;};
+test2049 {regulator-always-on;};
+test2050 {regulator-always-on;};
+test2051 {regulator-always-on;};
+test2052 {regulator-always-on;};
+test2053 {regulator-always-on;};
+test2054 {regulator-always-on;};
+test2055 {regulator-always-on;};
+test2056 {regulator-always-on;};
+test2057 {regulator-always-on;};
+test2058 {regulator-always-on;};
+test2059 {regulator-always-on;};
+test2060 {regulator-always-on;};
+test2061 {regulator-always-on;};
+test2062 {regulator-always-on;};
+test2063 {regulator-always-on;};
+test2064 {regulator-always-on;};
+test2065 {regulator-always-on;};
+test2066 {regulator-always-on;};
+test2067 {regulator-always-on;};
+test2068 {regulator-always-on;};
+test2069 {regulator-always-on;};
+test2070 {regulator-always-on;};
+test2071 {regulator-always-on;};
+test2072 {regulator-always-on;};
+test2073 {regulator-always-on;};
+test2074 {regulator-always-on;};
+test2075 {regulator-always-on;};
+test2076 {regulator-always-on;};
+test2077 {regulator-always-on;};
+test2078 {regulator-always-on;};
+test2079 {regulator-always-on;};
+test2080 {regulator-always-on;};
+test2081 {regulator-always-on;};
+test2082 {regulator-always-on;};
+test2083 {regulator-always-on;};
+test2084 {regulator-always-on;};
+test2085 {regulator-always-on;};
+test2086 {regulator-always-on;};
+test2087 {regulator-always-on;};
+test2088 {regulator-always-on;};
+test2089 {regulator-always-on;};
+test2090 {regulator-always-on;};
+test2091 {regulator-always-on;};
+test2092 {regulator-always-on;};
+test2093 {regulator-always-on;};
+test2094 {regulator-always-on;};
+test2095 {regulator-always-on;};
+test2096 {regulator-always-on;};
+test2097 {regulator-always-on;};
+test2098 {regulator-always-on;};
+test2099 {regulator-always-on;};
+test2100 {regulator-always-on;};
+test2101 {regulator-always-on;};
+test2102 {regulator-always-on;};
+test2103 {regulator-always-on;};
+test2104 {regulator-always-on;};
+test2105 {regulator-always-on;};
+test2106 {regulator-always-on;};
+test2107 {regulator-always-on;};
+test2108 {regulator-always-on;};
+test2109 {regulator-always-on;};
+test2110 {regulator-always-on;};
+test2111 {regulator-always-on;};
+test2112 {regulator-always-on;};
+test2113 {regulator-always-on;};
+test2114 {regulator-always-on;};
+test2115 {regulator-always-on;};
+test2116 {regulator-always-on;};
+test2117 {regulator-always-on;};
+test2118 {regulator-always-on;};
+test2119 {regulator-always-on;};
+test2120 {regulator-always-on;};
+test2121 {regulator-always-on;};
+test2122 {regulator-always-on;};
+test2123 {regulator-always-on;};
+test2124 {regulator-always-on;};
+test2125 {regulator-always-on;};
+test2126 {regulator-always-on;};
+test2127 {regulator-always-on;};
+test2128 {regulator-always-on;};
+test2129 {regulator-always-on;};
+test2130 {regulator-always-on;};
+test2131 {regulator-always-on;};
+test2132 {regulator-always-on;};
+test2133 {regulator-always-on;};
+test2134 {regulator-always-on;};
+test2135 {regulator-always-on;};
+test2136 {regulator-always-on;};
+test2137 {regulator-always-on;};
+test2138 {regulator-always-on;};
+test2139 {regulator-always-on;};
+test2140 {regulator-always-on;};
+test2141 {regulator-always-on;};
+test2142 {regulator-always-on;};
+test2143 {regulator-always-on;};
+test2144 {regulator-always-on;};
+test2145 {regulator-always-on;};
+test2146 {regulator-always-on;};
+test2147 {regulator-always-on;};
+test2148 {regulator-always-on;};
+test2149 {regulator-always-on;};
+test2150 {regulator-always-on;};
+test2151 {regulator-always-on;};
+test2152 {regulator-always-on;};
+test2153 {regulator-always-on;};
+test2154 {regulator-always-on;};
+test2155 {regulator-always-on;};
+test2156 {regulator-always-on;};
+test2157 {regulator-always-on;};
+test2158 {regulator-always-on;};
+test2159 {regulator-always-on;};
+test2160 {regulator-always-on;};
+test2161 {regulator-always-on;};
+test2162 {regulator-always-on;};
+test2163 {regulator-always-on;};
+test2164 {regulator-always-on;};
+test2165 {regulator-always-on;};
+test2166 {regulator-always-on;};
+test2167 {regulator-always-on;};
+test2168 {regulator-always-on;};
+test2169 {regulator-always-on;};
+test2170 {regulator-always-on;};
+test2171 {regulator-always-on;};
+test2172 {regulator-always-on;};
+test2173 {regulator-always-on;};
+test2174 {regulator-always-on;};
+test2175 {regulator-always-on;};
+test2176 {regulator-always-on;};
+test2177 {regulator-always-on;};
+test2178 {regulator-always-on;};
+test2179 {regulator-always-on;};
+test2180 {regulator-always-on;};
+test2181 {regulator-always-on;};
+test2182 {regulator-always-on;};
+test2183 {regulator-always-on;};
+test2184 {regulator-always-on;};
+test2185 {regulator-always-on;};
+test2186 {regulator-always-on;};
+test2187 {regulator-always-on;};
+test2188 {regulator-always-on;};
+test2189 {regulator-always-on;};
+test2190 {regulator-always-on;};
+test2191 {regulator-always-on;};
+test2192 {regulator-always-on;};
+test2193 {regulator-always-on;};
+test2194 {regulator-always-on;};
+test2195 {regulator-always-on;};
+test2196 {regulator-always-on;};
+test2197 {regulator-always-on;};
+test2198 {regulator-always-on;};
+test2199 {regulator-always-on;};
+test2200 {regulator-always-on;};
+test2201 {regulator-always-on;};
+test2202 {regulator-always-on;};
+test2203 {regulator-always-on;};
+test2204 {regulator-always-on;};
+test2205 {regulator-always-on;};
+test2206 {regulator-always-on;};
+test2207 {regulator-always-on;};
+test2208 {regulator-always-on;};
+test2209 {regulator-always-on;};
+test2210 {regulator-always-on;};
+test2211 {regulator-always-on;};
+test2212 {regulator-always-on;};
+test2213 {regulator-always-on;};
+test2214 {regulator-always-on;};
+test2215 {regulator-always-on;};
+test2216 {regulator-always-on;};
+test2217 {regulator-always-on;};
+test2218 {regulator-always-on;};
+test2219 {regulator-always-on;};
+test2220 {regulator-always-on;};
+test2221 {regulator-always-on;};
+test2222 {regulator-always-on;};
+test2223 {regulator-always-on;};
+test2224 {regulator-always-on;};
+test2225 {regulator-always-on;};
+test2226 {regulator-always-on;};
+test2227 {regulator-always-on;};
+test2228 {regulator-always-on;};
+test2229 {regulator-always-on;};
+test2230 {regulator-always-on;};
+test2231 {regulator-always-on;};
+test2232 {regulator-always-on;};
+test2233 {regulator-always-on;};
+test2234 {regulator-always-on;};
+test2235 {regulator-always-on;};
+test2236 {regulator-always-on;};
+test2237 {regulator-always-on;};
+test2238 {regulator-always-on;};
+test2239 {regulator-always-on;};
+test2240 {regulator-always-on;};
+test2241 {regulator-always-on;};
+test2242 {regulator-always-on;};
+test2243 {regulator-always-on;};
+test2244 {regulator-always-on;};
+test2245 {regulator-always-on;};
+test2246 {regulator-always-on;};
+test2247 {regulator-always-on;};
+test2248 {regulator-always-on;};
+test2249 {regulator-always-on;};
+test2250 {regulator-always-on;};
+test2251 {regulator-always-on;};
+test2252 {regulator-always-on;};
+test2253 {regulator-always-on;};
+test2254 {regulator-always-on;};
+test2255 {regulator-always-on;};
+test2256 {regulator-always-on;};
+test2257 {regulator-always-on;};
+test2258 {regulator-always-on;};
+test2259 {regulator-always-on;};
+test2260 {regulator-always-on;};
+test2261 {regulator-always-on;};
+test2262 {regulator-always-on;};
+test2263 {regulator-always-on;};
+test2264 {regulator-always-on;};
+test2265 {regulator-always-on;};
+test2266 {regulator-always-on;};
+test2267 {regulator-always-on;};
+test2268 {regulator-always-on;};
+test2269 {regulator-always-on;};
+test2270 {regulator-always-on;};
+test2271 {regulator-always-on;};
+test2272 {regulator-always-on;};
+test2273 {regulator-always-on;};
+test2274 {regulator-always-on;};
+test2275 {regulator-always-on;};
+test2276 {regulator-always-on;};
+test2277 {regulator-always-on;};
+test2278 {regulator-always-on;};
+test2279 {regulator-always-on;};
+test2280 {regulator-always-on;};
+test2281 {regulator-always-on;};
+test2282 {regulator-always-on;};
+test2283 {regulator-always-on;};
+test2284 {regulator-always-on;};
+test2285 {regulator-always-on;};
+test2286 {regulator-always-on;};
+test2287 {regulator-always-on;};
+test2288 {regulator-always-on;};
+test2289 {regulator-always-on;};
+test2290 {regulator-always-on;};
+test2291 {regulator-always-on;};
+test2292 {regulator-always-on;};
+test2293 {regulator-always-on;};
+test2294 {regulator-always-on;};
+test2295 {regulator-always-on;};
+test2296 {regulator-always-on;};
+test2297 {regulator-always-on;};
+test2298 {regulator-always-on;};
+test2299 {regulator-always-on;};
+test2300 {regulator-always-on;};
+test2301 {regulator-always-on;};
+test2302 {regulator-always-on;};
+test2303 {regulator-always-on;};
+test2304 {regulator-always-on;};
+test2305 {regulator-always-on;};
+test2306 {regulator-always-on;};
+test2307 {regulator-always-on;};
+test2308 {regulator-always-on;};
+test2309 {regulator-always-on;};
+test2310 {regulator-always-on;};
+test2311 {regulator-always-on;};
+test2312 {regulator-always-on;};
+test2313 {regulator-always-on;};
+test2314 {regulator-always-on;};
+test2315 {regulator-always-on;};
+test2316 {regulator-always-on;};
+test2317 {regulator-always-on;};
+test2318 {regulator-always-on;};
+test2319 {regulator-always-on;};
+test2320 {regulator-always-on;};
+test2321 {regulator-always-on;};
+test2322 {regulator-always-on;};
+test2323 {regulator-always-on;};
+test2324 {regulator-always-on;};
+test2325 {regulator-always-on;};
+test2326 {regulator-always-on;};
+test2327 {regulator-always-on;};
+test2328 {regulator-always-on;};
+test2329 {regulator-always-on;};
+test2330 {regulator-always-on;};
+test2331 {regulator-always-on;};
+test2332 {regulator-always-on;};
+test2333 {regulator-always-on;};
+test2334 {regulator-always-on;};
+test2335 {regulator-always-on;};
+test2336 {regulator-always-on;};
+test2337 {regulator-always-on;};
+test2338 {regulator-always-on;};
+test2339 {regulator-always-on;};
+test2340 {regulator-always-on;};
+test2341 {regulator-always-on;};
+test2342 {regulator-always-on;};
+test2343 {regulator-always-on;};
+test2344 {regulator-always-on;};
+test2345 {regulator-always-on;};
+test2346 {regulator-always-on;};
+test2347 {regulator-always-on;};
+test2348 {regulator-always-on;};
+test2349 {regulator-always-on;};
+test2350 {regulator-always-on;};
+test2351 {regulator-always-on;};
+test2352 {regulator-always-on;};
+test2353 {regulator-always-on;};
+test2354 {regulator-always-on;};
+test2355 {regulator-always-on;};
+test2356 {regulator-always-on;};
+test2357 {regulator-always-on;};
+test2358 {regulator-always-on;};
+test2359 {regulator-always-on;};
+test2360 {regulator-always-on;};
+test2361 {regulator-always-on;};
+test2362 {regulator-always-on;};
+test2363 {regulator-always-on;};
+test2364 {regulator-always-on;};
+test2365 {regulator-always-on;};
+test2366 {regulator-always-on;};
+test2367 {regulator-always-on;};
+test2368 {regulator-always-on;};
+test2369 {regulator-always-on;};
+test2370 {regulator-always-on;};
+test2371 {regulator-always-on;};
+test2372 {regulator-always-on;};
+test2373 {regulator-always-on;};
+test2374 {regulator-always-on;};
+test2375 {regulator-always-on;};
+test2376 {regulator-always-on;};
+test2377 {regulator-always-on;};
+test2378 {regulator-always-on;};
+test2379 {regulator-always-on;};
+test2380 {regulator-always-on;};
+test2381 {regulator-always-on;};
+test2382 {regulator-always-on;};
+test2383 {regulator-always-on;};
+test2384 {regulator-always-on;};
+test2385 {regulator-always-on;};
+test2386 {regulator-always-on;};
+test2387 {regulator-always-on;};
+test2388 {regulator-always-on;};
+test2389 {regulator-always-on;};
+test2390 {regulator-always-on;};
+test2391 {regulator-always-on;};
+test2392 {regulator-always-on;};
+test2393 {regulator-always-on;};
+test2394 {regulator-always-on;};
+test2395 {regulator-always-on;};
+test2396 {regulator-always-on;};
+test2397 {regulator-always-on;};
+test2398 {regulator-always-on;};
+test2399 {regulator-always-on;};
+test2400 {regulator-always-on;};
+test2401 {regulator-always-on;};
+test2402 {regulator-always-on;};
+test2403 {regulator-always-on;};
+test2404 {regulator-always-on;};
+test2405 {regulator-always-on;};
+test2406 {regulator-always-on;};
+test2407 {regulator-always-on;};
+test2408 {regulator-always-on;};
+test2409 {regulator-always-on;};
+test2410 {regulator-always-on;};
+test2411 {regulator-always-on;};
+test2412 {regulator-always-on;};
+test2413 {regulator-always-on;};
+test2414 {regulator-always-on;};
+test2415 {regulator-always-on;};
+test2416 {regulator-always-on;};
+test2417 {regulator-always-on;};
+test2418 {regulator-always-on;};
+test2419 {regulator-always-on;};
+test2420 {regulator-always-on;};
+test2421 {regulator-always-on;};
+test2422 {regulator-always-on;};
+test2423 {regulator-always-on;};
+test2424 {regulator-always-on;};
+test2425 {regulator-always-on;};
+test2426 {regulator-always-on;};
+test2427 {regulator-always-on;};
+test2428 {regulator-always-on;};
+test2429 {regulator-always-on;};
+test2430 {regulator-always-on;};
+test2431 {regulator-always-on;};
+test2432 {regulator-always-on;};
+test2433 {regulator-always-on;};
+test2434 {regulator-always-on;};
+test2435 {regulator-always-on;};
+test2436 {regulator-always-on;};
+test2437 {regulator-always-on;};
+test2438 {regulator-always-on;};
+test2439 {regulator-always-on;};
+test2440 {regulator-always-on;};
+test2441 {regulator-always-on;};
+test2442 {regulator-always-on;};
+test2443 {regulator-always-on;};
+test2444 {regulator-always-on;};
+test2445 {regulator-always-on;};
+test2446 {regulator-always-on;};
+test2447 {regulator-always-on;};
+test2448 {regulator-always-on;};
+test2449 {regulator-always-on;};
+test2450 {regulator-always-on;};
+test2451 {regulator-always-on;};
+test2452 {regulator-always-on;};
+test2453 {regulator-always-on;};
+test2454 {regulator-always-on;};
+test2455 {regulator-always-on;};
+test2456 {regulator-always-on;};
+test2457 {regulator-always-on;};
+test2458 {regulator-always-on;};
+test2459 {regulator-always-on;};
+test2460 {regulator-always-on;};
+test2461 {regulator-always-on;};
+test2462 {regulator-always-on;};
+test2463 {regulator-always-on;};
+test2464 {regulator-always-on;};
+test2465 {regulator-always-on;};
+test2466 {regulator-always-on;};
+test2467 {regulator-always-on;};
+test2468 {regulator-always-on;};
+test2469 {regulator-always-on;};
+test2470 {regulator-always-on;};
+test2471 {regulator-always-on;};
+test2472 {regulator-always-on;};
+test2473 {regulator-always-on;};
+test2474 {regulator-always-on;};
+test2475 {regulator-always-on;};
+test2476 {regulator-always-on;};
+test2477 {regulator-always-on;};
+test2478 {regulator-always-on;};
+test2479 {regulator-always-on;};
+test2480 {regulator-always-on;};
+test2481 {regulator-always-on;};
+test2482 {regulator-always-on;};
+test2483 {regulator-always-on;};
+test2484 {regulator-always-on;};
+test2485 {regulator-always-on;};
+test2486 {regulator-always-on;};
+test2487 {regulator-always-on;};
+test2488 {regulator-always-on;};
+test2489 {regulator-always-on;};
+test2490 {regulator-always-on;};
+test2491 {regulator-always-on;};
+test2492 {regulator-always-on;};
+test2493 {regulator-always-on;};
+test2494 {regulator-always-on;};
+test2495 {regulator-always-on;};
+test2496 {regulator-always-on;};
+test2497 {regulator-always-on;};
+test2498 {regulator-always-on;};
+test2499 {regulator-always-on;};
+test2500 {regulator-always-on;};
+test2501 {regulator-always-on;};
+test2502 {regulator-always-on;};
+test2503 {regulator-always-on;};
+test2504 {regulator-always-on;};
+test2505 {regulator-always-on;};
+test2506 {regulator-always-on;};
+test2507 {regulator-always-on;};
+test2508 {regulator-always-on;};
+test2509 {regulator-always-on;};
+test2510 {regulator-always-on;};
+test2511 {regulator-always-on;};
+test2512 {regulator-always-on;};
+test2513 {regulator-always-on;};
+test2514 {regulator-always-on;};
+test2515 {regulator-always-on;};
+test2516 {regulator-always-on;};
+test2517 {regulator-always-on;};
+test2518 {regulator-always-on;};
+test2519 {regulator-always-on;};
+test2520 {regulator-always-on;};
+test2521 {regulator-always-on;};
+test2522 {regulator-always-on;};
+test2523 {regulator-always-on;};
+test2524 {regulator-always-on;};
+test2525 {regulator-always-on;};
+test2526 {regulator-always-on;};
+test2527 {regulator-always-on;};
+test2528 {regulator-always-on;};
+test2529 {regulator-always-on;};
+test2530 {regulator-always-on;};
+test2531 {regulator-always-on;};
+test2532 {regulator-always-on;};
+test2533 {regulator-always-on;};
+test2534 {regulator-always-on;};
+test2535 {regulator-always-on;};
+test2536 {regulator-always-on;};
+test2537 {regulator-always-on;};
+test2538 {regulator-always-on;};
+test2539 {regulator-always-on;};
+test2540 {regulator-always-on;};
+test2541 {regulator-always-on;};
+test2542 {regulator-always-on;};
+test2543 {regulator-always-on;};
+test2544 {regulator-always-on;};
+test2545 {regulator-always-on;};
+test2546 {regulator-always-on;};
+test2547 {regulator-always-on;};
+test2548 {regulator-always-on;};
+test2549 {regulator-always-on;};
+test2550 {regulator-always-on;};
+test2551 {regulator-always-on;};
+test2552 {regulator-always-on;};
+test2553 {regulator-always-on;};
+test2554 {regulator-always-on;};
+test2555 {regulator-always-on;};
+test2556 {regulator-always-on;};
+test2557 {regulator-always-on;};
+test2558 {regulator-always-on;};
+test2559 {regulator-always-on;};
+
+
+				// device needs some definitions for sure, weird yellow pixel bug without
 
 				/* Buck SMPS */
 				s1 {
@@ -182,18 +2689,34 @@
 				l6 {
 					regulator-min-microvolt = <2950000>;
 					regulator-max-microvolt = <2950000>;
+					regulator-always-on;
 				};
 
-				
-				// won't hurt to allow it to go to lower voltages, but the downstream kernel says min:3300000, max:3300000
-				/* wcnss_wlan.0-iris_vddpa */
+				/* modem */
+				l7 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
+				l8 {
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <2800000>;
+				};
+
+				l9 {
+					regulator-min-microvolt = <2850000>;
+					regulator-max-microvolt = <2850000>;
+					regulator-always-on;
+				};
+
+
+				/* gesture sensor */
 				l10 {
 					regulator-min-microvolt = <2900000>;
 					regulator-max-microvolt = <3300000>;
 				};
 
-				// ok
-				/* mipi_dsi.1-dsi1_avdd */
+				/* VTOUCH 3.3v */
 				l11 {
 					regulator-min-microvolt = <3300000>;
 					regulator-max-microvolt = <3300000>;
@@ -201,19 +2724,72 @@
 					regulator-always-on;
 				};
 
-				/* pwm_power for backlight */ // there is no backlight?
-				l17 {
+				// /* VDDA wlan */
+				// l12 {
+				// 	regulator-min-microvolt = <3300000>;
+				// 	regulator-max-microvolt = <3300000>;
+				// };
+
+				// /* ??? */ // does not exist but lineage has it..
+				// l13 {
+				// 	regulator-min-microvolt = <2220000>;
+				// 	regulator-max-microvolt = <2220000>;
+				// };
+
+				/* display connector */
+				l14 {
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
+					bias-pull-down;
 					regulator-always-on;
 				};
 
+				l15 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <2950000>;
+				};
+
+
+				/* analog for touchscreen */
+				l16 {
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <3000000>;
+					regulator-always-on;
+				};
+
+				/* pwm_power for backlight */ // there is no backlight?
+				l17 {
+					regulator-min-microvolt = <3000000>;
+					regulator-max-microvolt = <3000000>;
+				};
+
+
+				/* ambient mic? */
+				l18 {
+					regulator-min-microvolt = <1100000>;
+					regulator-max-microvolt = <1100000>;
+				};
+
+				/* camera */
+				l21 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
 				// ok
-				/* camera, qdsp6 */
+				/* touchscreen */
+				l22 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
+				// ok
+				/* touchkeys */
 				l23 {
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
 					bias-pull-down;
+					regulator-always-on;
 				};
 
 				/* wcnss_wlan.0-riva_vddmx */
@@ -232,12 +2808,75 @@
 					bias-pull-down;
 				};
 
+				/* pil_qdsp6v4.0-core_vdd */
+				l26 {
+				    regulator-min-microvolt = <375000>;
+				    regulator-max-microvolt = <1050000>;
+				};
 
-				/* lcd 3.0V */
+				/* no description provided */
+				l27 {
+				    regulator-min-microvolt = <1100000>;
+				    regulator-max-microvolt = <1100000>;
+				};
+
+				/* no description provided */
+				l28 {
+				    regulator-min-microvolt = <1100000>;
+				    regulator-max-microvolt = <1100000>;
+				};
+
+				/* no description provided */
+				l29 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
+				};
+
+
+				// this definition does not matter at all at the moment, propably because the default voltage is 3V
+				// EINVAL
+				/* mipi_dsi.1-3000mV_LCD */
 				l30 {
-					regulator-min-microvolt = <3000000>;
-					regulator-max-microvolt = <3000000>;
-					bias-pull-down;
+				    regulator-min-microvolt = <3000000>;
+				    regulator-max-microvolt = <3000000>;
+				    // bias-pull-down;
+				};
+
+				/* no description provided */
+				l31 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
+				};
+
+				/* no description provided */
+				l32 {
+				    regulator-min-microvolt = <3300000>;
+				    regulator-max-microvolt = <3300000>;
+				};
+
+				/* FPGA */
+				l33 {
+				    regulator-min-microvolt = <1200000>;
+				    regulator-max-microvolt = <1200000>;
+				    regulator-always-on;
+				};
+
+				/* tabla2x-slim-CDC_VDDA_RX, tabla2x-slim-CDC_VDDA_TX */
+				l34 {
+				    regulator-min-microvolt = <2200000>;
+				    regulator-max-microvolt = <2200000>;
+				};
+
+				/* no description provided */
+				l35 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
+				};
+
+				/* no description provided */
+				l36 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
 				};
 
 
@@ -270,62 +2909,375 @@
 					regulator-always-on;
 				};
 
-				ncp {
-					regulator-min-microvolt = <1800000>;
-					regulator-max-microvolt = <1800000>;
-					qcom,switch-mode-frequency = <1600000>;
-				};
+				// ncp {
+				// 	regulator-min-microvolt = <1800000>;
+				// 	regulator-max-microvolt = <1800000>;
+				// 	qcom,switch-mode-frequency = <1600000>;
+				// };
 			};
 		};
 	};
+
+	// i2c-gpio-led {
+	// 	compatible = "i2c-gpio";
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
+	// 	scl-gpios = <&tlmm_pinmux 7 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	sda-gpios = <&tlmm_pinmux 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	pinctrl-names = "default";
+	// 	pinctrl-0 = <&i2c_led_pins>;
+	//
+	// 	i2c-gpio,delay-us = <2>;
+	//
+	// 	led-controller@30 {
+	// 		compatible = "panasonic,an30259a";
+	// 		reg = <0x30>;
+	//
+	// 		#address-cells = <1>;
+	// 		#size-cells = <0>;
+	//
+	// 		led@1 {
+	// 			label = "status-led:red";
+	// 			linux,default-trigger = "heartbeat";
+	// 			reg = <1>;
+	// 			function = LED_FUNCTION_STATUS;
+	// 			color = <LED_COLOR_ID_RED>;
+	// 		};
+	//
+	// 		led@2 {
+	// 			label = "status-led:green";
+	// 			linux,default-trigger = "cpu0";
+	// 			reg = <2>;
+	// 			function = LED_FUNCTION_STATUS;
+	// 			color = <LED_COLOR_ID_GREEN>;
+	// 		};
+	//
+	// 		led@3 {
+	// 			label = "status-led:blue";
+	// 			linux,default-trigger = "default-on";
+	// 			reg = <3>;
+	// 			function = LED_FUNCTION_STATUS;
+	// 			color = <LED_COLOR_ID_BLUE>;
+	// 		};
+	// 	};
+	// };
+	//
+	// i2c-gpio-touch-buttons {
+	// 	compatible = "i2c-gpio";
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
+	// 	scl-gpios = <&tlmm_pinmux 26 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	sda-gpios = <&tlmm_pinmux 33 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	pinctrl-names = "default";
+	// 	pinctrl-0 = <&i2c_touch_button_pins>;
+	//
+	// 	i2c-gpio,delay-us = <2>;
+	//
+	//
+	// 	// found but not working
+	// 	touchkeys@20 {
+	// 	    compatible = "coreriver,tc360-touchkey";
+	// 	    reg = <0x20>;
+	// 	    interrupt-parent = <&tlmm_pinmux>;
+	// 	    interrupts = <31 IRQ_TYPE_EDGE_FALLING>;
+	//
+	// // touchkey->regulators[0].supply = "vcc";
+	// // touchkey->regulators[1].supply = "vdd";
+	// // touchkey->regulators[2].supply = "vddio";
+	// 		vdd-supply = <&pmic_l11>;
+	// 		vcc-supply = <&pmic_l23>;
+	// 		vddio-supply = <&lcd_gpio_supply>;
+	//
+	// 		// vddio-supply = <&pmic_l16>; //?
+	//
+	// 	    linux,keycodes = <KEY_MENU KEY_BACK>;
+	// 	};
+	// };
+	//
+	// gpio-keys {
+	// 	compatible = "gpio-keys";
+	//
+	// 	volume-up {
+	// 		linux,code = <KEY_VOLUMEUP>;
+	// 		gpios = <&pmic_gpio 35 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+	// 	};
+	//
+	// 	volume-down {
+	// 		linux,code = <KEY_VOLUMEDOWN>;
+	// 		gpios = <&pmic_gpio 37 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+	// 	};
+	//
+	// 	// doesn't work
+	// 	home {
+	// 		linux,code = <KEY_HOME>;
+	// 		gpios = <&pmic_gpio 30 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	// 	};
+	// };
+	//
+	//
+	// spi-gpio-fpga {
+	// 	compatible = "spi-gpio";
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
+	// 	pinctrl-names = "default";
+	// 	pinctrl-0 = <&pmic_mpps>;
+	//
+	// 	sck-gpios = <&pmic_mpps 9 GPIO_ACTIVE_HIGH>;
+	// 	mosi-gpios = <&pmic_mpps 10 GPIO_ACTIVE_HIGH>;
+	//
+	// 	i2c-gpio,delay-us = <2>;
+	//
+	//
+	// 	fpga: fpga@0 {
+	// 		compatible = "lattice,ice40-fpga-mgr";
+	// 		reg = <0>;
+	// 		spi-max-frequency = <5000000>;
+	// 		cdone-gpios = <&tlmm_pinmux 38 GPIO_ACTIVE_HIGH>;
+	// 		reset-gpios = <&pmic_gpio 9 GPIO_ACTIVE_LOW>;
+	// 	};
+	// };
+	// i2c_max77693_fuel: i2c-gpio-3 {
+	// 	compatible = "i2c-gpio";
+	// 	sda-gpios = <&gpf1 5 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	scl-gpios = <&gpf1 4 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	i2c-gpio,delay-us = <2>;
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
+	//
+	// 	fuel-gauge@36 {
+	// 		compatible = "maxim,max17047";
+	// 		interrupt-parent = <&gpx2>;
+	// 		interrupts = <3 IRQ_TYPE_LEVEL_LOW>;
+	// 		pinctrl-names = "default";
+	// 		pinctrl-0 = <&max77693_fuel_irq>;
+	// 		reg = <0x36>;
+	//
+	// 		maxim,over-heat-temp = <700>;
+	// 		maxim,over-volt = <4500>;
+	// 	};
+	// };
+
+	i2c-max77693 {
+		compatible = "i2c-gpio";
+		sda-gpios = <&tlmm_pinmux 0 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&tlmm_pinmux 1 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <2>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		pmic@36 {
+			compatible = "maxim,max77693";
+			reg = <0x36>; // detected
+			interrupt-parent = <&pmic_mpps>;
+			interrupts = <6 IRQ_TYPE_EDGE_FALLING>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pmic_mpps>;
+
+			muic {
+				compatible = "maxim,max77693-muic";
+
+				connector {
+					compatible = "samsung,usb-connector-11pin",
+						     "usb-b-connector";
+					label = "micro-USB";
+					type = "micro";
+
+					// ports {
+					// 	#address-cells = <1>;
+					// 	#size-cells = <0>;
+					//
+					// 	port@0 {
+					// 		reg = <0>;
+					//
+					// 		muic_to_usb: endpoint {
+					// 			remote-endpoint = <&usb_to_muic>;
+					// 		};
+					// 	};
+					//
+					// 	port@3 {
+					// 		reg = <3>;
+					//
+					// 		muic_to_mhl: endpoint {
+					// 			remote-endpoint = <&mhl_to_muic>;
+					// 		};
+					// 	};
+					// };
+				};
+			};
+
+			regulators {
+				esafeout1_reg: ESAFEOUT1 {
+					regulator-name = "ESAFEOUT1";
+					regulator-boot-on;
+				};
+
+				esafeout2_reg: ESAFEOUT2 {
+					regulator-name = "ESAFEOUT2";
+				};
+
+				charger_reg: CHARGER {
+					regulator-name = "CHARGER";
+					regulator-min-microamp = <60000>;
+					regulator-max-microamp = <2580000>;
+					regulator-boot-on;
+				};
+			};
+
+			charger {
+				compatible = "maxim,max77693-charger";
+
+				maxim,constant-microvolt = <4200000>;
+				maxim,min-system-microvolt = <3600000>; // 3.2V might be okay according to lineage
+				maxim,thermal-regulation-celsius = <100>;
+				maxim,battery-overcurrent-microamp = <3500000>;
+				maxim,charge-input-threshold-microvolt = <4300000>;
+			};
+		};
+	};
+
+
+
+
+	// chosen {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	stdout-path = "display0";
+	//
+	// 	// framebuffer0: framebuffer@3200000 {
+	// 	// 	compatible = "simple-framebuffer";
+	// 	// 	reg = <0x03200000 0x800000>;
+	// 	// 	width = <1920>;
+	// 	// 	height = <1080>;
+	// 	// 	stride = <(1920 * 3)>;
+	// 	// 	format = "r8g8b8";
+	// 	// };
+	// };
+	
+	    lcd_gpio_supply: gpio-regulator {
+	      compatible = "regulator-gpio";
+
+	      regulator-name = "lcd-1.8v-gpio-supply";
+	      regulator-min-microvolt = <1800000>;
+	      regulator-max-microvolt = <1800000>;
+	      regulator-boot-on;
+
+	      gpios = <&pmic_gpio 4 GPIO_ACTIVE_HIGH>;// LCD_1.8V_EN
+		gpios-states = <1>;
+		states = <0000000 0>, <1800000 1>;
+
+	      startup-delay-us = <100000>;
+	      enable-active-high;
+	    };
+
+	// reserved-memory {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	framebuffer@3200000 {
+	// 		reg = <0x03200000 0x800000>;
+	// 		no-map;
+	// 	};
+	//
+	// };
+
+	// reserved-memory {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	ramoops@88d00000{
+	// 		compatible = "ramoops";
+	// 		reg = <0x88d00000 0x100000>;
+	// 		record-size     = <0x00020000>;
+	// 		console-size    = <0x00020000>;
+	// 		ftrace-size     = <0x00020000>;
+	// 	};
+	// };
+
 };
+
+
 
 &mdp {
 	status = "okay";
 };
 
-&mdp_dsi1_out {
-    remote-endpoint = <&dsi0_in>;
-};
-
-
-&dsi0 {
-	status = "okay";
-        #address-cells = <1>;
-        #size-cells = <0>;
-
-	panel@0 {
-	    compatible = "samsung,s6e8fa0";
-	    reg = <0>;
-
-	    vdd3-supply = <&pm8921_l16>;  //TSP_VDD_3.0V
-	    vci-supply = <&pm8921_l30>; // VCC_3.0V_LCD (LDO)
-
-	    enable-gpios = <&pm8921_gpio 4 GPIO_ACTIVE_HIGH>; // LCD_1.8V_EN
-	    reset-gpios = <&pm8921_mpps 2 GPIO_ACTIVE_LOW>; // MLCD_RST
-
-	   port {
-		    panel_in: endpoint {
-				remote-endpoint = <&dsi0_out>;
-		    };
-		};
-	   };
-
-};
-
-
-&dsi0_in {
-    remote-endpoint = <&mdp_dsi1_out>;
-};
-
-&dsi0_out {
-    remote-endpoint = <&panel_in>;
-    data-lanes = <0 1 2 3>;
-};
-
-&dsi0_phy {
-	status = "okay";
-};
+// &mdp_dsi1_out {
+//     remote-endpoint = <&dsi0_in>;
+// };
+//
+//
+// &dsi0 {
+// 	status = "okay";
+//         #address-cells = <1>;
+//         #size-cells = <0>;
+//
+// // 		[  831.184443] data->n_resources: 178, resource: 162
+// // [  831.184805] Failed to enable vci: -EIO
+// 	panel@0 {
+// 	    compatible = "samsung,s6e8fa0";
+// 	    reg = <0>;
+//
+// 	    vdd3-supply = <&pmic_l16>;  // TSP_VDD_3.0V
+// 	    // vdd3-supply = <&pmic_l30>; // VCC_3.0V_LCD (LDO)
+// 	    
+// // this needs to be l30, otherwise the display turns off after the linux kernel gets control in the boot process 
+// // l31 works too for some reason????!!!!!!!!!!!!!!!!???????
+// 	    vci-supply = <&pmic_l30>; // VCC_3.0V_LCD (LDO)
+// // we cannot enable vci after it has been disabled for some reason...
+// 	
+//
+// // panel-samsung-s6e8fa0 4700000.dsi.0: cannot get reset-gpios -517    
+// reset-gpios = <&pmic_mpps 2 GPIO_ACTIVE_HIGH>; // MLCD_RST
+//
+// 	power-on-delay= <50>;
+// 	reset-delay = <100>;
+// 	init-delay = <100>;
+//
+// 	display-timings {
+// 		// these values work, but might not be ideal, partly taken from https://github.com/rushup/rushup-linux-artik, partly from another 1080x1920 display in the kernel and hback-porch randomly set to 200 
+// 		timing-0 {
+// 			// clock freq incorrect
+// 			clock-frequency = <148000000>;
+// 			hactive = <1080>;
+// 			vactive = <1920>;
+//
+//
+// 			hfront-porch = <160>;
+// 			hback-porch = <200>;
+// 			vfront-porch = <10>;
+// 			vback-porch = <4>;
+//
+// 			hsync-len = <10>;
+// 			vsync-len = <2>;
+// 		};
+// 	};
+//
+// 	   port {
+// 		    panel_in: endpoint {
+// 				remote-endpoint = <&dsi0_out>;
+// 		    };
+// 		};
+// 	   };
+//
+// };
+//
+//
+// &dsi0_in {
+//     remote-endpoint = <&mdp_dsi1_out>;
+// };
+//
+// &dsi0_out {
+//     remote-endpoint = <&panel_in>;
+//     data-lanes = <0 1 2 3>;
+// };
+//
+// &dsi0_phy {
+// 	status = "okay";
+// };
 
 &gsbi6 {
 	status = "okay";
@@ -348,14 +3300,17 @@
 	status = "okay";
 };
 
+
 /* OTG */
 &usb1 {
 	status = "okay";
 	dr_mode = "otg";
 	ulpi {
 		phy {
-			v3p3-supply = <&pm8921_l3>;
-			v1p8-supply = <&pm8921_l4>;
+			v3p3-supply = <&pmic_l3>;
+// DRMS operation not allowed
+
+			v1p8-supply = <&pmic_l4>;
 		};
 	};
 };
@@ -363,6 +3318,227 @@
 /* eMMC */
 &sdcc1 {
 	status = "okay";
-	vmmc-supply = <&pm8921_l5>;
-	vqmmc-supply = <&pm8921_s4>;
+	vmmc-supply = <&pmic_l5>;
+	vqmmc-supply = <&pmic_s4>;
 };
+
+// /* SD card */
+// &sdcc2 {
+// 	status = "okay";
+// 	vmmc-supply = <&pmic_l6>;
+//
+// 	pinctrl-names = "default";
+// 	pinctrl-0 = <&pmic_gpio>;
+// 	cd-gpios = <&pmic_gpio 33 GPIO_ACTIVE_HIGH>;
+// };
+//
+// &tlmm_pinmux {
+// 	i2c_led_pins: i2c_led_pins {
+// 		mux {
+// 			pins = "gpio6", "gpio7";
+// 			function = "gpio";
+// 		};
+// 		conf {
+// 			pins = "gpio6", "gpio7";
+// 			drive-strength = <16>;
+// 			bias-disable;
+// 		};
+// 	};
+//
+// 	i2c_touch_button_pins: i2c_touch_buttons_pins {
+// 		mux {
+// 			pins = "gpio26", "gpio33";
+// 			function = "gpio";
+// 		};
+// 		conf {
+// 			pins = "gpio26", "gpio33";
+// 			drive-strength = <16>;
+// 			bias-disable;
+// 		};
+// 	};
+//
+//
+// 	touchscreen_pins: touchscreen_pins {
+// 		mux {
+// 			pins = "gpio67";
+// 			function = "gpio";
+// 		};
+// 		conf {
+// 			pins = "gpio67";
+// 			drive-strength = <2>;
+// 			bias-pull-up;
+// 		};
+// 	};
+// };
+//
+// // APPS_FM/                apr_voice_svc/          max77693-led/           msm_cache_erp/          msm_slim_ctrl/          pm8xxx-pwm/
+// // APPS_RIVA_ANT_CMD/      battery_current_limit/  max77693-muic/          msm_cam_i2c_mux/        msm_smd/                pm8xxx-pwrkey/
+// // APPS_RIVA_ANT_DATA/     bcm4335_bluetooth/      max77693-safeout/       msm_cam_server/         msm_sps/                pm8xxx-regulator/
+// // APPS_RIVA_BT_ACL/       bcmdhd_wlan/            mdm2_modem/             msm_csid/               msm_ssbi/               pm8xxx-spk/
+// // APPS_RIVA_BT_CMD/       bluesleep/              mdp/                    msm_csiphy/             msm_vcap/               pm8xxx-tm/
+// // APPS_RIVA_CTRL/         cpu-arm-pmu/            mipi_dsi/               msm_dmov/               msm_vfe/                qup_i2c/
+// // APPS_RIVA_DATA/         cpu_slp_status/         mipi_samsung_full_hd/   msm_dspcrashd/          msm_vidc/               ram_console/
+// // BAM_RMNT/               dev_avtimer/            msm-compr-dsp/          msm_ebi_erp/            msm_vpe/                reg-dummy/
+// // DATA1/                  diag_bridge/            msm-dai-fe/             msm_ehci_host/          msm_watchdog/           rpm-regulator/
+// // DATA11/                 dtv/                    msm-dai-q6/             msm_fb/                 msm_wfd/                rtc-pm8xxx/
+// // DATA21/                 epm_adc/                msm-dai-q6-hdmi/        msm_gemini/             msmgpio/                saw-regulator/
+// // DIAG/                   footswitch-8x60/        msm-dai-q6-mi2s/        msm_hsic_host/          pil_qdsp6v4/            sec-battery/
+// // DIAG_2/                 generic-bl/             msm-dai-stub/           msm_hsusb/              pil_tzapps/             sec-thermistor/
+// // DIAG_CNTL/              gpio-event/             msm-gpio-regulator/     msm_hsusb_host/         pil_vidc/               sec_jack/
+// // GPSNMEA/                gpio-keys/              msm-lowlatency-pcm-dsp/ msm_iommu/              pm-8x60/                sitar_codec/
+// // IPCRTR/                 hdmi_msm/               msm-multi-ch-pcm-dsp/   msm_iommu_ctx/          pm-boot/                snd-soc-dummy/
+// // LOOPBACK_TTY/           i2c-gpio/               msm-pcm-afe/            msm_ispif/              pm8038-core/            soc-audio/
+// // MBALBRIDGE/             iommu_domains/          msm-pcm-dsp/            msm_mercury/            pm8821-core/            spi_qsd/
+// // RPCRPY_CNTL/            ion-msm/                msm-pcm-hostless/       msm_otg/                pm8921-charger/         sys_mon/
+// // SMUX_CTL/               ipc_bridge/             msm-pcm-loopback/       msm_rng/                pm8921-core/            tabla1x_codec/
+// // SMUX_DIAG/              kgsl-2d/                msm-pcm-lpa/            msm_rotator/            pm8xxx-adc/             tabla_codec/
+// // acpuclk-8064/           kgsl-3d/                msm-pcm-routing/        msm_rpm/                pm8xxx-batt-alarm/      timed-gpio/
+// // alarmtimer/             l2-arm-pmu/             msm-pcm-voice/          msm_rtb/                pm8xxx-debug/           tspdrv/
+// // android_usb/            matrix-keypad/          msm-stub-codec/         msm_sdcc/               pm8xxx-gpio/            writeback/
+// // apq8064-tmu/            max77693-charger/       msm-voip-dsp/           msm_serial_hs/          pm8xxx-misc/            writeback_panel/
+// // apr_audio_svc/          max77693-haptic/        msm_bus_fabric/         msm_sharedmem/          pm8xxx-mpp/
+//
+//
+//
+//
+// 	// wifi/bt
+//
+// &riva {
+// 	status = "okay";
+// 	// pinctrl-names = "default";
+// 	// pinctrl-0 = <&riva_wlan_pin_a>, <&riva_bt_pin_a>, <&riva_fm_pin_a>;
+// };
+//
+//
+// // &wcnss_iris {
+// // 	compatible = "qcom,wcn3660b";
+// // };
+//
+// 		// L11 - VTOUCH_3.3V		- touchkeys
+// 		// L16 - TSP_VDD_3.0V		- 
+// 		// L17 - TSP_AVDD_3.3V		- 
+// 		// L22 - TSP_VDD_1.8V           - touch screen
+// 		// L23 - VTOUCH_1.8V		- touchkeys
+// 		// L30 - VCC_3.0V_LCD (LDO)     - display
+//
+// &gsbi3 {
+// 	status = "okay";
+// 	qcom,mode = <GSBI_PROT_I2C>;
+// };
+//
+// &gsbi3_i2c {
+// 	status = "okay";
+// 	clock-frequency = <200000>;
+//
+// 	// detected, but not working
+// 	touchscreen@20 {
+// 		compatible = "syna,rmi4-i2c";
+// 		reg = <0x20>;
+//
+// 		syna,startup-delay-ms = <1000>;
+// 		interrupts-extended = <&tlmm_pinmux 67 IRQ_TYPE_EDGE_FALLING>;
+//
+// 		vdd-supply = <&pmic_l17>;
+// 		vio-supply = <&pmic_l22>;
+//
+//
+// 		pinctrl-names = "default";
+// 		pinctrl-0 = <&touchscreen_pins>;
+//
+// 		#address-cells = <1>;
+// 		#size-cells = <0>;
+//
+// 		rmi4-f01@1 {
+// 			reg = <0x1>;
+// 			syna,nosleep-mode = <1>;
+// 		};
+//
+//
+//
+// 		rmi4-f11@11 {
+// 			reg = <0x12>;
+// 			syna,sensor-type = <1>;
+//
+// 			/*
+// 			 * Touchscreen size is 2040x1080, y-values between
+// 			 * 1920-2040 are used for touchkey (menu, home & back).
+// 			 * For now clip it off so we don't get touch events
+// 			 * outside of the display area.
+// 			 */
+// 			// syna,clip-y-high = <1920>;
+// 		};
+//
+// 	};
+//
+//
+// };
+
+
+// obj-$(CONFIG_SENSORS_SSP_MPU6500)	+= accel_mpu6500.o gyro_mpu6500.o
+        // TODO: supply, config
+	// motion@68 {
+	// 	compatible = "invensense,mpu6500";
+	// 	reg = <0x68>;
+	//
+	// 	interrupt-parent = <&tlmm>;
+	// 	interrupts = <64 IRQ_TYPE_EDGE_RISING>;
+	//
+	// 	vdd-supply = <&vreg_lvs2a_1p8>;
+	// 	vddio-supply = <&vreg_lvs2a_1p8>;
+	// };
+
+
+
+	// obj-$(CONFIG_SENSORS_SSP_YAS532)	+= magnetic_yas532.o
+        // TODO: supply, config, gpio location
+	// i2c_magnetometer: i2c-gpio-3 {
+	// 	compatible = "i2c-gpio";
+	// 	sda-gpios = <&gpy2 4 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	scl-gpios = <&gpy2 5 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	i2c-gpio,delay-us = <2>;
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
+	//
+	// 	magnetometer@2e {
+	// 		compatible = "yamaha,yas532";
+	// 		reg = <0x2e>;
+	// 		iovdd-supply = <&ldo3_reg>;
+	// 		mount-matrix = "-1", "0", "0",
+	// 				  "0", "1", "0",
+	// 				  "0", "0", "-1";
+	// 	};
+	// };
+
+
+// obj-$(CONFIG_SENSORS_SSP_SHTC1)	+= temphumidity_shtc1.o
+// TODO: everything
+//     i2c {
+//       #address-cells = <1>;
+//       #size-cells = <0>;
+//       clock-frequency = <400000>;
+//
+//       shtc3@70 {
+//         compatible = "sensirion,shtc3";
+//         reg = <0x70>;
+//         sensirion,blocking-io;
+//       };
+//     };
+
+// not found
+// obj-$(CONFIG_SENSORS_SSP_CM3320)	+= light_cm3320.o
+// obj-$(CONFIG_SENSORS_SSP_MAX88920)	+= prox_max88920.o gesture_max88920.o
+// obj-$(CONFIG_SENSORS_SSP_BMP182)	+= pressure_bmp182.o
+// obj-$(CONFIG_SENSORS_SSP_AT32UC3L0128)	+= mcu_at32uc3l0128.o
+
+// WITHOUT THIS NO ACCCESS TO A LOT OF THINGS (not found in kernel, some sensorhub)
+// obj-$(CONFIG_SENSORS_SSP_ATUC128L5HAR)	+= mcu_atuc128l5har.o
+
+// &sdhc_2 {
+// 	status = "okay";
+//
+// 	pinctrl-names = "default", "sleep";
+// 	pinctrl-0 = <&sdc2_default &sdc2_cd_default>;
+// 	pinctrl-1 = <&sdc2_sleep &sdc2_cd_default>;
+//
+// 	cd-gpios = <&tlmm 38 GPIO_ACTIVE_LOW>;
+// };

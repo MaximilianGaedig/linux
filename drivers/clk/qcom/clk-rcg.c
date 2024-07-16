@@ -50,8 +50,8 @@ static u8 clk_rcg_get_parent(struct clk_hw *hw)
 			return i;
 
 err:
-	pr_debug("%s: Clock %s has invalid parent, using default.\n",
-		 __func__, clk_hw_get_name(hw));
+	pr_debug("%s: Clock %s has invalid parent, using default.\n", __func__,
+		 clk_hw_get_name(hw));
 	return 0;
 }
 
@@ -86,8 +86,8 @@ static u8 clk_dyn_rcg_get_parent(struct clk_hw *hw)
 			return i;
 
 err:
-	pr_debug("%s: Clock %s has invalid parent, using default.\n",
-		 __func__, clk_hw_get_name(hw));
+	pr_debug("%s: Clock %s has invalid parent, using default.\n", __func__,
+		 clk_hw_get_name(hw));
 	return 0;
 }
 
@@ -322,8 +322,8 @@ static int clk_dyn_rcg_set_parent(struct clk_hw *hw, u8 index)
  *   rate = ----------- x  ---
  *            pre_div       n
  */
-static unsigned long
-calc_rate(unsigned long rate, u32 m, u32 n, u32 mode, u32 pre_div)
+static unsigned long calc_rate(unsigned long rate, u32 m, u32 n, u32 mode,
+			       u32 pre_div)
 {
 	if (pre_div)
 		rate /= pre_div + 1;
@@ -338,8 +338,8 @@ calc_rate(unsigned long rate, u32 m, u32 n, u32 mode, u32 pre_div)
 	return rate;
 }
 
-static unsigned long
-clk_rcg_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
+static unsigned long clk_rcg_recalc_rate(struct clk_hw *hw,
+					 unsigned long parent_rate)
 {
 	struct clk_rcg *rcg = to_clk_rcg(hw);
 	u32 pre_div, m = 0, n = 0, ns, md, mode = 0;
@@ -354,7 +354,8 @@ clk_rcg_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 		n = ns_m_to_n(mn, ns, m);
 		/* MN counter mode is in hw.enable_reg sometimes */
 		if (rcg->clkr.enable_reg != rcg->ns_reg)
-			regmap_read(rcg->clkr.regmap, rcg->clkr.enable_reg, &mode);
+			regmap_read(rcg->clkr.regmap, rcg->clkr.enable_reg,
+				    &mode);
 		else
 			mode = ns;
 		mode = reg_to_mnctr_mode(mn, mode);
@@ -363,8 +364,8 @@ clk_rcg_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 	return calc_rate(parent_rate, m, n, mode, pre_div);
 }
 
-static unsigned long
-clk_dyn_rcg_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
+static unsigned long clk_dyn_rcg_recalc_rate(struct clk_hw *hw,
+					     unsigned long parent_rate)
 {
 	struct clk_dyn_rcg *rcg = to_clk_dyn_rcg(hw);
 	u32 m, n, pre_div, ns, md, mode, reg;
@@ -397,8 +398,8 @@ clk_dyn_rcg_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 }
 
 static int _freq_tbl_determine_rate(struct clk_hw *hw, const struct freq_tbl *f,
-		struct clk_rate_request *req,
-		const struct parent_map *parent_map)
+				    struct clk_rate_request *req,
+				    const struct parent_map *parent_map)
 {
 	unsigned long clk_flags, rate = req->rate;
 	struct clk_hw *p;
@@ -423,7 +424,7 @@ static int _freq_tbl_determine_rate(struct clk_hw *hw, const struct freq_tbl *f,
 			rate = tmp;
 		}
 	} else {
-		rate =  clk_hw_get_rate(p);
+		rate = clk_hw_get_rate(p);
 	}
 	req->best_parent_hw = p;
 	req->best_parent_rate = rate;
@@ -494,9 +495,11 @@ static int __clk_rcg_set_rate(struct clk_rcg *rcg, const struct freq_tbl *f)
 		regmap_read(rcg->clkr.regmap, rcg->ns_reg, &ns);
 		/* MN counter mode is in hw.enable_reg sometimes */
 		if (rcg->clkr.enable_reg != rcg->ns_reg) {
-			regmap_read(rcg->clkr.regmap, rcg->clkr.enable_reg, &ctl);
+			regmap_read(rcg->clkr.regmap, rcg->clkr.enable_reg,
+				    &ctl);
 			ctl = mn_to_reg(mn, f->m, f->n, ctl);
-			regmap_write(rcg->clkr.regmap, rcg->clkr.enable_reg, ctl);
+			regmap_write(rcg->clkr.regmap, rcg->clkr.enable_reg,
+				     ctl);
 		} else {
 			ns = mn_to_reg(mn, f->m, f->n, ns);
 		}
@@ -540,7 +543,7 @@ static int clk_rcg_set_floor_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 static int clk_rcg_bypass_set_rate(struct clk_hw *hw, unsigned long rate,
-				unsigned long parent_rate)
+				   unsigned long parent_rate)
 {
 	struct clk_rcg *rcg = to_clk_rcg(hw);
 
@@ -548,7 +551,7 @@ static int clk_rcg_bypass_set_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 static int clk_rcg_bypass2_determine_rate(struct clk_hw *hw,
-				struct clk_rate_request *req)
+					  struct clk_rate_request *req)
 {
 	struct clk_hw *p;
 
@@ -560,7 +563,7 @@ static int clk_rcg_bypass2_determine_rate(struct clk_hw *hw,
 }
 
 static int clk_rcg_bypass2_set_rate(struct clk_hw *hw, unsigned long rate,
-				unsigned long parent_rate)
+				    unsigned long parent_rate)
 {
 	struct clk_rcg *rcg = to_clk_rcg(hw);
 	struct freq_tbl f = { 0 };
@@ -585,7 +588,9 @@ static int clk_rcg_bypass2_set_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 static int clk_rcg_bypass2_set_rate_and_parent(struct clk_hw *hw,
-		unsigned long rate, unsigned long parent_rate, u8 index)
+					       unsigned long rate,
+					       unsigned long parent_rate,
+					       u8 index)
 {
 	/* Read the hardware to determine parent during set_rate */
 	return clk_rcg_bypass2_set_rate(hw, rate, parent_rate);
@@ -596,39 +601,52 @@ struct frac_entry {
 	int den;
 };
 
-static const struct frac_entry pixel_table[] = {
-	{ 1, 2 },
-	{ 1, 3 },
-	{ 3, 16 },
-	{ }
-};
+static const struct frac_entry pixel_table[] = { { 1, 2 },
+						 { 1, 3 },
+						 { 3, 16 },
+						 {} };
 
 static int clk_rcg_pixel_determine_rate(struct clk_hw *hw,
-		struct clk_rate_request *req)
+					struct clk_rate_request *req)
 {
-	int delta = 100000;
+	int delta = 100000; // maximum deviation
 	const struct frac_entry *frac = pixel_table;
 	unsigned long request, src_rate;
 
+	// static const struct frac_entry pixel_table[] = { { 1, 2 },
+	// 						 { 1, 3 },
+	// 						 { 3, 16 },
+	// 						 {} };
+
+	printk("clk_rcg_pixel_determine_rate req: %d,%d,%d,%d,%d,%d", req->rate,
+	       req->max_rate, req->best_parent_rate, req->best_parent_hw,
+	       frac->num, frac->den);
+
 	for (; frac->num; frac++) {
+		// src_rate < ((x * 2) / 1 - 100000)
+		// src_rate < ((x * 3) / 1 - 100000)
+		// src_rate < ((x * 16) / 3 - 100000)
 		request = (req->rate * frac->den) / frac->num;
 
+		// -1043656576,(x * 16) / 3
 		src_rate = clk_hw_round_rate(req->best_parent_hw, request);
 
 		if ((src_rate < (request - delta)) ||
-			(src_rate > (request + delta)))
+		    (src_rate > (request + delta)))
 			continue;
 
 		req->best_parent_rate = src_rate;
 		req->rate = (src_rate * frac->num) / frac->den;
+		printk("clk_rcg_pixel_determine_rate is okiii!");
 		return 0;
 	}
 
+	printk("this the einval??");
 	return -EINVAL;
 }
 
 static int clk_rcg_pixel_set_rate(struct clk_hw *hw, unsigned long rate,
-				unsigned long parent_rate)
+				  unsigned long parent_rate)
 {
 	struct clk_rcg *rcg = to_clk_rcg(hw);
 	int delta = 100000;
@@ -659,7 +677,7 @@ static int clk_rcg_pixel_set_rate(struct clk_hw *hw, unsigned long rate,
 		request = (rate * frac->den) / frac->num;
 
 		if ((parent_rate < (request - delta)) ||
-			(parent_rate > (request + delta)))
+		    (parent_rate > (request + delta)))
 			continue;
 
 		f.m = frac->num;
@@ -672,13 +690,15 @@ static int clk_rcg_pixel_set_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 static int clk_rcg_pixel_set_rate_and_parent(struct clk_hw *hw,
-		unsigned long rate, unsigned long parent_rate, u8 index)
+					     unsigned long rate,
+					     unsigned long parent_rate,
+					     u8 index)
 {
 	return clk_rcg_pixel_set_rate(hw, rate, parent_rate);
 }
 
 static int clk_rcg_esc_determine_rate(struct clk_hw *hw,
-		struct clk_rate_request *req)
+				      struct clk_rate_request *req)
 {
 	struct clk_rcg *rcg = to_clk_rcg(hw);
 	int pre_div_max = BIT(rcg->p.pre_div_width);
@@ -738,7 +758,8 @@ static int clk_rcg_esc_set_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 static int clk_rcg_esc_set_rate_and_parent(struct clk_hw *hw,
-		unsigned long rate, unsigned long parent_rate, u8 index)
+					   unsigned long rate,
+					   unsigned long parent_rate, u8 index)
 {
 	return clk_rcg_esc_set_rate(hw, rate, parent_rate);
 }
@@ -807,13 +828,14 @@ static int __clk_dyn_rcg_set_rate(struct clk_hw *hw, unsigned long rate)
 }
 
 static int clk_dyn_rcg_set_rate(struct clk_hw *hw, unsigned long rate,
-			    unsigned long parent_rate)
+				unsigned long parent_rate)
 {
 	return __clk_dyn_rcg_set_rate(hw, rate);
 }
 
 static int clk_dyn_rcg_set_rate_and_parent(struct clk_hw *hw,
-		unsigned long rate, unsigned long parent_rate, u8 index)
+					   unsigned long rate,
+					   unsigned long parent_rate, u8 index)
 {
 	return __clk_dyn_rcg_set_rate(hw, rate);
 }
