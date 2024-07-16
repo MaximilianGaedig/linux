@@ -1397,7 +1397,7 @@ static int rpm_regulator_init_vreg(struct qcom_rpm_reg *vreg, struct device *dev
 	struct regulator_dev *rdev;
 	int ret;
 
-	for (rpm_data = pmic_rpm_data; rpm_data->name; rpm_data++)
+	for (rpm_data = pmic_rpm_data; ; rpm_data++)
 		if (of_node_name_eq(node, rpm_data->name))
 			break;
 

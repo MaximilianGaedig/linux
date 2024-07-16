@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-#include "qcom-apq8064-v2.0.dtsi"
+#include "qcom-apq8064-pm8917.dtsi"
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/common.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
 
@@ -11,88 +12,33 @@
 	aliases {
 		serial0 = &gsbi7_serial;
 		serial1 = &gsbi6_serial;
-
-		// display0 = &framebuffer0;
 	};
 
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
 
-
-	// chosen {
-	// 	#address-cells = <1>;
-	// 	#size-cells = <1>;
-	// 	ranges;
-	//
-	// 	stdout-path = "display0";
-	//
-	// 	// framebuffer0: framebuffer@3200000 {
-	// 	// 	compatible = "simple-framebuffer";
-	// 	// 	reg = <0x03200000 0x800000>;
-	// 	// 	width = <1920>;
-	// 	// 	height = <1080>;
-	// 	// 	stride = <(1920 * 3)>;
-	// 	// 	format = "r8g8b8";
-	// 	// };
-	// };
-	
-	// leds {
-	// 	compatible = "gpio-leds";
-	// 	pinctrl-names = "default";
-	// 	pinctrl-0 = <&notify_led>;
-	//
-	// 	led-user {
-	// 		label = "user0";
-	// 		color = <LED_COLOR_ID_GREEN>;
-	// 		gpios = <&pm8921_gpio 18 GPIO_ACTIVE_HIGH>;
-	// 		default-state = "on";
-	// 	};
-	// };
-
-	// reserved-memory {
-	// 	#address-cells = <1>;
-	// 	#size-cells = <1>;
-	// 	ranges;
-	//
-	// 	framebuffer@3200000 {
-	// 		reg = <0x03200000 0x800000>;
-	// 		no-map;
-	// 	};
-	//
-	// };
-
-	// reserved-memory {
-	// 	#address-cells = <1>;
-	// 	#size-cells = <1>;
-	// 	ranges;
-	//
-	// 	ramoops@88d00000{
-	// 		compatible = "ramoops";
-	// 		reg = <0x88d00000 0x100000>;
-	// 		record-size     = <0x00020000>;
-	// 		console-size    = <0x00020000>;
-	// 		ftrace-size     = <0x00020000>;
-	// 	};
-	// };
-
 	soc {
 		rpm@108000 {
 			regulators {
-				vdd_l1_l2_l12_l18-supply = <&pm8921_s4>;
-				vin_lvs1_3_6-supply = <&pm8921_s4>;
-				vin_lvs4_5_7-supply = <&pm8921_s4>;
+				vdd_l1_l2_l12_l18-supply = <&pmic_s4>;
+
+				vin_lvs1_3_6-supply = <&pmic_s4>;
+				vin_lvs4_5_7-supply = <&pmic_s4>;
 
 
-				vdd_l24-supply = <&pm8921_s1>;
-				vdd_l25-supply = <&pm8921_s1>;
-				vin_lvs2-supply = <&pm8921_s1>;
+				vdd_l24-supply = <&pmic_s1>;
+				vdd_l25-supply = <&pmic_s1>;
+				vin_lvs2-supply = <&pmic_s1>;
 
-				vdd_l26-supply = <&pm8921_s7>;
-				vdd_l27-supply = <&pm8921_s7>;
-				vdd_l28-supply = <&pm8921_s7>;
+				vdd_l26-supply = <&pmic_s7>;
+				vdd_l27-supply = <&pmic_s7>;
+				vdd_l28-supply = <&pmic_s7>;
 
-				vdd_ncp-supply = <&pm8921_l6>;
+				vdd_ncp-supply = <&pmic_l6>;
+
+
+				// device needs some definitions for sure, weird yellow pixel bug without
 
 				/* Buck SMPS */
 				s1 {
@@ -182,18 +128,34 @@
 				l6 {
 					regulator-min-microvolt = <2950000>;
 					regulator-max-microvolt = <2950000>;
+					regulator-always-on;
 				};
 
-				
-				// won't hurt to allow it to go to lower voltages, but the downstream kernel says min:3300000, max:3300000
-				/* wcnss_wlan.0-iris_vddpa */
+				/* modem */
+				l7 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
+				l8 {
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <2800000>;
+				};
+
+				l9 {
+					regulator-min-microvolt = <2850000>;
+					regulator-max-microvolt = <2850000>;
+					regulator-always-on;
+				};
+
+
+				/* gesture sensor */
 				l10 {
 					regulator-min-microvolt = <2900000>;
 					regulator-max-microvolt = <3300000>;
 				};
 
-				// ok
-				/* mipi_dsi.1-dsi1_avdd */
+				/* VTOUCH 3.3v */
 				l11 {
 					regulator-min-microvolt = <3300000>;
 					regulator-max-microvolt = <3300000>;
@@ -201,19 +163,72 @@
 					regulator-always-on;
 				};
 
-				/* pwm_power for backlight */ // there is no backlight?
-				l17 {
+				// /* VDDA wlan */
+				// l12 {
+				// 	regulator-min-microvolt = <3300000>;
+				// 	regulator-max-microvolt = <3300000>;
+				// };
+
+				// /* ??? */ // does not exist but lineage has it..
+				// l13 {
+				// 	regulator-min-microvolt = <2220000>;
+				// 	regulator-max-microvolt = <2220000>;
+				// };
+
+				/* display connector */
+				l14 {
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
+					bias-pull-down;
 					regulator-always-on;
 				};
 
+				l15 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <2950000>;
+				};
+
+
+				/* analog for touchscreen */
+				l16 {
+					regulator-min-microvolt = <2800000>;
+					regulator-max-microvolt = <3000000>;
+					regulator-always-on;
+				};
+
+				/* pwm_power for backlight */ // there is no backlight?
+				l17 {
+					regulator-min-microvolt = <3000000>;
+					regulator-max-microvolt = <3000000>;
+				};
+
+
+				/* ambient mic? */
+				l18 {
+					regulator-min-microvolt = <1100000>;
+					regulator-max-microvolt = <1100000>;
+				};
+
+				/* camera */
+				l21 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
 				// ok
-				/* camera, qdsp6 */
+				/* touchscreen */
+				l22 {
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+				};
+
+				// ok
+				/* touchkeys */
 				l23 {
 					regulator-min-microvolt = <1800000>;
 					regulator-max-microvolt = <1800000>;
 					bias-pull-down;
+					regulator-always-on;
 				};
 
 				/* wcnss_wlan.0-riva_vddmx */
@@ -232,12 +247,75 @@
 					bias-pull-down;
 				};
 
+				/* pil_qdsp6v4.0-core_vdd */
+				l26 {
+				    regulator-min-microvolt = <375000>;
+				    regulator-max-microvolt = <1050000>;
+				};
 
-				/* lcd 3.0V */
+				/* no description provided */
+				l27 {
+				    regulator-min-microvolt = <1100000>;
+				    regulator-max-microvolt = <1100000>;
+				};
+
+				/* no description provided */
+				l28 {
+				    regulator-min-microvolt = <1100000>;
+				    regulator-max-microvolt = <1100000>;
+				};
+
+				/* no description provided */
+				l29 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
+				};
+
+
+				// this definition does not matter at all at the moment, propably because the default voltage is 3V
+				// EINVAL
+				/* mipi_dsi.1-3000mV_LCD */
 				l30 {
-					regulator-min-microvolt = <3000000>;
-					regulator-max-microvolt = <3000000>;
-					bias-pull-down;
+				    regulator-min-microvolt = <3000000>;
+				    regulator-max-microvolt = <3000000>;
+				    // bias-pull-down;
+				};
+
+				/* no description provided */
+				l31 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
+				};
+
+				/* no description provided */
+				l32 {
+				    regulator-min-microvolt = <3300000>;
+				    regulator-max-microvolt = <3300000>;
+				};
+
+				/* FPGA */
+				l33 {
+				    regulator-min-microvolt = <1200000>;
+				    regulator-max-microvolt = <1200000>;
+				    regulator-always-on;
+				};
+
+				/* tabla2x-slim-CDC_VDDA_RX, tabla2x-slim-CDC_VDDA_TX */
+				l34 {
+				    regulator-min-microvolt = <2200000>;
+				    regulator-max-microvolt = <2200000>;
+				};
+
+				/* no description provided */
+				l35 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
+				};
+
+				/* no description provided */
+				l36 {
+				    regulator-min-microvolt = <1800000>;
+				    regulator-max-microvolt = <1800000>;
 				};
 
 
@@ -270,15 +348,297 @@
 					regulator-always-on;
 				};
 
-				ncp {
-					regulator-min-microvolt = <1800000>;
-					regulator-max-microvolt = <1800000>;
-					qcom,switch-mode-frequency = <1600000>;
-				};
+				// ncp {
+				// 	regulator-min-microvolt = <1800000>;
+				// 	regulator-max-microvolt = <1800000>;
+				// 	qcom,switch-mode-frequency = <1600000>;
+				// };
 			};
 		};
 	};
+
+	i2c-gpio-led {
+		compatible = "i2c-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		scl-gpios = <&tlmm_pinmux 7 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		sda-gpios = <&tlmm_pinmux 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_led_pins>;
+
+		i2c-gpio,delay-us = <2>;
+
+		led-controller@30 {
+			compatible = "panasonic,an30259a";
+			reg = <0x30>;
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			led@1 {
+				label = "status-led:red";
+				linux,default-trigger = "heartbeat";
+				reg = <1>;
+				function = LED_FUNCTION_STATUS;
+				color = <LED_COLOR_ID_RED>;
+			};
+
+			led@2 {
+				label = "status-led:green";
+				linux,default-trigger = "cpu0";
+				reg = <2>;
+				function = LED_FUNCTION_STATUS;
+				color = <LED_COLOR_ID_GREEN>;
+			};
+
+			led@3 {
+				label = "status-led:blue";
+				linux,default-trigger = "default-on";
+				reg = <3>;
+				function = LED_FUNCTION_STATUS;
+				color = <LED_COLOR_ID_BLUE>;
+			};
+		};
+	};
+
+	i2c-gpio-touch-buttons {
+		compatible = "i2c-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		scl-gpios = <&tlmm_pinmux 26 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		sda-gpios = <&tlmm_pinmux 33 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_touch_button_pins>;
+
+		i2c-gpio,delay-us = <2>;
+
+
+		// found but not working
+		touchkeys@20 {
+		    compatible = "coreriver,tc360-touchkey";
+		    reg = <0x20>;
+		    interrupt-parent = <&tlmm_pinmux>;
+		    interrupts = <31 IRQ_TYPE_EDGE_FALLING>;
+
+	// touchkey->regulators[0].supply = "vcc";
+	// touchkey->regulators[1].supply = "vdd";
+	// touchkey->regulators[2].supply = "vddio";
+			vdd-supply = <&pmic_l11>;
+			vcc-supply = <&pmic_l23>;
+			vddio-supply = <&lcd_gpio_supply>;
+
+			// vddio-supply = <&pmic_l16>; //?
+
+		    linux,keycodes = <KEY_MENU KEY_BACK>;
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		volume-up {
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&pmic_gpio 35 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+		};
+
+		volume-down {
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&pmic_gpio 37 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+		};
+
+		// doesn't work
+		home {
+			linux,code = <KEY_HOME>;
+			gpios = <&pmic_gpio 30 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+	};
+
+
+	spi-gpio-fpga {
+		compatible = "spi-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pmic_mpps>;
+
+		sck-gpios = <&pmic_mpps 9 GPIO_ACTIVE_HIGH>;
+		mosi-gpios = <&pmic_mpps 10 GPIO_ACTIVE_HIGH>;
+
+		i2c-gpio,delay-us = <2>;
+
+
+		fpga: fpga@0 {
+			compatible = "lattice,ice40-fpga-mgr";
+			reg = <0>;
+			spi-max-frequency = <5000000>;
+			cdone-gpios = <&tlmm_pinmux 38 GPIO_ACTIVE_HIGH>;
+			reset-gpios = <&pmic_gpio 9 GPIO_ACTIVE_LOW>;
+		};
+	};
+	// i2c_max77693_fuel: i2c-gpio-3 {
+	// 	compatible = "i2c-gpio";
+	// 	sda-gpios = <&gpf1 5 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	scl-gpios = <&gpf1 4 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	i2c-gpio,delay-us = <2>;
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
+	//
+	// 	fuel-gauge@36 {
+	// 		compatible = "maxim,max17047";
+	// 		interrupt-parent = <&gpx2>;
+	// 		interrupts = <3 IRQ_TYPE_LEVEL_LOW>;
+	// 		pinctrl-names = "default";
+	// 		pinctrl-0 = <&max77693_fuel_irq>;
+	// 		reg = <0x36>;
+	//
+	// 		maxim,over-heat-temp = <700>;
+	// 		maxim,over-volt = <4500>;
+	// 	};
+	// };
+
+	i2c-max77693 {
+		compatible = "i2c-gpio";
+		sda-gpios = <&tlmm_pinmux 0 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&tlmm_pinmux 1 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <2>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		pmic@36 {
+			compatible = "maxim,max77693";
+			reg = <0x36>; // detected
+			interrupt-parent = <&pmic_mpps>;
+			interrupts = <6 IRQ_TYPE_EDGE_FALLING>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pmic_mpps>;
+
+			muic {
+				compatible = "maxim,max77693-muic";
+
+				connector {
+					compatible = "samsung,usb-connector-11pin",
+						     "usb-b-connector";
+					label = "micro-USB";
+					type = "micro";
+
+					// ports {
+					// 	#address-cells = <1>;
+					// 	#size-cells = <0>;
+					//
+					// 	port@0 {
+					// 		reg = <0>;
+					//
+					// 		muic_to_usb: endpoint {
+					// 			remote-endpoint = <&usb_to_muic>;
+					// 		};
+					// 	};
+					//
+					// 	port@3 {
+					// 		reg = <3>;
+					//
+					// 		muic_to_mhl: endpoint {
+					// 			remote-endpoint = <&mhl_to_muic>;
+					// 		};
+					// 	};
+					// };
+				};
+			};
+
+			regulators {
+				esafeout1_reg: ESAFEOUT1 {
+					regulator-name = "ESAFEOUT1";
+					regulator-boot-on;
+				};
+
+				esafeout2_reg: ESAFEOUT2 {
+					regulator-name = "ESAFEOUT2";
+				};
+
+				charger_reg: CHARGER {
+					regulator-name = "CHARGER";
+					regulator-min-microamp = <60000>;
+					regulator-max-microamp = <2580000>;
+					regulator-boot-on;
+				};
+			};
+
+			charger {
+				compatible = "maxim,max77693-charger";
+
+				maxim,constant-microvolt = <4200000>;
+				maxim,min-system-microvolt = <3600000>; // 3.2V might be okay according to lineage
+				maxim,thermal-regulation-celsius = <100>;
+				maxim,battery-overcurrent-microamp = <3500000>;
+				maxim,charge-input-threshold-microvolt = <4300000>;
+			};
+		};
+	};
+
+
+
+
+	// chosen {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	stdout-path = "display0";
+	//
+	// 	// framebuffer0: framebuffer@3200000 {
+	// 	// 	compatible = "simple-framebuffer";
+	// 	// 	reg = <0x03200000 0x800000>;
+	// 	// 	width = <1920>;
+	// 	// 	height = <1080>;
+	// 	// 	stride = <(1920 * 3)>;
+	// 	// 	format = "r8g8b8";
+	// 	// };
+	// };
+	
+	    lcd_gpio_supply: gpio-regulator {
+	      compatible = "regulator-gpio";
+
+	      regulator-name = "lcd-1.8v-gpio-supply";
+	      regulator-min-microvolt = <1800000>;
+	      regulator-max-microvolt = <1800000>;
+	      regulator-boot-on;
+
+	      gpios = <&pmic_gpio 4 GPIO_ACTIVE_HIGH>;// LCD_1.8V_EN
+		gpios-states = <1>;
+		states = <0000000 0>, <1800000 1>;
+
+	      startup-delay-us = <100000>;
+	      enable-active-high;
+	    };
+
+	// reserved-memory {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	framebuffer@3200000 {
+	// 		reg = <0x03200000 0x800000>;
+	// 		no-map;
+	// 	};
+	//
+	// };
+
+	// reserved-memory {
+	// 	#address-cells = <1>;
+	// 	#size-cells = <1>;
+	// 	ranges;
+	//
+	// 	ramoops@88d00000{
+	// 		compatible = "ramoops";
+	// 		reg = <0x88d00000 0x100000>;
+	// 		record-size     = <0x00020000>;
+	// 		console-size    = <0x00020000>;
+	// 		ftrace-size     = <0x00020000>;
+	// 	};
+	// };
+
 };
+
+
 
 &mdp {
 	status = "okay";
@@ -294,15 +654,42 @@
         #address-cells = <1>;
         #size-cells = <0>;
 
+// 		[  831.184443] data->n_resources: 178, resource: 162
+// [  831.184805] Failed to enable vci: -EIO
 	panel@0 {
 	    compatible = "samsung,s6e8fa0";
 	    reg = <0>;
 
-	    vdd3-supply = <&pm8921_l16>;  //TSP_VDD_3.0V
-	    vci-supply = <&pm8921_l30>; // VCC_3.0V_LCD (LDO)
+	    vdd3-supply = <&pmic_l16>;  // TSP_VDD_3.0V
+	    // vdd3-supply = <&pmic_l30>; // VCC_3.0V_LCD (LDO)
+	    
+// this needs to be l30, otherwise the display turns off after the linux kernel gets control in the boot process 
+// l31 works too for some reason????!!!!!!!!!!!!!!!!???????
+	    vci-supply = <&pmic_l30>; // VCC_3.0V_LCD (LDO)
 
-	    enable-gpios = <&pm8921_gpio 4 GPIO_ACTIVE_HIGH>; // LCD_1.8V_EN
-	    reset-gpios = <&pm8921_mpps 2 GPIO_ACTIVE_LOW>; // MLCD_RST
+	    reset-gpios = <&pmic_mpps 2 GPIO_ACTIVE_HIGH>; // MLCD_RST
+
+	power-on-delay= <50>;
+	reset-delay = <100>;
+	init-delay = <100>;
+
+	display-timings {
+		// these values work, but might not be ideal, partly taken from https://github.com/rushup/rushup-linux-artik, partly from another 1080x1920 display in the kernel and hback-porch randomly set to 200 
+		timing-0 {
+			clock-frequency = <148500000>;
+			hactive = <1080>;
+			vactive = <1920>;
+
+
+			hfront-porch = <160>;
+			hback-porch = <200>;
+			vfront-porch = <10>;
+			vback-porch = <4>;
+
+			hsync-len = <10>;
+			vsync-len = <2>;
+		};
+	};
 
 	   port {
 		    panel_in: endpoint {
@@ -348,14 +735,17 @@
 	status = "okay";
 };
 
+
 /* OTG */
 &usb1 {
 	status = "okay";
 	dr_mode = "otg";
 	ulpi {
 		phy {
-			v3p3-supply = <&pm8921_l3>;
-			v1p8-supply = <&pm8921_l4>;
+			v3p3-supply = <&pmic_l3>;
+// DRMS operation not allowed
+
+			v1p8-supply = <&pmic_l4>;
 		};
 	};
 };
@@ -363,6 +753,227 @@
 /* eMMC */
 &sdcc1 {
 	status = "okay";
-	vmmc-supply = <&pm8921_l5>;
-	vqmmc-supply = <&pm8921_s4>;
+	vmmc-supply = <&pmic_l5>;
+	vqmmc-supply = <&pmic_s4>;
 };
+
+/* SD card */
+&sdcc2 {
+	status = "okay";
+	vmmc-supply = <&pmic_l6>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pmic_gpio>;
+	cd-gpios = <&pmic_gpio 33 GPIO_ACTIVE_HIGH>;
+};
+
+&tlmm_pinmux {
+	i2c_led_pins: i2c_led_pins {
+		mux {
+			pins = "gpio6", "gpio7";
+			function = "gpio";
+		};
+		conf {
+			pins = "gpio6", "gpio7";
+			drive-strength = <16>;
+			bias-disable;
+		};
+	};
+
+	i2c_touch_button_pins: i2c_touch_buttons_pins {
+		mux {
+			pins = "gpio26", "gpio33";
+			function = "gpio";
+		};
+		conf {
+			pins = "gpio26", "gpio33";
+			drive-strength = <16>;
+			bias-disable;
+		};
+	};
+
+
+	touchscreen_pins: touchscreen_pins {
+		mux {
+			pins = "gpio67";
+			function = "gpio";
+		};
+		conf {
+			pins = "gpio67";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+};
+
+// APPS_FM/                apr_voice_svc/          max77693-led/           msm_cache_erp/          msm_slim_ctrl/          pm8xxx-pwm/
+// APPS_RIVA_ANT_CMD/      battery_current_limit/  max77693-muic/          msm_cam_i2c_mux/        msm_smd/                pm8xxx-pwrkey/
+// APPS_RIVA_ANT_DATA/     bcm4335_bluetooth/      max77693-safeout/       msm_cam_server/         msm_sps/                pm8xxx-regulator/
+// APPS_RIVA_BT_ACL/       bcmdhd_wlan/            mdm2_modem/             msm_csid/               msm_ssbi/               pm8xxx-spk/
+// APPS_RIVA_BT_CMD/       bluesleep/              mdp/                    msm_csiphy/             msm_vcap/               pm8xxx-tm/
+// APPS_RIVA_CTRL/         cpu-arm-pmu/            mipi_dsi/               msm_dmov/               msm_vfe/                qup_i2c/
+// APPS_RIVA_DATA/         cpu_slp_status/         mipi_samsung_full_hd/   msm_dspcrashd/          msm_vidc/               ram_console/
+// BAM_RMNT/               dev_avtimer/            msm-compr-dsp/          msm_ebi_erp/            msm_vpe/                reg-dummy/
+// DATA1/                  diag_bridge/            msm-dai-fe/             msm_ehci_host/          msm_watchdog/           rpm-regulator/
+// DATA11/                 dtv/                    msm-dai-q6/             msm_fb/                 msm_wfd/                rtc-pm8xxx/
+// DATA21/                 epm_adc/                msm-dai-q6-hdmi/        msm_gemini/             msmgpio/                saw-regulator/
+// DIAG/                   footswitch-8x60/        msm-dai-q6-mi2s/        msm_hsic_host/          pil_qdsp6v4/            sec-battery/
+// DIAG_2/                 generic-bl/             msm-dai-stub/           msm_hsusb/              pil_tzapps/             sec-thermistor/
+// DIAG_CNTL/              gpio-event/             msm-gpio-regulator/     msm_hsusb_host/         pil_vidc/               sec_jack/
+// GPSNMEA/                gpio-keys/              msm-lowlatency-pcm-dsp/ msm_iommu/              pm-8x60/                sitar_codec/
+// IPCRTR/                 hdmi_msm/               msm-multi-ch-pcm-dsp/   msm_iommu_ctx/          pm-boot/                snd-soc-dummy/
+// LOOPBACK_TTY/           i2c-gpio/               msm-pcm-afe/            msm_ispif/              pm8038-core/            soc-audio/
+// MBALBRIDGE/             iommu_domains/          msm-pcm-dsp/            msm_mercury/            pm8821-core/            spi_qsd/
+// RPCRPY_CNTL/            ion-msm/                msm-pcm-hostless/       msm_otg/                pm8921-charger/         sys_mon/
+// SMUX_CTL/               ipc_bridge/             msm-pcm-loopback/       msm_rng/                pm8921-core/            tabla1x_codec/
+// SMUX_DIAG/              kgsl-2d/                msm-pcm-lpa/            msm_rotator/            pm8xxx-adc/             tabla_codec/
+// acpuclk-8064/           kgsl-3d/                msm-pcm-routing/        msm_rpm/                pm8xxx-batt-alarm/      timed-gpio/
+// alarmtimer/             l2-arm-pmu/             msm-pcm-voice/          msm_rtb/                pm8xxx-debug/           tspdrv/
+// android_usb/            matrix-keypad/          msm-stub-codec/         msm_sdcc/               pm8xxx-gpio/            writeback/
+// apq8064-tmu/            max77693-charger/       msm-voip-dsp/           msm_serial_hs/          pm8xxx-misc/            writeback_panel/
+// apr_audio_svc/          max77693-haptic/        msm_bus_fabric/         msm_sharedmem/          pm8xxx-mpp/
+
+
+
+
+	// wifi/bt
+
+&riva {
+	status = "okay";
+	// pinctrl-names = "default";
+	// pinctrl-0 = <&riva_wlan_pin_a>, <&riva_bt_pin_a>, <&riva_fm_pin_a>;
+};
+
+
+// &wcnss_iris {
+// 	compatible = "qcom,wcn3660b";
+// };
+
+		// L11 - VTOUCH_3.3V		- touchkeys
+		// L16 - TSP_VDD_3.0V		- 
+		// L17 - TSP_AVDD_3.3V		- 
+		// L22 - TSP_VDD_1.8V           - touch screen
+		// L23 - VTOUCH_1.8V		- touchkeys
+		// L30 - VCC_3.0V_LCD (LDO)     - display
+
+&gsbi3 {
+	status = "okay";
+	qcom,mode = <GSBI_PROT_I2C>;
+};
+
+&gsbi3_i2c {
+	status = "okay";
+	clock-frequency = <200000>;
+
+	// detected, but not working
+	touchscreen@20 {
+		compatible = "syna,rmi4-i2c";
+		reg = <0x20>;
+
+		syna,startup-delay-ms = <1000>;
+		interrupts-extended = <&tlmm_pinmux 67 IRQ_TYPE_EDGE_FALLING>;
+
+		vdd-supply = <&pmic_l17>;
+		vio-supply = <&pmic_l22>;
+
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&touchscreen_pins>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		rmi4-f01@1 {
+			reg = <0x1>;
+			syna,nosleep-mode = <1>;
+		};
+
+
+
+		rmi4-f11@11 {
+			reg = <0x12>;
+			syna,sensor-type = <1>;
+
+			/*
+			 * Touchscreen size is 2040x1080, y-values between
+			 * 1920-2040 are used for touchkey (menu, home & back).
+			 * For now clip it off so we don't get touch events
+			 * outside of the display area.
+			 */
+			// syna,clip-y-high = <1920>;
+		};
+
+	};
+
+
+};
+
+
+// obj-$(CONFIG_SENSORS_SSP_MPU6500)	+= accel_mpu6500.o gyro_mpu6500.o
+        // TODO: supply, config
+	// motion@68 {
+	// 	compatible = "invensense,mpu6500";
+	// 	reg = <0x68>;
+	//
+	// 	interrupt-parent = <&tlmm>;
+	// 	interrupts = <64 IRQ_TYPE_EDGE_RISING>;
+	//
+	// 	vdd-supply = <&vreg_lvs2a_1p8>;
+	// 	vddio-supply = <&vreg_lvs2a_1p8>;
+	// };
+
+
+
+	// obj-$(CONFIG_SENSORS_SSP_YAS532)	+= magnetic_yas532.o
+        // TODO: supply, config, gpio location
+	// i2c_magnetometer: i2c-gpio-3 {
+	// 	compatible = "i2c-gpio";
+	// 	sda-gpios = <&gpy2 4 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	scl-gpios = <&gpy2 5 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	// 	i2c-gpio,delay-us = <2>;
+	// 	#address-cells = <1>;
+	// 	#size-cells = <0>;
+	//
+	// 	magnetometer@2e {
+	// 		compatible = "yamaha,yas532";
+	// 		reg = <0x2e>;
+	// 		iovdd-supply = <&ldo3_reg>;
+	// 		mount-matrix = "-1", "0", "0",
+	// 				  "0", "1", "0",
+	// 				  "0", "0", "-1";
+	// 	};
+	// };
+
+
+// obj-$(CONFIG_SENSORS_SSP_SHTC1)	+= temphumidity_shtc1.o
+// TODO: everything
+//     i2c {
+//       #address-cells = <1>;
+//       #size-cells = <0>;
+//       clock-frequency = <400000>;
+//
+//       shtc3@70 {
+//         compatible = "sensirion,shtc3";
+//         reg = <0x70>;
+//         sensirion,blocking-io;
+//       };
+//     };
+
+// not found
+// obj-$(CONFIG_SENSORS_SSP_CM3320)	+= light_cm3320.o
+// obj-$(CONFIG_SENSORS_SSP_MAX88920)	+= prox_max88920.o gesture_max88920.o
+// obj-$(CONFIG_SENSORS_SSP_BMP182)	+= pressure_bmp182.o
+// obj-$(CONFIG_SENSORS_SSP_AT32UC3L0128)	+= mcu_at32uc3l0128.o
+
+// WITHOUT THIS NO ACCCESS TO A LOT OF THINGS (not found in kernel, some sensorhub)
+// obj-$(CONFIG_SENSORS_SSP_ATUC128L5HAR)	+= mcu_atuc128l5har.o
+
+// &sdhc_2 {
+// 	status = "okay";
+//
+// 	pinctrl-names = "default", "sleep";
+// 	pinctrl-0 = <&sdc2_default &sdc2_cd_default>;
+// 	pinctrl-1 = <&sdc2_sleep &sdc2_cd_default>;
+//
+// 	cd-gpios = <&tlmm 38 GPIO_ACTIVE_LOW>;
+// };

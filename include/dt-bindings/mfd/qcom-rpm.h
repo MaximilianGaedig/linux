@@ -6,6 +6,33 @@
 #ifndef _DT_BINDINGS_MFD_QCOM_RPM_H
 #define _DT_BINDINGS_MFD_QCOM_RPM_H
 
+// [    0.085470] qcom rpm resource 2 rejected --QCOM_RPM_APPS_FABRIC_CLK
+// [    0.087074] qcom rpm resource 7 rejected  -- QCOM_RPM_CFPB_CLK
+// [    0.089770] qcom rpm resource 124 rejected -- QCOM_RPM_QDSS_CLK
+// [    0.090201] qcom rpm resource 10 rejected -- QCOM_RPM_DAYTONA_FABRIC_CLK
+// [    0.093003] qcom rpm resource 12 rejected--QCOM_RPM_EBI1_CLK
+// [    0.094576] qcom rpm resource 16 rejected  --QCOM_RPM_MM_FABRIC_CLK
+// [    0.096145] qcom rpm resource 14 rejected --QCOM_RPM_MMFPB_CLK
+// [    0.096613] qcom rpm resource 128 rejected --QCOM_RPM_SYS_FABRIC_CLK
+// [    0.098189] qcom rpm resource 125 rejected -- QCOM_RPM_SFPB_CLK
+// [    0.120588] qcom rpm resource 124 rejected --QCOM_RPM_QDSS_CLK
+// [    0.136314] qcom rpm resource 115 rejected --QCOM_RPM_PM8921_SMPS1
+// [    0.139242] qcom rpm resource 118 rejected --QCOM_RPM_PM8921_SMPS4
+// [    0.143601] qcom rpm resource 78 rejected --QCOM_RPM_PM8921_LDO2
+// [    0.146981] qcom rpm resource 81 rejected --QCOM_RPM_PM8921_LDO5
+// [    0.148422] qcom rpm resource 82 rejected --QCOM_RPM_PM8921_LDO6
+// [    0.154791] qcom rpm resource 87 rejected -- QCOM_RPM_PM8921_LDO11
+// [    0.156892] qcom rpm resource 90 rejected --QCOM_RPM_PM8921_LDO14
+// [    0.159520] qcom rpm resource 92 rejected --QCOM_RPM_PM8921_LDO16
+// [    0.161331] qcom rpm resource 93 rejected --QCOM_RPM_PM8921_LDO17
+// [    0.164923] qcom rpm resource 98 rejected --QCOM_RPM_PM8921_LDO22
+// [    0.166478] qcom rpm resource 99 rejected --QCOM_RPM_PM8921_LDO23
+// [    0.184179] qcom rpm resource 112 rejected --QCOM_RPM_PM8921_LVS7
+// [    1.092990] qcom rpm resource 80 rejected --QCOM_RPM_PM8921_LDO4
+// [    1.100715] qcom rpm resource 79 rejected -- QCOM_RPM_PM8921_LDO3
+// [    2.536170] qcom rpm resource 162 rejected -- QCOM_RPM_PM8917_LDO30
+
+
 /*
  * Constants use to identify individual resources in the RPM.
  */
@@ -170,61 +197,25 @@
 #define QCOM_RPM_PM8018_LVS1			159
 #define QCOM_RPM_PM8018_NCP			160
 #define QCOM_RPM_VOLTAGE_CORNER			161
-#define QCOM_RPM_PM8917_CLK1			162
-#define QCOM_RPM_PM8917_CLK2			163
-#define QCOM_RPM_PM8917_LDO1			164
-#define QCOM_RPM_PM8917_LDO2			165
-#define QCOM_RPM_PM8917_LDO3			166
-#define QCOM_RPM_PM8917_LDO4			167
-#define QCOM_RPM_PM8917_LDO5			168
-#define QCOM_RPM_PM8917_LDO6			169
-#define QCOM_RPM_PM8917_LDO7			170
-#define QCOM_RPM_PM8917_LDO8			171
-#define QCOM_RPM_PM8917_LDO9			172
-#define QCOM_RPM_PM8917_LDO10			173
-#define QCOM_RPM_PM8917_LDO11			174
-#define QCOM_RPM_PM8917_LDO12			175
-#define QCOM_RPM_PM8917_LDO13			176
-#define QCOM_RPM_PM8917_LDO14			177
-#define QCOM_RPM_PM8917_LDO15			178
-#define QCOM_RPM_PM8917_LDO16			179
-#define QCOM_RPM_PM8917_LDO17			180
-#define QCOM_RPM_PM8917_LDO18			181
-#define QCOM_RPM_PM8917_LDO19			182
-#define QCOM_RPM_PM8917_LDO20			183
-#define QCOM_RPM_PM8917_LDO21			184
-#define QCOM_RPM_PM8917_LDO22			185
-#define QCOM_RPM_PM8917_LDO23			186
-#define QCOM_RPM_PM8917_LDO24			187
-#define QCOM_RPM_PM8917_LDO25			188
-#define QCOM_RPM_PM8917_LDO26			189
-#define QCOM_RPM_PM8917_LDO27			190
-#define QCOM_RPM_PM8917_LDO28			191
-#define QCOM_RPM_PM8917_LDO29			192
-#define QCOM_RPM_PM8917_LDO30			193
-#define QCOM_RPM_PM8917_LDO31			194
-#define QCOM_RPM_PM8917_LDO32			195
-#define QCOM_RPM_PM8917_LDO33			196
-#define QCOM_RPM_PM8917_LDO34			197
-#define QCOM_RPM_PM8917_LDO35			198
-#define QCOM_RPM_PM8917_LDO36			199
-#define QCOM_RPM_PM8917_LVS1			200
-#define QCOM_RPM_PM8917_LVS2			201
-#define QCOM_RPM_PM8917_LVS3			202
-#define QCOM_RPM_PM8917_LVS4			203
-#define QCOM_RPM_PM8917_LVS5			204
-#define QCOM_RPM_PM8917_LVS6			205
-#define QCOM_RPM_PM8917_LVS7			206
-#define QCOM_RPM_PM8917_MVS			207
-#define QCOM_RPM_PM8917_BOOST			208
-#define QCOM_RPM_PM8917_SMPS1			209
-#define QCOM_RPM_PM8917_SMPS2			210
-#define QCOM_RPM_PM8917_SMPS3			211
-#define QCOM_RPM_PM8917_SMPS4			212
-#define QCOM_RPM_PM8917_SMPS5			213
-#define QCOM_RPM_PM8917_SMPS6			214
-#define QCOM_RPM_PM8917_SMPS7			215
-#define QCOM_RPM_PM8917_SMPS8			216
+#define QCOM_RPM_PM8917_LDO30			162
+#define QCOM_RPM_PM8917_LDO31			163
+#define QCOM_RPM_PM8917_LDO32			164
+#define QCOM_RPM_PM8917_LDO33			165
+#define QCOM_RPM_PM8917_LDO34			166
+#define QCOM_RPM_PM8917_LDO35			167
+#define QCOM_RPM_PM8917_LDO36			168
+#define QCOM_RPM_PM8917_CLK1			169
+#define QCOM_RPM_PM8917_CLK2			170
+#define QCOM_RPM_PM8917_LVS1			171
+#define QCOM_RPM_PM8917_LVS2			172
+#define QCOM_RPM_PM8917_LVS3			173
+#define QCOM_RPM_PM8917_LVS4			174
+#define QCOM_RPM_PM8917_LVS5			175
+#define QCOM_RPM_PM8917_LVS6			176
+#define QCOM_RPM_PM8917_LVS7			177
+#define QCOM_RPM_PM8917_VOLTAGE_CORNER	        178
+
+
 
 /*
  * Constants used to select force mode for regulators.

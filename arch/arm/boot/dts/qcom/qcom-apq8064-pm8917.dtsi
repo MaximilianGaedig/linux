@@ -50,3 +50,8 @@
 
 	};
 };
+
+// &pm8821_mpps {
+// 	compatible = "qcom,pm8817-mpp", "qcom,ssbi-mpp";
+// 	gpio-ranges = <&pm8821_mpps 0 0 10>;
+// };

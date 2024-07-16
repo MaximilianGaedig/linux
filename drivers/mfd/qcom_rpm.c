@@ -57,8 +57,11 @@ struct qcom_rpm {
 	const struct qcom_rpm_data *data;
 };
 
+// base
 #define RPM_STATUS_REG(rpm, i)	((rpm)->status_regs + (i) * 4)
+// base + 0x400
 #define RPM_CTRL_REG(rpm, i)	((rpm)->ctrl_regs + (i) * 4)
+// base + 0x600
 #define RPM_REQ_REG(rpm, i)	((rpm)->req_regs + (i) * 4)
 
 #define RPM_REQUEST_TIMEOUT	(5 * HZ)
@@ -69,8 +72,9 @@ struct qcom_rpm {
 #define RPM_REJECTED		BIT(31)
 
 static const struct qcom_rpm_resource apq8064_rpm_resource_table[] = {
-	[QCOM_RPM_CXO_CLK] =			{ 25, 9, 5, 1 },
-	[QCOM_RPM_PXO_CLK] =			{ 26, 10, 6, 1 },
+	// status can be ignored
+	[QCOM_RPM_CXO_CLK] =			{ 25, 9, 5, 1 },   // 100
+	[QCOM_RPM_PXO_CLK] =			{ 26, 10, 6, 1 },  // 101
 	[QCOM_RPM_APPS_FABRIC_CLK] =		{ 27, 11, 8, 1 },
 	[QCOM_RPM_SYS_FABRIC_CLK] =		{ 28, 12, 9, 1 },
 	[QCOM_RPM_MM_FABRIC_CLK] =		{ 29, 13, 10, 1 },
@@ -115,7 +119,7 @@ static const struct qcom_rpm_resource apq8064_rpm_resource_table[] = {
 	[QCOM_RPM_PM8921_LDO14] =		{ 158, 73, 51, 2 },
 	[QCOM_RPM_PM8921_LDO15] =		{ 160, 75, 52, 2 },
 	[QCOM_RPM_PM8921_LDO16] =		{ 162, 77, 53, 2 },
-	[QCOM_RPM_PM8921_LDO17] =		{ 164, 79, 54, 2 },
+	[QCOM_RPM_PM8921_LDO17] =		{ 164, 79, 54, 2 }, // bit 15 at address 5 gets set????? // address 656?
 	[QCOM_RPM_PM8921_LDO18] =		{ 166, 81, 55, 2 },
 	[QCOM_RPM_PM8921_LDO19] =		{ 168, 83, 56, 2 },
 	[QCOM_RPM_PM8921_LDO20] =		{ 170, 85, 57, 2 },
@@ -124,10 +128,11 @@ static const struct qcom_rpm_resource apq8064_rpm_resource_table[] = {
 	[QCOM_RPM_PM8921_LDO23] =		{ 176, 91, 60, 2 },
 	[QCOM_RPM_PM8921_LDO24] =		{ 178, 93, 61, 2 },
 	[QCOM_RPM_PM8921_LDO25] =		{ 180, 95, 62, 2 },
-	[QCOM_RPM_PM8921_LDO26] =		{ 182, 97, 63, 2 },
+	[QCOM_RPM_PM8921_LDO26] =		{ 182, 97, 63, 2 }, // is 92??
 	[QCOM_RPM_PM8921_LDO27] =		{ 184, 99, 64, 2 },
 	[QCOM_RPM_PM8921_LDO28] =		{ 186, 101, 65, 2 },
 	[QCOM_RPM_PM8921_LDO29] =		{ 188, 103, 66, 2 },
+	/* PM8921 */
 	[QCOM_RPM_PM8921_CLK1] =		{ 190, 105, 67, 2 },
 	[QCOM_RPM_PM8921_CLK2] =		{ 192, 107, 68, 2 },
 	[QCOM_RPM_PM8921_LVS1] =		{ 194, 109, 69, 1 },
@@ -147,6 +152,23 @@ static const struct qcom_rpm_resource apq8064_rpm_resource_table[] = {
 	[QCOM_RPM_DDR_DMM] =			{ 212, 127, 84, 2 },
 	[QCOM_RPM_QDSS_CLK] =			{ 214, ~0, 7, 1 },
 	[QCOM_RPM_VDDMIN_GPIO] =		{ 215, 131, 89, 1 },
+	/* PM8917 */
+	[QCOM_RPM_PM8917_LDO30]	=		{0x0A4, 105, 67, 2 },
+	[QCOM_RPM_PM8917_LDO31]	=		{0x0A6, 107, 68, 2 },
+	[QCOM_RPM_PM8917_LDO32]	=		{0x0A8, 109, 69, 2 },
+	[QCOM_RPM_PM8917_LDO33]	=		{0x0C7, 111, 70, 2 },
+	[QCOM_RPM_PM8917_LDO34]	=		{0x0D3, 113, 71, 2 },
+	[QCOM_RPM_PM8917_LDO35]	=		{0x0D5, 115, 72, 2 },
+	[QCOM_RPM_PM8917_LDO36]	=		{0x0AA, 117, 73, 2 },
+	[QCOM_RPM_PM8917_CLK1] =		{ 204, 119, 74, 2 },
+	[QCOM_RPM_PM8917_CLK2] =		{ 206, 121, 75, 2 },
+	[QCOM_RPM_PM8917_LVS1] =		{ 208, 123, 76, 1 },
+	[QCOM_RPM_PM8917_LVS2] =		{ 209, 124, 77, 1 },
+	[QCOM_RPM_PM8917_LVS3] =		{ 210, 125, 78, 1 },
+	[QCOM_RPM_PM8917_LVS4] =		{ 211, 126, 79, 1 },
+	[QCOM_RPM_PM8917_LVS5] =		{ 212, 127, 80, 1 },
+	[QCOM_RPM_PM8917_LVS6] =		{ 213, 128, 81, 1 },
+	[QCOM_RPM_PM8917_LVS7] =		{ 214, 129, 82, 1 },
 };
 
 static const struct qcom_rpm_data apq8064_template = {
@@ -384,6 +406,8 @@ static const struct qcom_rpm_data ipq806x_template = {
 	.ack_sel_size = 7,
 };
 
+
+// TODO: examine
 static const struct qcom_rpm_resource mdm9615_rpm_resource_table[] = {
 	[QCOM_RPM_CXO_CLK] =			{ 25, 9, 5, 1 },
 	[QCOM_RPM_SYS_FABRIC_CLK] =		{ 26, 10, 9, 1 },
@@ -456,6 +480,82 @@ int qcom_rpm_write(struct qcom_rpm *rpm,
 	int ret = 0;
 	int i;
 
+// struct qcom_rpm_resource {
+// 	unsigned target_id;
+// 	unsigned status_id;
+// 	unsigned select_id;
+// 	unsigned size; // basically varies by type - will be 2 for LDO
+// };
+
+
+	// res->size needs to be ==  vreg->parts->request_len
+	// qcom_rpm_write(vreg->rpm,
+	// 		      QCOM_RPM_ACTIVE_STATE,
+	// 		      vreg->resource,
+	// 		      vreg->val,
+	// 		      vreg->parts->request_len);
+
+	
+// 	[    0.473507] ------------[ cut here ]------------
+// [    0.473503] calling  serport_init+0x0/0x34 @ 1
+// [    0.473530] initcall serport_init+0x0/0x34 returned 0 after 1 usecs
+// [    0.473523] WARNING: CPU: 1 PID: 75 at drivers/mfd/qcom_rpm.c:457 qcom_rpm_write+0x1a4/0x1e0
+// [    0.473557] calling  input_leds_init+0x0/0x14 @ 1
+// [    0.473563] Modules linked in:
+// [    0.473585] initcall input_leds_init+0x0/0x14 returned 0 after 3 usecs
+// [    0.473593] CPU: 1 PID: 75 Comm: kworker/u8:1 Tainted: G        W          6.6.0-rc1-next-20230914-postmarketos-qcom-apq8064+ #25
+// [    0.473612] calling  evdev_init+0x0/0x14 @ 1
+// [    0.473618] Hardware name: Generic DT based system
+// [    0.473632] initcall evdev_init+0x0/0x14 returned 0 after 2 usecs
+// [    0.473641] Workqueue: ci_otg ci_otg_work
+// [    0.473657] calling  tm2_touchkey_driver_init+0x0/0x18 @ 1
+//
+// [    0.473698]  unwind_backtrace from show_stack+0x18/0x1c
+// [    0.473744]  show_stack from dump_stack_lvl+0x40/0x4c
+// [    0.473781]  dump_stack_lvl from __warn+0x80/0x15c
+// [    0.473819]  __warn from warn_slowpath_fmt+0xe0/0x1d4
+// [    0.473857]  warn_slowpath_fmt from qcom_rpm_write+0x1a4/0x1e0
+// [    0.473879] tm2-touchkey 1-0020: Looking up vcc-supply from device tree
+// [    0.473898]  qcom_rpm_write from rpm_reg_write+0x74/0xa0
+// [    0.473945]  rpm_reg_write from rpm_reg_uV_enable+0x44/0x68
+// [    0.473989]  rpm_reg_uV_enable from _regulator_do_enable+0x2d4/0x4ec
+// [    0.474042]  _regulator_do_enable from _regulator_enable+0x160/0x1bc
+// [    0.474087]  _regulator_enable from regulator_enable+0x50/0x88
+// [    0.474113] tm2-touchkey 1-0020: Looking up vdd-supply from device tree
+// [    0.474127]  regulator_enable from qcom_usb_hs_phy_power_on+0x80/0x1d0
+// [    0.474184]  qcom_usb_hs_phy_power_on from phy_power_on+0x7c/0xf8
+// [    0.474231]  phy_power_on from ci_hdrc_msm_notify_event+0xe0/0x1fc
+// [    0.474274]  ci_hdrc_msm_notify_event from hw_device_reset+0xac/0x210
+// [    0.474313]  hw_device_reset from ci_hdrc_gadget_connect+0x34/0x160
+// [    0.474338] tm2-touchkey 1-0020: Looking up vddio-supply from device tree
+// [    0.474354]  ci_hdrc_gadget_connect from ci_udc_vbus_session+0xa4/0xc4
+// [    0.474400]  ci_udc_vbus_session from usb_gadget_vbus_connect+0x28/0xbc
+// [    0.474459]  usb_gadget_vbus_connect from ci_otg_start_gadget+0x1c/0x30
+// [    0.474515]  ci_otg_start_gadget from otg_set_protocol+0xd0/0xdc
+// [    0.474574]  otg_set_protocol from otg_set_state.constprop.0+0xa0c/0xbcc
+// [    0.474622]  otg_set_state.constprop.0 from otg_statemachine+0xe4/0x47c
+// [    0.474668]  otg_statemachine from ci_otg_fsm_work+0x40/0x1c4
+// [    0.474720]  ci_otg_fsm_work from ci_otg_work+0x50/0xcc
+// [    0.474768]  ci_otg_work from process_one_work+0x13c/0x3f8
+// [    0.474800] tm2-touchkey 1-0020: failed to get regulators: -517
+// [    0.474835] probe of 1-0020 returned 517 after 1107 usecs
+// [    0.474863]  process_one_work from worker_thread+0x284/0x4b4
+// [    0.474911]  worker_thread from kthread+0x104/0x134
+// [    0.474923] initcall tm2_touchkey_driver_init+0x0/0x18 returned 0 after 1242 usecs
+// [    0.474952]  kthread from ret_from_fork+0x14/0x28
+// [    0.474959] calling  elan_driver_init+0x0/0x18 @ 1
+// [    0.474989] Exception stack(0xf0ca5fb0 to 0xf0ca5ff8)
+// [    0.475012] 5fa0:                                     00000000 00000000 00000000 00000000
+// [    0.475034] 5fc0: 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+// [    0.475047] initcall elan_driver_init+0x0/0x18 returned 0 after 66 usecs
+// [    0.475055] 5fe0: 00000000 00000000 00000000 00000000 00000013 00000000
+// [    0.475072] ---[ end trace 0000000000000000 ]---
+
+//problem here
+	
+
+
+	printk(KERN_ERR "data->n_resources: %d, resource: %d",data->n_resources,resource);
 	if (WARN_ON(resource < 0 || resource >= data->n_resources))
 		return -EINVAL;
 
@@ -465,12 +565,27 @@ int qcom_rpm_write(struct qcom_rpm *rpm,
 
 	mutex_lock(&rpm->lock);
 
+	// 4 bit?byte? steps
+	// write buf to register
+	// at res->target_id ((rpm)->req_regs +(res->target_id*4))
+	
+
+// syncs device register with in kernel buffer
 	for (i = 0; i < res->size; i++)
 		writel_relaxed(buf[i], RPM_REQ_REG(rpm, res->target_id + i));
 
 	bitmap_set((unsigned long *)sel_mask, res->select_id, 1);
+
+
+	// (11+0)*4 = 44
+	// (11+1)*4 = 48
+	// (11+2)*4 = 52
+	// (11+3)*4 = 56
+	
+	//		i < 4
 	for (i = 0; i < rpm->data->req_sel_size; i++) {
 		writel_relaxed(sel_mask[i],
+		//				(11			 1-4)*4
 			       RPM_CTRL_REG(rpm, rpm->data->req_sel_off + i));
 	}
 
@@ -486,6 +601,7 @@ int qcom_rpm_write(struct qcom_rpm *rpm,
 		ret = -EIO;
 
 	mutex_unlock(&rpm->lock);
+	printk(KERN_ERR "qcom rpm resource %d rejected",resource);
 
 	return ret;
 }
