@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
-/include/ "skeleton.dtsi"
-
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/clock/qcom,gcc-msm8960.h>
 #include <dt-bindings/reset/qcom,gcc-msm8960.h>
@@ -13,6 +11,8 @@
 #include <dt-bindings/gpio/gpio.h>
 
 / {
+	#address-cells = <1>;
+	#size-cells = <1>;
 	model = "Qualcomm MSM8930";
 	compatible = "qcom,msm8930";
 	interrupt-parent = <&intc>;
@@ -36,7 +36,7 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
-		interrupts = <1 14 0x304>;
+		interrupts = <GIC_PPI 14 0x304>;
 
 		cpu@0 {
 			compatible = "qcom,krait";
@@ -64,10 +64,15 @@
 		};
 	};
 
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x0>;
+	};
+
 	cpu-pmu {
 		compatible = "qcom,krait-pmu";
-		interrupts = <1 10 0x304>;
-		qcom,no-pc-write; // TODO
+		interrupts = <GIC_PPI 10 0x304>;
+		qcom,no-pc-write;
 	};
 
 	clocks {
@@ -99,152 +104,11 @@
 		#hwlock-cells = <1>;
 	};
 
-	smem {
-		compatible = "qcom,smem";
-		memory-region = <&smem_region>;
-
-		hwlocks = <&sfpb_mutex 3>;
-	};
-
-	smd {
-		compatible = "qcom,smd";
-
-		modem@0 {
-			interrupts = <0 37 IRQ_TYPE_EDGE_RISING>;
-
-			qcom,ipc = <&l2cc 8 3>;
-			qcom,smd-edge = <0>;
-
-			status = "disabled";
-		};
-
-		q6@1 {
-			interrupts = <0 90 IRQ_TYPE_EDGE_RISING>;
-
-			qcom,ipc = <&l2cc 8 15>;
-			qcom,smd-edge = <1>;
-
-			status = "disabled";
-		};
-
-		dsps@3 {
-			interrupts = <0 138 IRQ_TYPE_EDGE_RISING>;
-
-			qcom,ipc = <&sps_sic_non_secure 0x4080 0>;
-			qcom,smd-edge = <3>;
-
-			status = "disabled";
-		};
-
-		riva@6 {
-			interrupts = <0 198 IRQ_TYPE_EDGE_RISING>;
-
-			qcom,ipc = <&l2cc 8 25>;
-			qcom,smd-edge = <6>;
-
-			status = "disabled";
-		};
-	};
-
-	smsm {
-		compatible = "qcom,smsm";
-
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		qcom,ipc-1 = <&l2cc 8 4>;
-		qcom,ipc-2 = <&l2cc 8 14>;
-		qcom,ipc-3 = <&l2cc 8 23>;
-		qcom,ipc-4 = <&sps_sic_non_secure 0x4094 0>;
-
-		apps_smsm: apps@0 {
-			reg = <0>;
-			#qcom,smem-state-cells = <1>;
-		};
-
-		modem_smsm: modem@1 {
-			reg = <1>;
-			interrupts = <0 38 IRQ_TYPE_EDGE_RISING>;
-
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		q6_smsm: q6@2 {
-			reg = <2>;
-			interrupts = <0 89 IRQ_TYPE_EDGE_RISING>;
-
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		wcnss_smsm: wcnss@3 {
-			reg = <3>;
-			interrupts = <0 204 IRQ_TYPE_EDGE_RISING>;
-
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-
-		dsps_smsm: dsps@4 {
-			reg = <4>;
-			interrupts = <0 137 IRQ_TYPE_EDGE_RISING>;
-
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
-	};
-
-	firmware {
-		scm {
-			compatible = "qcom,scm-msm8960";
-			clocks = <&rpmcc RPM_DAYTONA_FABRIC_CLK>;
-			clock-names = "core";
-		};
-	};
-
-	/*
-	 * These channels from the ADC are simply hardware monitors.
-	 * That is why the ADC is referred to as "HKADC" - HouseKeeping
-	 * ADC.
-	 */
-#if 0
-	iio-hwmon {
-		compatible = "iio-hwmon";
-		io-channels = <&xoadc 0x00 0x01>, /* Battery */
-			    <&xoadc 0x00 0x02>, /* DC in (charger) */
-			    <&xoadc 0x00 0x04>, /* VPH the main system voltage */
-			    <&xoadc 0x00 0x0b>, /* Die temperature */
-			    <&xoadc 0x00 0x0c>, /* Reference voltage 1.25V */
-			    <&xoadc 0x00 0x0d>, /* Reference voltage 0.625V */
-			    <&xoadc 0x00 0x0e>; /* Charger temperature */
-	};
-#endif
-
 	soc: soc {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges;
 		compatible = "simple-bus";
-
-		msmgpio: pinctrl@800000 {
-			compatible = "qcom,msm8960-pinctrl";
-			reg = <0x800000 0x4000>;
-
-			gpio-controller;
-			#gpio-cells = <2>;
-			interrupt-controller;
-			#interrupt-cells = <2>;
-			interrupts = <0 16 IRQ_TYPE_LEVEL_HIGH>;
-
-			pinctrl-names = "default";
-			pinctrl-0 = <&ps_hold>;
-		};
-
-		sfpb_wrapper_mutex: syscon@1200000 {
-			compatible = "syscon";
-			reg = <0x01200000 0x8000>;
-		};
 
 		intc: interrupt-controller@2000000 {
 			compatible = "qcom,msm-qgic2";
@@ -264,6 +128,87 @@
 			clock-frequency = <27000000>,
 					  <32768>;
 			cpu-offset = <0x80000>;
+		};
+
+		tlmm: pinctrl@800000 {
+			compatible = "qcom,msm8960-pinctrl";
+			reg = <0x800000 0x4000>;
+
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			interrupts = <0 16 IRQ_TYPE_LEVEL_HIGH>;
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&ps_hold>;
+		};
+
+		sfpb_wrapper_mutex: syscon@1200000 {
+			compatible = "syscon";
+			reg = <0x01200000 0x8000>;
+		};
+
+		rpm: rpm@108000 {
+			compatible = "qcom,rpm-msm8930";
+			reg = <0x108000 0x1000>;
+			qcom,ipc = <&l2cc 0x8 2>;
+
+			interrupts = <GIC_SPI 19 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 21 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 22 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "ack", "err", "wakeup";
+
+			rpmcc: clock-controller {
+				compatible	= "qcom,rpmcc-msm8930", "qcom,rpmcc";
+				#clock-cells = <1>;
+			};
+
+			regulators {
+				compatible = "qcom,rpm-pm8921-regulators";
+
+				//pm8921_l3: l3 {};
+				//pm8921_l4: l4 {};
+#if 1
+				pm8921_s1: s1 {};
+				pm8921_s2: s2 {};
+				pm8921_s3: s3 {};
+				pm8921_s4: s4 {};
+
+				pm8921_l1: l1 {};
+				pm8921_l2: l2 {};
+				pm8921_l3: l3 {};
+				pm8921_l4: l4 {};
+				pm8921_l5: l5 {};
+				pm8921_l6: l6 {};
+				pm8921_l7: l7 {};
+				pm8921_l8: l8 {};
+				pm8921_l9: l9 {};
+				pm8921_l10: l10 {};
+				pm8921_l11: l11 {};
+				pm8921_l12: l12 {};
+				pm8921_l13: l13 {};
+				pm8921_l14: l14 {};
+				pm8921_l15: l15 {};
+				pm8921_l16: l16 {};
+				pm8921_l17: l17 {};
+				pm8921_l18: l18 {};
+				pm8921_l19: l19 {};
+				pm8921_l20: l20 {};
+				pm8921_l21: l21 {};
+				pm8921_l22: l22 {};
+				pm8921_l23: l23 {};
+				pm8921_l24: l24 {};
+				pm8921_l25: l25 {};
+				pm8921_l26: l26 {};
+
+				pm8921_lvs1: lvs1 {};
+				pm8921_lvs2: lvs2 {};
+
+				usb_switch: usb-switch {};
+				pm8921_corner: corner {};
+#endif
+			};
 		};
 
 		acc0: clock-controller@2088000 {
@@ -293,7 +238,6 @@
 			reg		= <0x12100000 0x10000>;
 		};
 
-		// gsbi
 
 		gsbi3: gsbi@16200000 {
 			status = "disabled";
@@ -344,6 +288,31 @@
 			};
 		};
 
+		gsbi5: gsbi@16400000 {
+			compatible = "qcom,gsbi-v1.0.0";
+			cell-index = <5>;
+			reg = <0x16400000 0x100>;
+			clocks = <&gcc GSBI5_H_CLK>;
+			clock-names = "iface";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			syscon-tcsr = <&tcsr>;
+
+			gsbi5_serial: serial@16440000 {
+				compatible = "qcom,msm-uartdm-v1.3", "qcom,msm-uartdm";
+				reg = <0x16440000 0x1000>,
+				      <0x16400000 0x1000>;
+				interrupts = <GIC_SPI 154 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&gcc GSBI5_UART_CLK>, <&gcc GSBI5_H_CLK>;
+				clock-names = "core", "iface";
+				status = "disabled";
+			};
+		};
+
+	
+
 		gsbi12: gsbi@12480000 {
 			status = "disabled";
 			compatible = "qcom,gsbi-v1.0.0";
@@ -370,21 +339,14 @@
 			};
 		};
 
-		rng@1a500000 {
-			compatible = "qcom,prng";
-			reg = <0x1a500000 0x200>;
-			clocks = <&gcc PRNG_CLK>;
-			clock-names = "core";
-		};
-
-		qcom,ssbi@500000 {
+		ssbi: ssbi@500000 {
 			compatible = "qcom,ssbi";
 			reg = <0x500000 0x1000>;
 			qcom,controller-type = "pmic-arbiter";
 
 			pmicintc: pmic@0 {
-				compatible = "qcom,pm8038";
-				interrupts-extended = <&msmgpio 104 IRQ_TYPE_LEVEL_LOW>;
+				compatible = "qcom,pm8921";
+				interrupts-extended = <&tlmm 104 IRQ_TYPE_LEVEL_LOW>;
 				#interrupt-cells = <2>;
 				interrupt-controller;
 				#address-cells = <1>;
@@ -442,7 +404,7 @@
 				};
 
 				/* xoadc: xoadc@197 {
-					compatible = "qcom,pm8038-adc";
+					compatible = "qcom,pm8921-adc";
 					reg = <197>;
 					interrupts-extended = <&pmicintc 78 IRQ_TYPE_EDGE_RISING>;
 					#address-cells = <2>;
@@ -516,6 +478,148 @@
 			};
 		};
 
+		rng@1a500000 {
+			compatible = "qcom,prng";
+			reg = <0x1a500000 0x200>;
+			clocks = <&gcc PRNG_CLK>;
+			clock-names = "core";
+		};
+
+		sdcc1bam:dma@12402000{
+			compatible = "qcom,bam-v1.3.0";
+			reg = <0x12402000 0x8000>;
+			interrupts = <0 98 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&gcc SDC1_H_CLK>;
+			clock-names = "bam_clk";
+			#dma-cells = <1>;
+			qcom,ee = <0>;
+		};
+
+
+
+		smem {
+			compatible = "qcom,smem";
+			memory-region = <&smem_region>;
+
+			hwlocks = <&sfpb_mutex 3>;
+		};
+
+		smd {
+			compatible = "qcom,smd";
+
+			modem@0 {
+				interrupts = <0 37 IRQ_TYPE_EDGE_RISING>;
+
+				qcom,ipc = <&l2cc 8 3>;
+				qcom,smd-edge = <0>;
+
+				status = "disabled";
+			};
+
+			q6@1 {
+				interrupts = <0 90 IRQ_TYPE_EDGE_RISING>;
+
+				qcom,ipc = <&l2cc 8 15>;
+				qcom,smd-edge = <1>;
+
+				status = "disabled";
+			};
+
+			dsps@3 {
+				interrupts = <0 138 IRQ_TYPE_EDGE_RISING>;
+
+				qcom,ipc = <&sps_sic_non_secure 0x4080 0>;
+				qcom,smd-edge = <3>;
+
+				status = "disabled";
+			};
+
+			riva@6 {
+				interrupts = <0 198 IRQ_TYPE_EDGE_RISING>;
+
+				qcom,ipc = <&l2cc 8 25>;
+				qcom,smd-edge = <6>;
+
+				status = "disabled";
+			};
+		};
+
+		smsm {
+			compatible = "qcom,smsm";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			qcom,ipc-1 = <&l2cc 8 4>;
+			qcom,ipc-2 = <&l2cc 8 14>;
+			qcom,ipc-3 = <&l2cc 8 23>;
+			qcom,ipc-4 = <&sps_sic_non_secure 0x4094 0>;
+
+			apps_smsm: apps@0 {
+				reg = <0>;
+				#qcom,smem-state-cells = <1>;
+			};
+
+			modem_smsm: modem@1 {
+				reg = <1>;
+				interrupts = <0 38 IRQ_TYPE_EDGE_RISING>;
+
+				interrupt-controller;
+				#interrupt-cells = <2>;
+			};
+
+			q6_smsm: q6@2 {
+				reg = <2>;
+				interrupts = <0 89 IRQ_TYPE_EDGE_RISING>;
+
+				interrupt-controller;
+				#interrupt-cells = <2>;
+			};
+
+			wcnss_smsm: wcnss@3 {
+				reg = <3>;
+				interrupts = <0 204 IRQ_TYPE_EDGE_RISING>;
+
+				interrupt-controller;
+				#interrupt-cells = <2>;
+			};
+
+			dsps_smsm: dsps@4 {
+				reg = <4>;
+				interrupts = <0 137 IRQ_TYPE_EDGE_RISING>;
+
+				interrupt-controller;
+				#interrupt-cells = <2>;
+			};
+		};
+
+		firmware {
+			scm {
+				compatible = "qcom,scm-msm8960";
+				clocks = <&rpmcc RPM_DAYTONA_FABRIC_CLK>;
+				clock-names = "core";
+			};
+		};
+
+		/*
+		 * These channels from the ADC are simply hardware monitors.
+		 * That is why the ADC is referred to as "HKADC" - HouseKeeping
+		 * ADC.
+		 */
+#if 0
+		iio-hwmon {
+			compatible = "iio-hwmon";
+			io-channels = <&xoadc 0x00 0x01>, /* Battery */
+				    <&xoadc 0x00 0x02>, /* DC in (charger) */
+				    <&xoadc 0x00 0x04>, /* VPH the main system voltage */
+				    <&xoadc 0x00 0x0b>, /* Die temperature */
+				    <&xoadc 0x00 0x0c>, /* Reference voltage 1.25V */
+				    <&xoadc 0x00 0x0d>, /* Reference voltage 0.625V */
+				    <&xoadc 0x00 0x0e>; /* Charger temperature */
+		};
+#endif
+
+
 		qfprom: qfprom@700000 {
 			compatible	= "qcom,qfprom";
 			reg		= <0x00700000 0x1000>;
@@ -570,67 +674,6 @@
 			reg		= <0x2011000 0x1000>;
 		};
 
-		rpm@108000 {
-			compatible	= "qcom,rpm-msm8930";
-			reg		= <0x108000 0x1000>;
-			qcom,ipc	= <&l2cc 0x8 2>;
-
-			interrupts	= <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>,
-					  <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>,
-					  <GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>;
-			interrupt-names	= "ack", "err", "wakeup";
-
-			rpmcc: clock-controller {
-				compatible	= "qcom,rpmcc-msm8930", "qcom,rpmcc";
-				#clock-cells = <1>;
-			};
-
-			regulators {
-				compatible = "qcom,rpm-pm8038-regulators";
-
-				//pm8038_l3: l3 {};
-				//pm8038_l4: l4 {};
-#if 1
-				pm8038_s1: s1 {};
-				pm8038_s2: s2 {};
-				pm8038_s3: s3 {};
-				pm8038_s4: s4 {};
-
-				pm8038_l1: l1 {};
-				pm8038_l2: l2 {};
-				pm8038_l3: l3 {};
-				pm8038_l4: l4 {};
-				pm8038_l5: l5 {};
-				pm8038_l6: l6 {};
-				pm8038_l7: l7 {};
-				pm8038_l8: l8 {};
-				pm8038_l9: l9 {};
-				pm8038_l10: l10 {};
-				pm8038_l11: l11 {};
-				pm8038_l12: l12 {};
-				pm8038_l13: l13 {};
-				pm8038_l14: l14 {};
-				pm8038_l15: l15 {};
-				pm8038_l16: l16 {};
-				pm8038_l17: l17 {};
-				pm8038_l18: l18 {};
-				pm8038_l19: l19 {};
-				pm8038_l20: l20 {};
-				pm8038_l21: l21 {};
-				pm8038_l22: l22 {};
-				pm8038_l23: l23 {};
-				pm8038_l24: l24 {};
-				pm8038_l25: l25 {};
-				pm8038_l26: l26 {};
-
-				pm8038_lvs1: lvs1 {};
-				pm8038_lvs2: lvs2 {};
-
-				usb_switch: usb-switch {};
-				pm8038_corner: corner {};
-#endif
-			};
-		};
 
 		usb1: usb@12500000 {
 			compatible = "qcom,ci-hdrc";
@@ -664,18 +707,6 @@
 					#phy-cells = <0>;
 				};
 			};
-		};
-
-		//
-
-		sdcc1bam:dma@12402000{
-			compatible = "qcom,bam-v1.3.0";
-			reg = <0x12402000 0x8000>;
-			interrupts = <0 98 IRQ_TYPE_LEVEL_HIGH>;
-			clocks = <&gcc SDC1_H_CLK>;
-			clock-names = "bam_clk";
-			#dma-cells = <1>;
-			qcom,ee = <0>;
 		};
 
 		amba {
@@ -722,9 +753,9 @@
 
 			memory-region = <&wcnss_mem>;
 
-			vddcx-supply = <&pm8038_s1>; // ?
-			vddmx-supply = <&pm8038_l24>; // ?
-			vddpx-supply = <&pm8038_l11>;
+			vddcx-supply = <&pm8921_s1>; // ?
+			vddmx-supply = <&pm8921_l24>; // ?
+			vddpx-supply = <&pm8921_l11>;
 
 			status = "disabled";
 
@@ -734,10 +765,10 @@
 				clocks = <&cxo_board>;
 				clock-names = "xo";
 
-				vddxo-supply = <&pm8038_l4>;
-				vddrfa-supply = <&pm8038_l1>;
-				vddpa-supply = <&pm8038_l10>;
-				vdddig-supply = <&pm8038_l2>; // ?
+				vddxo-supply = <&pm8921_l4>;
+				vddrfa-supply = <&pm8921_l1>;
+				vddpa-supply = <&pm8921_l10>;
+				vdddig-supply = <&pm8921_l2>; // ?
 				// vddio l11
 			};
 

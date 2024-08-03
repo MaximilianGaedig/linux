@@ -174,7 +174,7 @@ missing: flash, camera, (status leds?), radio?,
 		touch_reset {
 			compatible = "regulator-fixed";
 			regulator-name = "touch_reset";
-			gpio = <&msmgpio 52 GPIO_ACTIVE_HIGH>;
+			gpio = <&tlmm 52 GPIO_ACTIVE_HIGH>;
 			enable-active-high;
 			regulator-always-on;
 		};
@@ -368,7 +368,7 @@ afab: 533000000
 				reg = <0>;
 				compatible = "sharp,ls043t1le01-qhd";
 
-				reset-gpios = <&msmgpio 58 GPIO_ACTIVE_HIGH>;
+				reset-gpios = <&tlmm 58 GPIO_ACTIVE_HIGH>;
 
 				pinctrl-names = "default";
 				pinctrl-0 = <&panel_pins>;
@@ -530,14 +530,14 @@ afab: 533000000
 		ext_l2: gpio-regulator@91 {
 			compatible = "regulator-fixed";
 			regulator-name = "ext_l2";
-			gpio = <&msmgpio 91 0>;
+			gpio = <&tlmm 91 0>;
 			startup-delay-us = <10000>;
 			enable-active-high;
 		};
 	}; */
 };
 
-&msmgpio {
+&tlmm {
 	sdcc1_pins: sdcc1-pin-active {
 		clk {
 			pins = "sdc1_clk";
@@ -742,7 +742,7 @@ afab: 533000000
 		compatible = "syna,rmi4-i2c";
 		reg = <0x4b>;
 
-		interrupts-extended = <&msmgpio 11 IRQ_TYPE_EDGE_FALLING>;
+		interrupts-extended = <&tlmm 11 IRQ_TYPE_EDGE_FALLING>;
 		vdd-supply = <&pm8038_l9>;
 		vio-supply = <&pm8038_lvs2>;
 
@@ -774,8 +774,8 @@ afab: 533000000
 		compatible = "kionix,kxcnl1010";
 		reg = <0x1e>;
 
-		interrupts-extended = <&msmgpio 46 IRQ_TYPE_EDGE_FALLING>,
-						      <&msmgpio 67 IRQ_TYPE_EDGE_FALLING>;
+		interrupts-extended = <&tlmm 46 IRQ_TYPE_EDGE_FALLING>,
+						      <&tlmm 67 IRQ_TYPE_EDGE_FALLING>;
 
 		vdd-supply = <&pm8038_l9>;
 		vio-supply = <&pm8038_lvs2>;
@@ -788,7 +788,7 @@ afab: 533000000
 		compatible = "avago,apds990x";
 		reg = <0x39>;
 
-		interrupts-extended = <&msmgpio 49 IRQ_TYPE_EDGE_FALLING>;
+		interrupts-extended = <&tlmm 49 IRQ_TYPE_EDGE_FALLING>;
 		vdd-supply = <&pm8038_l9>;
 		vled-supply = <&pm8038_l9>;
 		// pm8038_lvs2 effect ?

@@ -191,7 +191,7 @@ static const struct linear_range ncp_ranges[] = {
 	REGULATOR_LINEAR_RANGE(1500000,   0,  31, 50000),
 };
 
-static const struct regulator_linear_range corner_ranges[] = {
+static const struct linear_range corner_ranges[] = {
 	REGULATOR_LINEAR_RANGE(0, 0, 3, 1),
 };
 
@@ -663,6 +663,16 @@ static const struct qcom_rpm_reg pm8921_smps = {
 	.desc.n_linear_ranges = ARRAY_SIZE(smps_ranges),
 	.desc.n_voltages = 154,
 	.desc.ops = &uV_ops,
+	.parts = &rpm8960_smps_parts,
+	.supports_force_mode_auto = true,
+	.supports_force_mode_bypass = false,
+};
+
+static const struct qcom_rpm_reg pm8921_ftsmps = {
+	.desc.linear_ranges = ftsmps_ranges,
+	.desc.n_linear_ranges = ARRAY_SIZE(ftsmps_ranges),
+	.desc.n_voltages = 101,
+	.desc.ops = &mV_ops,
 	.parts = &rpm8960_smps_parts,
 	.supports_force_mode_auto = true,
 	.supports_force_mode_bypass = false,
