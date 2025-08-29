@@ -81,6 +81,23 @@ struct mtk_mux {
 			_mux_set_ofs, _mux_clr_ofs, _shift, _width,	\
 			_gate, _upd_ofs, _upd, _flags, _ops)		\
 
+#define GATE_UPD_FLAGS(_id, _name, _parents, _mux_ofs, _shift, _width,	\
+			_gate, _upd_ofs, _upd, _flags, _ops)		\
+		__GATE_CLR_SET_UPD_FLAGS(_id, _name, _parents,		\
+			NULL, ARRAY_SIZE(_parents), _mux_ofs,		\
+			0, 0, _shift, _width, _gate, _upd_ofs,	\
+			_upd, _flags, _ops)
+
+#define GATE_UPD_FLAGS_INDEXED(_id, _name, _parents, _paridx,		\
+			_mux_ofs, _shift, _width, _gate, _upd_ofs,	\
+			_upd, _flags, _ops)				\
+		__GATE_CLR_SET_UPD_FLAGS(_id, _name, _parents,		\
+			_paridx, ARRAY_SIZE(_paridx), _mux_ofs,		\
+			0, 0, _shift, _width, _gate, _upd_ofs,		\
+			_upd, _flags, _ops)
+
+extern const struct clk_ops mtk_mux_upd_ops;
+extern const struct clk_ops mtk_mux_gate_upd_ops;
 extern const struct clk_ops mtk_mux_clr_set_upd_ops;
 extern const struct clk_ops mtk_mux_gate_clr_set_upd_ops;
 extern const struct clk_ops mtk_mux_gate_fenc_clr_set_upd_ops;
@@ -209,6 +226,30 @@ extern const struct clk_ops mtk_mux_gate_hwv_fenc_clr_set_upd_ops;
 			ARRAY_SIZE(_paridx), _mux_ofs, _mux_set_ofs,		\
 			_mux_clr_ofs, _shift, _width, _gate, _upd_ofs, _upd,	\
 			_fenc_sta_mon_ofs, _fenc, 0)
+
+#define MUX_GATE_UPD_FLAGS(_id, _name, _parents, _mux_ofs, _shift, 	\
+			_width, _gate, _upd_ofs, _upd, _flags)		\
+		GATE_UPD_FLAGS(_id, _name, _parents, _mux_ofs, _shift,	\
+			_width, _gate, _upd_ofs, _upd,			\
+			_flags, mtk_mux_gate_upd_ops)
+
+#define MUX_GATE_UPD(_id, _name, _parents, _mux_ofs, _shift, _width,	\
+			_gate, _upd_ofs, _upd)				\
+		MUX_GATE_UPD_FLAGS(_id, _name, _parents, _mux_ofs,	\
+			_shift, _width, _gate, _upd_ofs, _upd,		\
+			CLK_SET_RATE_PARENT)
+
+#define MUX_UPD_FLAGS(_id, _name, _parents, _mux_ofs, _shift, _width,	\
+			_upd_ofs, _upd, _flags)				\
+		GATE_UPD_FLAGS(_id, _name, _parents, _mux_ofs, _shift,	\
+			_width, 0, _upd_ofs, _upd,			\
+			_flags, mtk_mux_upd_ops)
+
+#define MUX_UPD(_id, _name, _parents, _mux_ofs, _shift, _width,		\
+			_upd_ofs, _upd)					\
+		MUX_UPD_FLAGS(_id, _name, _parents, _mux_ofs, _shift,	\
+			_width, _upd_ofs, _upd,				\
+			CLK_SET_RATE_PARENT)
 
 int mtk_clk_register_muxes(struct device *dev,
 			   const struct mtk_mux *muxes,
