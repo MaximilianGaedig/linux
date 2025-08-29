@@ -130,6 +130,21 @@ properties:
           - const: mediatek,mt8135
       - items:
           - enum:
+              - amazon,biscuit
+              - amazon,checkers
+              - amazon,cronos-v4.1
+              - amazon,cronos-v4.2
+              - amazon,cronos-v4.3
+              - amazon,cronos
+              - amazon,crown
+              - amazon,douglas
+              - amazon,giza
+              - amazon,karnak
+              - amazon,mustang
+              - amazon,rook
+          - const: mediatek,mt8163
+      - items:
+          - enum:
               - mediatek,mt8167-pumpkin
           - const: mediatek,mt8167
       - description: Google Elm (Acer Chromebook R13)
