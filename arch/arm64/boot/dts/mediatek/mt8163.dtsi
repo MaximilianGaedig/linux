@@ -9,6 +9,7 @@
 #include <dt-bindings/clock/mediatek,mt8163-infracfg.h>
 #include <dt-bindings/clock/mediatek,mt8163-topckgen.h>
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
+#include <dt-bindings/reset/mediatek,mt8163-wdt.h>
 
 / {
 	#address-cells = <2>;
@@ -140,6 +141,13 @@
 			compatible = "mediatek,mt8163-infracfg", "syscon";
 			reg = <0 0x10001000 0 0x1000>;
 			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		watchdog: watchdog@10007000 {
+			compatible = "mediatek,mt8163-wdt";
+			reg = <0 0x10007000 0 0x1000>;
+			interrupts = <GIC_SPI 128 IRQ_TYPE_LEVEL_LOW>;
 			#reset-cells = <1>;
 		};
 
