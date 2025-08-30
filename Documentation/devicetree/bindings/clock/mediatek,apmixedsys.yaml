@@ -40,6 +40,7 @@ properties:
               - mediatek,mt6779-apmixed
               - mediatek,mt6795-apmixedsys
               - mediatek,mt7629-apmixedsys
+              - mediatek,mt8163-apmixedsys
               - mediatek,mt8167-apmixedsys
               - mediatek,mt8183-apmixedsys
           - const: syscon
