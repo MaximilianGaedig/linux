@@ -5,6 +5,11 @@
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
+#include <dt-bindings/clock/mediatek,mt8163-apmixedsys.h>
+#include <dt-bindings/clock/mediatek,mt8163-infracfg.h>
+#include <dt-bindings/clock/mediatek,mt8163-topckgen.h>
+#include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
+
 / {
 	#address-cells = <2>;
 	#size-cells = <2>;
@@ -131,12 +136,31 @@
 		#size-cells = <2>;
 		ranges;
 
+		topckgen: clock-controller@10000000 {
+			compatible = "mediatek,mt8163-topckgen";
+			reg = <0 0x10000000 0 0x1000>;
+			#clock-cells = <1>;
+		};
+
+		infracfg: clock-controller@10001000 {
+			compatible = "mediatek,mt8163-infracfg", "syscon";
+			reg = <0 0x10001000 0 0x1000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
 		timer: timer@10008000 {
 			compatible = "mediatek,mt8163-timer", "mediatek,mt6577-timer";
 			reg = <0 0x10008000 0 0x1000>;
 			interrupts = <GIC_SPI 152 IRQ_TYPE_LEVEL_LOW>;
 			clocks = <&system_clk>, <&rtc_clk>;
 			clock-names = "system-clk", "rtc-clk";
+		};
+
+		apmixedsys: clock-controller@1000c000 {
+			compatible = "mediatek,mt8163-apmixedsys";
+			reg = <0 0x1000c000 0 0x1000>;
+			#clock-cells = <1>;
 		};
 
 		sysirq: intpol-controller@10200620 {
