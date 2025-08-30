@@ -8,6 +8,7 @@
 #include <dt-bindings/clock/mediatek,mt8163-apmixedsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-infracfg.h>
 #include <dt-bindings/clock/mediatek,mt8163-topckgen.h>
+#include <dt-bindings/pinctrl/mt8163-pinfunc.h>
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
 #include <dt-bindings/reset/mediatek,mt8163-wdt.h>
 
@@ -144,6 +145,11 @@
 			#reset-cells = <1>;
 		};
 
+		syscfg_pctl_a: syscon@10005000 {
+			compatible = "mediatek,mt8163-pctl-a-syscfg", "syscon";
+			reg = <0 0x10005000 0 0x1000>;
+		};
+
 		watchdog: watchdog@10007000 {
 			compatible = "mediatek,mt8163-wdt";
 			reg = <0 0x10007000 0 0x1000>;
@@ -157,6 +163,19 @@
 			interrupts = <GIC_SPI 152 IRQ_TYPE_LEVEL_LOW>;
 			clocks = <&system_clk>, <&topckgen CLK_TOP_RTC_SEL>;
 			clock-names = "system-clk", "rtc-clk";
+		};
+
+		pio: pinctrl@1000b000 {
+			compatible = "mediatek,mt8163-pinctrl";
+			reg = <0 0x1000b000 0 0x1000>;
+			mediatek,pctl-regmap = <&syscfg_pctl_a>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			interrupts = <GIC_SPI 153 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 154 IRQ_TYPE_LEVEL_HIGH>,
+				     <GIC_SPI 155 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
 		apmixedsys: clock-controller@1000c000 {
