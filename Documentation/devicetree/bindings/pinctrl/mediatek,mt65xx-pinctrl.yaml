@@ -22,6 +22,7 @@ properties:
       - mediatek,mt7623-pinctrl
       - mediatek,mt8127-pinctrl
       - mediatek,mt8135-pinctrl
+      - mediatek,mt8163-pinctrl
       - mediatek,mt8167-pinctrl
       - mediatek,mt8173-pinctrl
       - mediatek,mt8516-pinctrl
