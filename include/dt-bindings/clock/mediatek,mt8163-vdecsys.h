@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause) */
+
+#ifndef _DT_BINDINGS_CLOCK_MT8163_VDECSYS_H
+#define _DT_BINDINGS_CLOCK_MT8163_VDECSYS_H
+
+#define CLK_VDEC_CKEN		0
+#define CLK_VDEC_LARB_CKEN	1
+
+#endif /* _DT_BINDINGS_CLOCK_MT8163_VDECSYS_H */

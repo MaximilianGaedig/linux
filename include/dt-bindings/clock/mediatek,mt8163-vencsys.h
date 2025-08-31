@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause) */
+
+#ifndef _DT_BINDINGS_CLOCK_MT8163_VENCSYS_H
+#define _DT_BINDINGS_CLOCK_MT8163_VENCSYS_H
+
+#define CLK_VENC_CKE0	0
+#define CLK_VENC_CKE1	1
+#define CLK_VENC_CKE2	2
+#define CLK_VENC_CKE3	3
+
+#endif /* _DT_BINDINGS_CLOCK_MT8163_VENCSYS_H */
