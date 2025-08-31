@@ -4,6 +4,7 @@
  */
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/phy/phy.h>
 
 #include <dt-bindings/clock/mediatek,mt8163-apmixedsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-infracfg.h>
@@ -319,6 +320,43 @@
 			status = "disabled";
 		};
 
+		usb0: usb@11200000 {
+			compatible = "mediatek,mt8163-musb", "mediatek,mtk-musb";
+			reg = <0 0x11200000 0 0x1000>;
+			interrupts = <GIC_SPI 72 IRQ_TYPE_LEVEL_LOW>;
+			interrupt-names = "mc";
+			phys = <&u2port0 PHY_TYPE_USB2>;
+			dr_mode = "otg";
+			clocks = <&infracfg CLK_INFRA_USB>,
+				 <&infracfg CLK_INFRA_USB_MCU>,
+				 <&apmixedsys CLK_APMIXED_UNIVPLL>;
+			clock-names = "main", "mcu", "univpll";
+			status = "disabled";
+		};
+
+		u2phy0: t-phy@11210000 {
+			compatible = "mediatek,mt8163-tphy", "mediatek,generic-tphy-v1";
+			reg = <0 0x11210000 0 0x0800>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+			status = "disabled";
+
+			u2port0: usb-phy@11210800 {
+				reg = <0 0x11210800 0 0x0100>;
+				clocks = <&apmixedsys CLK_APMIXED_REF2USB_TX>;
+				clock-names = "ref";
+				#phy-cells = <1>;
+			};
+
+			u2port1: usb-phy@11210900 {
+				reg = <0 0x11210900 0 0x0100>;
+				clocks = <&apmixedsys CLK_APMIXED_REF2USB_TX>;
+				clock-names = "ref";
+				#phy-cells = <1>;
+			};
+		};
+
 		mmc0: mmc@11230000 {
 			compatible = "mediatek,mt8163-mmc", "mediatek,mt2701-mmc";
 			reg = <0 0x11230000 0 0x1000>;
@@ -347,6 +385,20 @@
 			clocks = <&infracfg CLK_INFRA_MSDC2>,
 				 <&topckgen CLK_TOP_MSDC30_2_SEL>;
 			clock-names = "source", "hclk";
+			status = "disabled";
+		};
+
+		usb1: usb@11270000 {
+			compatible = "mediatek,mt8163-musb", "mediatek,mtk-musb";
+			reg = <0 0x11270000 0 0x1000>;
+			interrupts = <GIC_SPI 73 IRQ_TYPE_LEVEL_LOW>;
+			interrupt-names = "mc";
+			phys = <&u2port1 PHY_TYPE_USB2>;
+			dr_mode = "otg";
+			clocks = <&infracfg CLK_INFRA_ICUSB>,
+				 <&infracfg CLK_INFRA_USB_MCU>,
+				 <&apmixedsys CLK_APMIXED_UNIVPLL>;
+			clock-names = "main", "mcu", "univpll";
 			status = "disabled";
 		};
 	};
