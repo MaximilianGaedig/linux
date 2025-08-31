@@ -22,6 +22,7 @@ properties:
           - const: mediatek,mt7622-spi
       - items:
           - enum:
+              - mediatek,mt8163-spi
               - mediatek,mt8516-spi
           - const: mediatek,mt2712-spi
       - items:
