@@ -506,6 +506,13 @@ config COMMON_CLK_MT8163_MFGCFG
 	help
 	  This driver supports MediaTek MT8163 mfgcfg clocks.
 
+config COMMON_CLK_MT8163_MMSYS
+	tristate "Clock driver for MediaTek MT8163 mmsys"
+	depends on COMMON_CLK_MT8163
+	default COMMON_CLK_MT8163
+	help
+	  This driver supports MediaTek MT8163 mmsys clocks.
+
 config COMMON_CLK_MT8163_VDECSYS
 	tristate "Clock driver for MediaTek MT8163 vdecsys"
 	depends on COMMON_CLK_MT8163
