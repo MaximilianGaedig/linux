@@ -356,6 +356,21 @@
 			status = "disabled";
 		};
 
+		spi: spi@1100a000 {
+			compatible = "mediatek,mt8163-spi", "mediatek,mt2712-spi";
+			reg = <0 0x1100a000 0 0x1000>;
+			interrupts = <GIC_SPI 118 IRQ_TYPE_LEVEL_LOW>;
+			clocks = <&topckgen CLK_TOP_SYSPLL3_D2>,
+				 <&topckgen CLK_TOP_SPI_SEL>,
+				 <&infracfg CLK_INFRA_SPI>;
+			clock-names = "parent-clk", "sel-clk", "spi-clk";
+			assigned-clocks = <&infracfg CLK_INFRA_SPI_SEL>;
+			assigned-clock-parents = <&topckgen CLK_TOP_SPI_SEL>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
 		usb0: usb@11200000 {
 			compatible = "mediatek,mt8163-musb", "mediatek,mtk-musb";
 			reg = <0 0x11200000 0 0x1000>;
