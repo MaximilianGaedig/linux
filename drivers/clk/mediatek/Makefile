@@ -77,6 +77,7 @@ obj-$(CONFIG_COMMON_CLK_MT8163) += clk-mt8163-apmixedsys.o clk-mt8163-infracfg.o
 obj-$(CONFIG_COMMON_CLK_MT8163_AUDSYS) += clk-mt8163-audsys.o
 obj-$(CONFIG_COMMON_CLK_MT8163_IMGSYS) += clk-mt8163-imgsys.o
 obj-$(CONFIG_COMMON_CLK_MT8163_MFGCFG) += clk-mt8163-mfgcfg.o
+obj-$(CONFIG_COMMON_CLK_MT8163_MMSYS) += clk-mt8163-mmsys.o
 obj-$(CONFIG_COMMON_CLK_MT8163_VDECSYS) += clk-mt8163-vdecsys.o
 obj-$(CONFIG_COMMON_CLK_MT8163_VENCSYS) += clk-mt8163-vencsys.o
 obj-$(CONFIG_COMMON_CLK_MT8167) += clk-mt8167-apmixedsys.o clk-mt8167.o
