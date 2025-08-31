@@ -6,9 +6,14 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/phy/phy.h>
 
+#include <dt-bindings/clock/mediatek,mt8163-audsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-apmixedsys.h>
+#include <dt-bindings/clock/mediatek,mt8163-imgsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-infracfg.h>
+#include <dt-bindings/clock/mediatek,mt8163-mfgcfg.h>
 #include <dt-bindings/clock/mediatek,mt8163-topckgen.h>
+#include <dt-bindings/clock/mediatek,mt8163-vdecsys.h>
+#include <dt-bindings/clock/mediatek,mt8163-vencsys.h>
 #include <dt-bindings/pinctrl/mt8163-pinfunc.h>
 #include <dt-bindings/power/mediatek,mt8163-power-controller.h>
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
@@ -477,6 +482,12 @@
 			};
 		};
 
+		audiosys: clock-controller@11220000 {
+			compatible = "mediatek,mt8163-audsys", "syscon";
+			reg = <0 0x11220000 0 0x1000>;
+			#clock-cells = <1>;
+		};
+
 		mmc0: mmc@11230000 {
 			compatible = "mediatek,mt8163-mmc", "mediatek,mt2701-mmc";
 			reg = <0 0x11230000 0 0x1000>;
@@ -520,6 +531,30 @@
 				 <&apmixedsys CLK_APMIXED_UNIVPLL>;
 			clock-names = "main", "mcu", "univpll";
 			status = "disabled";
+		};
+
+		mfgcfg: clock-controller@13000000 {
+			compatible = "mediatek,mt8163-mfgcfg", "syscon";
+			reg = <0 0x13000000 0 0x1000>;
+			#clock-cells = <1>;
+		};
+
+		imgsys: clock-controller@15000000 {
+			compatible = "mediatek,mt8163-imgsys", "syscon";
+			reg = <0 0x15000000 0 0x1000>;
+			#clock-cells = <1>;
+		};
+
+		vdecsys: clock-controller@16000000 {
+			compatible = "mediatek,mt8163-vdecsys", "syscon";
+			reg = <0 0x16000000 0 0x1000>;
+			#clock-cells = <1>;
+		};
+
+		vencsys: clock-controller@17000000 {
+			compatible = "mediatek,mt8163-vencsys", "syscon";
+			reg = <0 0x17000000 0 0x1000>;
+			#clock-cells = <1>;
 		};
 	};
 };
