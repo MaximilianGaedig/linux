@@ -49,6 +49,7 @@ properties:
       - items:
           - enum:
               - mediatek,mt6795-i2c
+              - mediatek,mt8163-i2c
           - const: mediatek,mt8173-i2c
       - items:
           - enum:
