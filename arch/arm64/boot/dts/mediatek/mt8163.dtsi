@@ -14,6 +14,7 @@
 #include <dt-bindings/clock/mediatek,mt8163-topckgen.h>
 #include <dt-bindings/clock/mediatek,mt8163-vdecsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-vencsys.h>
+#include <dt-bindings/gce/mediatek,mt8163-gce.h>
 #include <dt-bindings/pinctrl/mt8163-pinfunc.h>
 #include <dt-bindings/power/mediatek,mt8163-power-controller.h>
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
@@ -430,6 +431,15 @@
 			reg = <0 0x1020f000 0 0x1000>;
 			clocks = <&infracfg CLK_INFRA_TRNG>;
 			clock-names = "rng";
+		};
+
+		gce: mailbox@10212000 {
+			compatible = "mediatek,mt8163-gce", "mediatek,mt8173-gce";
+			reg = <0 0x10212000 0 0x1000>;
+			interrupts = <GIC_SPI 143 IRQ_TYPE_LEVEL_LOW>;
+			clocks = <&infracfg CLK_INFRA_GCE>;
+			clock-names = "gce";
+			#mbox-cells = <2>;
 		};
 
 		gic: interrupt-controller@10221000 {
