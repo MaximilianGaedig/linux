@@ -11,6 +11,7 @@
 #include <dt-bindings/clock/mediatek,mt8163-imgsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-infracfg.h>
 #include <dt-bindings/clock/mediatek,mt8163-mfgcfg.h>
+#include <dt-bindings/clock/mediatek,mt8163-mmsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-topckgen.h>
 #include <dt-bindings/clock/mediatek,mt8163-vdecsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-vencsys.h>
@@ -18,6 +19,7 @@
 #include <dt-bindings/pinctrl/mt8163-pinfunc.h>
 #include <dt-bindings/power/mediatek,mt8163-power-controller.h>
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
+#include <dt-bindings/reset/mediatek,mt8163-mmsys.h>
 #include <dt-bindings/reset/mediatek,mt8163-wdt.h>
 
 / {
@@ -794,6 +796,17 @@
 			operating-points-v2 = <&gpu_opp>;
 			#cooling-cells = <2>;
 			status = "disabled";
+		};
+
+		mmsys: syscon@14000000 {
+			compatible = "mediatek,mt8163-mmsys", "syscon";
+			reg = <0 0x14000000 0 0x1000>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+			mboxes = <&gce 0 CMDQ_THR_PRIO_HIGHEST>,
+				 <&gce 1 CMDQ_THR_PRIO_HIGHEST>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0 0x1000>;
 		};
 
 		imgsys: clock-controller@15000000 {
