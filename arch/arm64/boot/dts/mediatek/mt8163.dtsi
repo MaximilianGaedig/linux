@@ -16,6 +16,7 @@
 #include <dt-bindings/clock/mediatek,mt8163-vdecsys.h>
 #include <dt-bindings/clock/mediatek,mt8163-vencsys.h>
 #include <dt-bindings/gce/mediatek,mt8163-gce.h>
+#include <dt-bindings/memory/mt8163-larb-port.h>
 #include <dt-bindings/pinctrl/mt8163-pinfunc.h>
 #include <dt-bindings/power/mediatek,mt8163-power-controller.h>
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
@@ -417,6 +418,15 @@
 			interrupt-controller;
 		};
 
+		iommu: iommu@10205000 {
+			compatible = "mediatek,mt8163-m4u";
+			reg = <0 0x10205000 0 0x1000>;
+			interrupts = <GIC_SPI 147 IRQ_TYPE_LEVEL_LOW>;
+			mediatek,larbs = <&larb0 &larb1 &larb2 &larb3>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			#iommu-cells = <1>;
+		};
+
 		efuse: efuse@10206000 {
 			compatible = "mediatek,mt8163-efuse", "mediatek,efuse";
 			reg = <0 0x10206000 0 0x1000>;
@@ -809,10 +819,43 @@
 			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0 0x1000>;
 		};
 
+		larb0: larb@14016000 {
+			compatible = "mediatek,mt8163-smi-larb";
+			reg = <0 0x14016000 0 0x1000>;
+			interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_LOW>;
+			mediatek,smi = <&smi_common>;
+			mediatek,larb-id = <0>;
+			clocks = <&mmsys CLK_MM_SMI_LARB0>,
+				 <&mmsys CLK_MM_SMI_LARB0>;
+			clock-names = "apb", "smi";
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+		};
+
+		smi_common: smi@14017000 {
+			compatible = "mediatek,mt8163-smi-common";
+			reg = <0 0x14017000 0 0x1000>;
+			clocks = <&mmsys CLK_MM_SMI_COMMON>,
+				 <&mmsys CLK_MM_SMI_COMMON>;
+			clock-names = "apb", "smi";
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+		};
+
 		imgsys: clock-controller@15000000 {
 			compatible = "mediatek,mt8163-imgsys", "syscon";
 			reg = <0 0x15000000 0 0x1000>;
 			#clock-cells = <1>;
+		};
+
+		larb2: larb@15001000 {
+			compatible = "mediatek,mt8163-smi-larb";
+			reg = <0 0x15001000 0 0x1000>;
+			interrupts = <GIC_SPI 217 IRQ_TYPE_LEVEL_LOW>;
+			mediatek,smi = <&smi_common>;
+			mediatek,larb-id = <2>;
+			clocks = <&imgsys CLK_IMG_LARB2_SMI>,
+				 <&imgsys CLK_IMG_LARB2_SMI>;
+			clock-names = "apb", "smi";
+			power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
 		};
 
 		vdecsys: clock-controller@16000000 {
@@ -821,10 +864,34 @@
 			#clock-cells = <1>;
 		};
 
+		larb1: larb@16010000 {
+			compatible = "mediatek,mt8163-smi-larb";
+			reg = <0 0x16010000 0 0x10000>;
+			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_LOW>;
+			mediatek,smi = <&smi_common>;
+			mediatek,larb-id = <1>;
+			clocks = <&vdecsys CLK_VDEC_CKEN>,
+				 <&vdecsys CLK_VDEC_LARB_CKEN>;
+			clock-names = "apb", "smi";
+			power-domains = <&spm MT8163_POWER_DOMAIN_VDEC>;
+		};
+
 		vencsys: clock-controller@17000000 {
 			compatible = "mediatek,mt8163-vencsys", "syscon";
 			reg = <0 0x17000000 0 0x1000>;
 			#clock-cells = <1>;
+		};
+
+		larb3: larb@17001000 {
+			compatible = "mediatek,mt8163-smi-larb";
+			reg = <0 0x17001000 0 0x1000>;
+			interrupts = <GIC_SPI 207 IRQ_TYPE_LEVEL_LOW>;
+			mediatek,smi = <&smi_common>;
+			mediatek,larb-id = <3>;
+			clocks = <&vencsys CLK_VENC_CKE1>,
+				 <&vencsys CLK_VENC_CKE0>;
+			clock-names = "apb", "smi";
+			power-domains = <&spm MT8163_POWER_DOMAIN_VENC>;
 		};
 	};
 
