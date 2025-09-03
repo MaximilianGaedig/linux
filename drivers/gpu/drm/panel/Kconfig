@@ -198,6 +198,15 @@ config DRM_PANEL_HIMAX_HX8279
 	  7.0" 1200x1920 IPS LCD panel that uses a MIPI-DSI interface
 	  and others.
 
+config DRM_PANEL_HIMAX_HX8379C_ROOK
+	tristate "Himax HX8379C-based panels"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y if you want to enable support for panels based on the
+	  Himax HX8379C controller.
+
 config DRM_PANEL_HIMAX_HX83102
 	tristate "Himax HX83102-based panels"
 	depends on OF
