@@ -25,6 +25,51 @@
 	interrupt-parent = <&sysirq>;
 	compatible = "mediatek,mt8163";
 
+	cluster0_opp: opp-table-cluster0 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-600000000 {
+			opp-hz = /bits/ 64 <600000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-624000000 {
+			opp-hz = /bits/ 64 <624000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-741000000 {
+			opp-hz = /bits/ 64 <741000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-871000000 {
+			opp-hz = /bits/ 64 <871000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-1050000000 {
+			opp-hz = /bits/ 64 <1050000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-1133000000 {
+			opp-hz = /bits/ 64 <1133000000>;
+			opp-microvolt = <1200000>;
+		};
+
+		opp-1216000000 {
+			opp-hz = /bits/ 64 <1216000000>;
+			opp-microvolt = <1250000>;
+		};
+
+		opp-1300000000 {
+			opp-hz = /bits/ 64 <1300000000>;
+			opp-microvolt = <1300000>;
+		};
+	};
+
 	gpu_opp: opp-table-gpu {
 		compatible = "operating-points-v2";
 		opp-shared;
@@ -63,6 +108,10 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x0>;
 			enable-method = "psci";
+			clocks = <&infracfg CLK_INFRA_CA53SEL>,
+				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 		};
@@ -72,6 +121,10 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x1>;
 			enable-method = "psci";
+			clocks = <&infracfg CLK_INFRA_CA53SEL>,
+				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 		};
@@ -81,6 +134,10 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x2>;
 			enable-method = "psci";
+			clocks = <&infracfg CLK_INFRA_CA53SEL>,
+				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 		};
@@ -90,6 +147,10 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x3>;
 			enable-method = "psci";
+			clocks = <&infracfg CLK_INFRA_CA53SEL>,
+				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 		};
