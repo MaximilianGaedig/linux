@@ -92,6 +92,18 @@ mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18-dtbs := \
 	mt7988a-bananapi-bpi-r4-pro-cn13.dtbo \
 	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-biscuit.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-checkers.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-cronos-v4.1.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-cronos-v4.2.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-cronos-v4.3.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-cronos.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-crown.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-douglas.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-giza.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-karnak.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-mustang.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt8163-amazon-rook.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8167-pumpkin.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana.dtb

@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * Copyright (c) 2025-2026 Ben Grisdale <bengris32@protonmail.ch>
+ * Copyright (c) 2025-2026 Jack Matthews <jack@jackmatthe.ws>
+ */
+
+#include "mt8163-amazon-show.dtsi"
