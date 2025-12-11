@@ -1,0 +1,360 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * Copyright (c) 2025-2026 Ben Grisdale <bengris32@protonmail.ch>
+ */
+
+#include <dt-bindings/gpio/gpio.h>
+#include "mt8163.dtsi"
+#include "mt6323.dtsi"
+
+/ {
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:921600n8";
+	};
+
+	disp_backlight: display-backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pwm0 0 500000>;
+		brightness-levels = <0 1023>;
+		num-interpolated-steps = <1023>;
+		default-brightness-level = <512>;
+	};
+
+	memory: memory@40000000 {
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x20000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		afe_dma_mem: audio-dma-pool {
+			compatible = "shared-dma-pool";
+			size = <0 0x100000>;
+			alignment = <0 0x10>;
+			no-map;
+		};
+
+		/* 128 KiB reserved for ARM Trusted Firmware (BL31) */
+		bl31_secmon_reserved: secmon@43000000 {
+			reg = <0 0x43000000 0 0x30000>;
+			no-map;
+		};
+
+		/*
+		 * Secondary-CPU (CPU1-3) spin-table holding pen: a tiny
+		 * AArch64 stub the amonet trampoline writes here before
+		 * jumping to u-boot, plus per-CPU mailbox and diagnostic-
+		 * canary words the kernel's spin-table cpu_ops and debug
+		 * code read/write. Must stay out of the normal memory pool -
+		 * without a reservation the allocator reuses it well before
+		 * boot finishes (confirmed on real hardware: diagnostic
+		 * canary reads came back as unrelated garbage, not zero, once
+		 * this region got silently repurposed).
+		 */
+		mt8163_spin_table_reserved: spin-table@43100000 {
+			reg = <0 0x43100000 0 0x10000>;
+			no-map;
+		};
+
+		/*
+		 * MediaTek ram_console region, repurposed as a mainline
+		 * pstore/ramoops backend. Address is fixed, not ours to
+		 * relocate - matches the stock 3.18 kernel's own
+		 * CONFIG_MTK_RAM_CONSOLE_DRAM_ADDR. Size matches
+		 * CONFIG_MTK_RAM_CONSOLE_DRAM_SIZE (64KiB) too - that's the
+		 * actual amount the stock driver ever reads or writes, so
+		 * its /proc/last_kmsg reader still finds the same region
+		 * without reserving RAM beyond what's really used.
+		 */
+		ramoops: ramoops@44400000 {
+			compatible = "ramoops";
+			reg = <0 0x44400000 0 0x10000>;
+			record-size = <0x8000>;
+			console-size = <0x8000>;
+			no-map;
+		};
+
+		/*
+		 * WIFI/BT/GPS (MT6625L combo, integrated CONSYS subsystem)
+		 * firmware/ROM-patch/coredump scratch region. Size matches
+		 * Amazon's downstream biscuit.dtsi.
+		 */
+		consys_reserved_memory: consys-reserve-memory {
+			compatible = "mediatek,consys-reserve-memory";
+			no-map;
+			size = <0 0x200000>;
+			alignment = <0 0x200000>;
+		};
+	};
+
+	vgpu_1v15: regulator-vgpu {
+		compatible = "regulator-fixed";
+		regulator-name = "vgpu_1v15";
+		regulator-min-microvolt = <1150000>;
+		regulator-max-microvolt = <1150000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+};
+
+&afe {
+	memory-region = <&afe_dma_mem>;
+};
+
+&cpu0 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&cpu1 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&cpu2 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&cpu3 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&gpu {
+	status = "okay";
+	mali-supply = <&vgpu_1v15>;
+};
+
+&i2c1 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins_default>;
+	status = "okay";
+
+	sym827_vproc: regulator@60 {
+		compatible = "silergy,sym827";
+		reg = <0x60>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-name = "sym827-vproc";
+		regulator-min-microvolt = <600000>;
+		regulator-max-microvolt = <1387500>;
+		regulator-enable-ramp-delay = <400>;
+		regulator-ramp-delay = <8000>;
+		regulator-always-on;
+	};
+};
+
+&mt6323_vproc_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vsys_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vm_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vrtc_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vtcxo_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mmc0 {
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&mmc0_pins_default>;
+	pinctrl-1 = <&mmc0_pins_uhs>;
+	status = "okay";
+	bus-width = <8>;
+	mediatek,latch-ck = <1>;
+	max-frequency = <200000000>;
+	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
+	cap-mmc-hw-reset;
+	vmmc-supply = <&mt6323_vemc3v3_reg>;
+	vqmmc-supply = <&mt6323_vio18_reg>;
+	assigned-clocks = <&topckgen CLK_TOP_MSDC30_0_SEL>;
+	assigned-clock-parents = <&topckgen CLK_TOP_MSDCPLL_D2>;
+	non-removable;
+};
+
+&pmic {
+	interrupts-extended = <&pio 24 IRQ_TYPE_LEVEL_HIGH>;
+};
+
+&pwm0 {
+	status = "okay";
+};
+
+&uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_pins_default>;
+	status = "okay";
+};
+
+&pio {
+	i2c1_pins_default: i2c1-pins {
+		pins {
+			pinmux = <MT8163_PIN_57_SDA1__FUNC_SDA1_0>,
+				 <MT8163_PIN_58_SCL1__FUNC_SCL1_0>;
+			bias-disable;
+		};
+	};
+
+	mmc0_pins_default: emmc-sdr-pins {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_137_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
+				 <MT8163_PIN_136_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
+				 <MT8163_PIN_135_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
+				 <MT8163_PIN_134_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
+				 <MT8163_PIN_130_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
+				 <MT8163_PIN_129_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
+				 <MT8163_PIN_128_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
+				 <MT8163_PIN_127_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
+				 <MT8163_PIN_132_MSDC0_CMD__FUNC_MSDC0_CMD>;
+			input-enable;
+			bias-pull-up;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_133_MSDC0_CLK__FUNC_MSDC0_CLK>;
+			bias-pull-down;
+		};
+
+		pins_rst {
+			pinmux = <MT8163_PIN_131_MSDC0_RSTB__FUNC_MSDC0_RSTB>;
+			bias-pull-up;
+		};
+	};
+
+	mmc0_pins_uhs: emmc-uhs-pins {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_137_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
+				 <MT8163_PIN_136_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
+				 <MT8163_PIN_135_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
+				 <MT8163_PIN_134_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
+				 <MT8163_PIN_130_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
+				 <MT8163_PIN_129_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
+				 <MT8163_PIN_128_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
+				 <MT8163_PIN_127_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
+				 <MT8163_PIN_132_MSDC0_CMD__FUNC_MSDC0_CMD>;
+			input-enable;
+			drive-strength = <MTK_DRIVE_6mA>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_133_MSDC0_CLK__FUNC_MSDC0_CLK>;
+			drive-strength = <MTK_DRIVE_6mA>;
+			bias-pull-down = <MTK_PUPD_SET_R1R0_01>;
+		};
+
+		pins_rst {
+			pinmux = <MT8163_PIN_131_MSDC0_RSTB__FUNC_MSDC0_RSTB>;
+			bias-pull-up;
+		};
+	};
+
+	uart0_pins_default: uart0-pins {
+		pins {
+			pinmux = <MT8163_PIN_79_URXD0__FUNC_URXD0>,
+				 <MT8163_PIN_80_UTXD0__FUNC_UTXD0>;
+		};
+	};
+
+	/*
+	 * MT6625L combo WIFI/BT/GPS reset/WMT handshake lines. These four
+	 * pins (WB_RSTB/WB_SCLK/WB_SDATA/WB_SEN) are the same on every
+	 * biscuit-family board per Amazon's downstream biscuit.dtsi.
+	 */
+	wifi_reset_init: wifireset-pins {
+		pins {
+			pinmux = <MT8163_PIN_60_WB_RSTB__FUNC_WB_RSTB>,
+				 <MT8163_PIN_63_WB_SCLK__FUNC_WB_SCLK>,
+				 <MT8163_PIN_64_WB_SDATA__FUNC_WB_SDATA>,
+				 <MT8163_PIN_65_WB_SEN__FUNC_WB_SEN>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
+
+	/*
+	 * Antenna-select pins for the MT6625L combo chip, matching Amazon's
+	 * own "consys_pins_default" group in biscuit.dtsi/mt8163.dtsi
+	 * exactly (same two pins, same ANT_SEL0/1 functions). mtk_wmt_probe()
+	 * in mtk_wcn_consys_hw.c looks up a pinctrl state by this literal
+	 * name - it is not just a label, the string has to match.
+	 */
+	consys_pins_default: consys-default-pins {
+		pins {
+			pinmux = <MT8163_PIN_85_MSDC2_CMD__FUNC_ANT_SEL0>,
+				 <MT8163_PIN_86_MSDC2_CLK__FUNC_ANT_SEL1>;
+		};
+	};
+
+	/*
+	 * MSDC1 - the actual SDIO data bus to the MT6625L combo chip. Not to
+	 * be confused with the WB_* pins (wifi_reset_init above), which are
+	 * separate power/handshake control lines, not the SDIO bus itself.
+	 */
+	msdc1_pins_default: msdc1-default-pins {
+		pins-cmd-dat {
+			pinmux = <MT8163_PIN_121_MSDC1_CMD__FUNC_MSDC1_CMD>,
+				 <MT8163_PIN_123_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
+				 <MT8163_PIN_124_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
+				 <MT8163_PIN_125_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
+				 <MT8163_PIN_126_MSDC1_DAT3__FUNC_MSDC1_DAT3>;
+			input-enable;
+			bias-pull-up;
+		};
+		pins-clk {
+			pinmux = <MT8163_PIN_122_MSDC1_CLK__FUNC_MSDC1_CLK>;
+			bias-pull-down;
+		};
+	};
+};
+
+/*
+ * mmc1 stays disabled, as it is in stock (mt8163.dtsi:1042; stock's DTS never
+ * re-enables it). The MT6625L on this board talks over BTIF, not SDIO, so the
+ * bus has nothing on it - and the mmc-pwrseq-simple that used to live here
+ * claimed pins 60 (WB_RSTB) and 65 (WB_SEN) as GPIOs via devm_gpiod_get_array()
+ * to toggle them before an SDIO probe that can never succeed. Claiming them
+ * muxes both pads out of their WB_* function; stock leaves all four WB pins
+ * released and pulled up (wifi_reset_init) and drives none of them.
+ */
+
+&consys {
+	/*
+	 * The default state releases the MT6625L WB_RSTB/SCLK/SDATA/SEN pads
+	 * as pulled-up inputs, which the WiFi function-on needs; with the
+	 * default switched to consys_pins_default the pads stay unconfigured
+	 * and no wlan0 appears. ANT_SEL is muxed by the driver's own register
+	 * write. consys_pins_default is looked up by name in mtk_wmt_probe().
+	 */
+	pinctrl-names = "default", "consys_pins_default";
+	pinctrl-0 = <&wifi_reset_init>;
+	pinctrl-1 = <&consys_pins_default>;
+	vcn18-supply = <&mt6323_vcn18_reg>;
+	vcn28-supply = <&mt6323_vcn28_reg>;
+	vcn33_bt-supply = <&mt6323_vcn33_bt_reg>;
+	vcn33_wifi-supply = <&mt6323_vcn33_wifi_reg>;
+	status = "okay";
+};
+
+&wifi {
+	status = "okay";
+};
