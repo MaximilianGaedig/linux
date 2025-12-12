@@ -58,6 +58,24 @@
 	regulator-boot-on;
 };
 
+&mmc0 {
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&mmc0_pins_default>;
+	pinctrl-1 = <&mmc0_pins_uhs>;
+	status = "okay";
+	bus-width = <8>;
+	mediatek,latch-ck = <1>;
+	max-frequency = <200000000>;
+	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
+	cap-mmc-hw-reset;
+	vmmc-supply = <&mt6323_vemc3v3_reg>;
+	vqmmc-supply = <&mt6323_vio18_reg>;
+	assigned-clocks = <&topckgen CLK_TOP_MSDC30_0_SEL>;
+	assigned-clock-parents = <&topckgen CLK_TOP_MSDCPLL_D2>;
+	non-removable;
+};
+
 &pmic {
 	interrupts-extended = <&pio 24 IRQ_TYPE_LEVEL_HIGH>;
 };
@@ -69,6 +87,60 @@
 };
 
 &pio {
+	mmc0_pins_default: emmc-sdr-pins {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_137_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
+				 <MT8163_PIN_136_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
+				 <MT8163_PIN_135_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
+				 <MT8163_PIN_134_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
+				 <MT8163_PIN_130_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
+				 <MT8163_PIN_129_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
+				 <MT8163_PIN_128_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
+				 <MT8163_PIN_127_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
+				 <MT8163_PIN_132_MSDC0_CMD__FUNC_MSDC0_CMD>;
+			input-enable;
+			bias-pull-up;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_133_MSDC0_CLK__FUNC_MSDC0_CLK>;
+			bias-pull-down;
+		};
+
+		pins_rst {
+			pinmux = <MT8163_PIN_131_MSDC0_RSTB__FUNC_MSDC0_RSTB>;
+			bias-pull-up;
+		};
+	};
+
+	mmc0_pins_uhs: emmc-uhs-pins {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_137_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
+				 <MT8163_PIN_136_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
+				 <MT8163_PIN_135_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
+				 <MT8163_PIN_134_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
+				 <MT8163_PIN_130_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
+				 <MT8163_PIN_129_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
+				 <MT8163_PIN_128_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
+				 <MT8163_PIN_127_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
+				 <MT8163_PIN_132_MSDC0_CMD__FUNC_MSDC0_CMD>;
+			input-enable;
+			drive-strength = <MTK_DRIVE_6mA>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_133_MSDC0_CLK__FUNC_MSDC0_CLK>;
+			drive-strength = <MTK_DRIVE_6mA>;
+			bias-pull-down = <MTK_PUPD_SET_R1R0_01>;
+		};
+
+		pins_rst {
+			pinmux = <MT8163_PIN_131_MSDC0_RSTB__FUNC_MSDC0_RSTB>;
+			bias-pull-up;
+		};
+	};
+
 	uart0_pins_default: uart0-pins {
 		pins {
 			pinmux = <MT8163_PIN_79_URXD0__FUNC_URXD0>,
