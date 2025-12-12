@@ -33,6 +33,41 @@
 	};
 };
 
+&cpu0 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&cpu1 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&cpu2 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&cpu3 {
+	proc-supply = <&sym827_vproc>;
+};
+
+&i2c1 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins_default>;
+	status = "okay";
+
+	sym827_vproc: regulator@60 {
+		compatible = "silergy,sym827";
+		reg = <0x60>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-name = "sym827-vproc";
+		regulator-min-microvolt = <600000>;
+		regulator-max-microvolt = <1387500>;
+		regulator-enable-ramp-delay = <400>;
+		regulator-ramp-delay = <8000>;
+		regulator-always-on;
+	};
+};
+
 &mt6323_vproc_reg {
 	regulator-always-on;
 	regulator-boot-on;
@@ -87,6 +122,14 @@
 };
 
 &pio {
+	i2c1_pins_default: i2c1-pins {
+		pins {
+			pinmux = <MT8163_PIN_57_SDA1__FUNC_SDA1_0>,
+				 <MT8163_PIN_58_SCL1__FUNC_SCL1_0>;
+			bias-disable;
+		};
+	};
+
 	mmc0_pins_default: emmc-sdr-pins {
 		pins_cmd_dat {
 			pinmux = <MT8163_PIN_137_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
