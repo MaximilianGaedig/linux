@@ -4,6 +4,7 @@
  */
 
 #include "mt8163.dtsi"
+#include "mt6323.dtsi"
 
 / {
 	aliases {
@@ -30,6 +31,35 @@
 			no-map;
 		};
 	};
+};
+
+&mt6323_vproc_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vsys_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vm_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vrtc_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vtcxo_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&pmic {
+	interrupts-extended = <&pio 24 IRQ_TYPE_LEVEL_HIGH>;
 };
 
 &uart0 {
