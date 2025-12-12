@@ -114,6 +114,13 @@
 			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
+			i-cache-size = <32768>;
+			i-cache-line-size = <64>;
+			i-cache-sets = <256>;
+			d-cache-size = <32768>;
+			d-cache-line-size = <64>;
+			d-cache-sets = <128>;
+			next-level-cache = <&l2_0>;
 		};
 
 		cpu1: cpu@1 {
@@ -127,6 +134,13 @@
 			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
+			i-cache-size = <32768>;
+			i-cache-line-size = <64>;
+			i-cache-sets = <256>;
+			d-cache-size = <32768>;
+			d-cache-line-size = <64>;
+			d-cache-sets = <128>;
+			next-level-cache = <&l2_0>;
 		};
 
 		cpu2: cpu@2 {
@@ -140,6 +154,13 @@
 			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
+			i-cache-size = <32768>;
+			i-cache-line-size = <64>;
+			i-cache-sets = <256>;
+			d-cache-size = <32768>;
+			d-cache-line-size = <64>;
+			d-cache-sets = <128>;
+			next-level-cache = <&l2_0>;
 		};
 
 		cpu3: cpu@3 {
@@ -153,6 +174,13 @@
 			operating-points-v2 = <&cluster0_opp>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
+			i-cache-size = <32768>;
+			i-cache-line-size = <64>;
+			i-cache-sets = <256>;
+			d-cache-size = <32768>;
+			d-cache-line-size = <64>;
+			d-cache-sets = <128>;
+			next-level-cache = <&l2_0>;
 		};
 
 		cpu-map {
@@ -173,6 +201,15 @@
 					cpu = <&cpu3>;
 				};
 			};
+		};
+
+		l2_0: l2-cache0 {
+			compatible = "cache";
+			cache-level = <2>;
+			cache-size = <524288>;
+			cache-line-size = <64>;
+			cache-sets = <512>;
+			cache-unified;
 		};
 	};
 
