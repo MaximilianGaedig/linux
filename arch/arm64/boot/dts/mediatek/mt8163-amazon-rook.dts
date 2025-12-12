@@ -11,3 +11,23 @@
 	compatible = "amazon,rook", "mediatek,mt8163";
 	chassis-type = "embedded";
 };
+
+&mt6323_vusb_reg {
+	regulator-always-on;
+};
+
+&u2phy0 {
+	status = "okay";
+};
+
+&usb0 {
+	/* No 5V supply for OTG support. */
+	dr_mode = "peripheral";
+	status = "okay";
+};
+
+&usb1 {
+	/* For internal Wi-Fi adapter */
+	dr_mode = "host";
+	status = "okay";
+};
