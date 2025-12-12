@@ -31,6 +31,15 @@
 			no-map;
 		};
 	};
+
+	vgpu_1v15: regulator-vgpu {
+		compatible = "regulator-fixed";
+		regulator-name = "vgpu_1v15";
+		regulator-min-microvolt = <1150000>;
+		regulator-max-microvolt = <1150000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
 };
 
 &cpu0 {
@@ -47,6 +56,11 @@
 
 &cpu3 {
 	proc-supply = <&sym827_vproc>;
+};
+
+&gpu {
+	status = "okay";
+	mali-supply = <&vgpu_1v15>;
 };
 
 &i2c1 {
