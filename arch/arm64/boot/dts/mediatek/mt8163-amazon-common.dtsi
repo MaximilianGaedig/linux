@@ -199,6 +199,35 @@
 	status = "okay";
 };
 
+&mt6323_vproc_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vsys_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vm_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vrtc_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&mt6323_vtcxo_reg {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&pmic {
+	interrupts-extended = <&pio 24 IRQ_TYPE_LEVEL_HIGH>;
+};
+
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_pins_default>;
