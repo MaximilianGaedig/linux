@@ -4,12 +4,23 @@
  */
 
 /dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+
 #include "mt8163-amazon-common.dtsi"
 
 / {
 	model = "Amazon Echo Spot (2017)";
 	compatible = "amazon,rook", "mediatek,mt8163";
 	chassis-type = "embedded";
+
+	rfkill {
+		compatible = "rfkill-gpio";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_pwr_pins>;
+		label = "rfkill-usb-wlan";
+		radio-type = "wlan";
+		shutdown-gpios = <&pio 27 GPIO_ACTIVE_HIGH>;
+	};
 };
 
 &mt6323_vusb_reg {
@@ -30,4 +41,12 @@
 	/* For internal Wi-Fi adapter */
 	dr_mode = "host";
 	status = "okay";
+};
+
+&pio {
+	wifi_pwr_pins: wifi-pwr-pins {
+		pins {
+			pinmux = <MT8163_PIN_27_EINT5__FUNC_GPIO27>;
+		};
+	};
 };
