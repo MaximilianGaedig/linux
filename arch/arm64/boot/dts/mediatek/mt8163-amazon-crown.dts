@@ -11,4 +11,7 @@
 	model = "Amazon Echo Show 8 (2019)";
 	compatible = "amazon,crown", "mediatek,mt8163";
 	chassis-type = "embedded";
+
+	/* Needed by stock bootloader */
+	version = "pvt";
 };
