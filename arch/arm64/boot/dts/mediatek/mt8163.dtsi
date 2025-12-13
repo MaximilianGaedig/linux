@@ -453,6 +453,15 @@
 			};
 		};
 
+		auxadc: auxadc@11001000 {
+			compatible = "mediatek,mt8163-auxadc", "mediatek,mt8173-auxadc";
+			reg = <0 0x11001000 0 0x1000>;
+			clocks = <&infracfg CLK_INFRA_AUXADC>;
+			clock-names = "main";
+			#io-channel-cells = <1>;
+			status = "disabled";
+		};
+
 		apdma: dma-controller@11000300 {
 			compatible = "mediatek,mt8163-uart-dma", "mediatek,mt6577-uart-dma";
 			reg = <0 0x11000300 0 0x80>,
