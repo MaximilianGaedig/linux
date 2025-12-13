@@ -27,7 +27,9 @@ properties:
           - mediatek,mt8195-gce
           - mediatek,mt8196-gce
       - items:
-          - const: mediatek,mt6795-gce
+          - enum:
+              - mediatek,mt6795-gce
+              - mediatek,mt8163-gce
           - const: mediatek,mt8173-gce
 
   "#mbox-cells":
