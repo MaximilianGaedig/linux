@@ -47,6 +47,32 @@
 	};
 };
 
+&i2c0 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_default>;
+	status = "okay";
+
+	touchscreen@5d {
+		compatible = "goodix,gt5688";
+		reg = <0x5d>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&touch_pins>;
+		interrupt-parent = <&pio>;
+		interrupts = <17 IRQ_TYPE_EDGE_RISING>;
+		reset-gpios = <&pio 89 GPIO_ACTIVE_HIGH>;
+		irq-gpios = <&pio 49 GPIO_ACTIVE_HIGH>;
+		touchscreen-size-x = <480>;
+		touchscreen-size-y = <480>;
+		AVDD28-supply = <&mt6323_vibr_reg>;
+	};
+};
+
+&mt6323_vibr_reg {
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+};
+
 &mt6323_vusb_reg {
 	regulator-always-on;
 };
@@ -74,6 +100,27 @@
 				 <MT8163_PIN_50_EINT18__FUNC_GPIO50>;
 			bias-pull-up;
 			input-enable;
+		};
+	};
+
+	i2c0_pins_default: i2c0-pins {
+		pins {
+			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
+				 <MT8163_PIN_76_SCL0__FUNC_SCL0_0>;
+			bias-disable;
+		};
+	};
+
+	touch_pins: touch-pins {
+		pins-irq {
+			pinmux = <MT8163_PIN_49_EINT17__FUNC_GPIO49>;
+			bias-pull-up;
+			input-enable;
+		};
+
+		pins-rst {
+			pinmux = <MT8163_PIN_89_MSDC2_DAT2__FUNC_GPIO89>;
+			output-high;
 		};
 	};
 
