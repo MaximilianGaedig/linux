@@ -10,6 +10,9 @@
 	model = "Amazon Echo Dot (2016)";
 	compatible = "amazon,biscuit", "mediatek,mt8163";
 	chassis-type = "embedded";
+
+	/* Needed by stock bootloader */
+	version = "evt";
 };
 
 &mt6323_vusb_reg {
