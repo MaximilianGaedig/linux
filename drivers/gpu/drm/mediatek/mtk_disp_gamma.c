@@ -44,6 +44,7 @@
 
 struct mtk_disp_gamma_data {
 	bool has_dither;
+	bool has_type;
 	bool lut_diff;
 	u16 lut_bank_size;
 	u16 lut_size;
@@ -189,7 +190,7 @@ void mtk_gamma_set(struct device *dev, struct drm_crtc_state *state)
 
 	cfg_val = readl(gamma->regs + DISP_GAMMA_CFG);
 
-	if (!gamma->data->has_dither) {
+	if (gamma->data->has_type) {
 		/* Descending or Rising LUT */
 		if (mtk_gamma_lut_is_descending(lut, gamma->data->lut_size - 1))
 			cfg_val |= FIELD_PREP(GAMMA_LUT_TYPE, 1);
@@ -293,14 +294,24 @@ static void mtk_disp_gamma_remove(struct platform_device *pdev)
 	component_del(&pdev->dev, &mtk_disp_gamma_component_ops);
 }
 
+static const struct mtk_disp_gamma_data mt8163_gamma_driver_data = {
+	.has_dither = false,
+	.has_type = false,
+	.lut_bank_size = 512,
+	.lut_bits = 10,
+	.lut_size = 512,
+};
+
 static const struct mtk_disp_gamma_data mt8173_gamma_driver_data = {
 	.has_dither = true,
+	.has_type = false,
 	.lut_bank_size = 512,
 	.lut_bits = 10,
 	.lut_size = 512,
 };
 
 static const struct mtk_disp_gamma_data mt8183_gamma_driver_data = {
+	.has_type = true,
 	.lut_bank_size = 512,
 	.lut_bits = 10,
 	.lut_diff = true,
@@ -308,6 +319,7 @@ static const struct mtk_disp_gamma_data mt8183_gamma_driver_data = {
 };
 
 static const struct mtk_disp_gamma_data mt8195_gamma_driver_data = {
+	.has_type = true,
 	.lut_bank_size = 256,
 	.lut_bits = 12,
 	.lut_diff = true,
@@ -315,6 +327,8 @@ static const struct mtk_disp_gamma_data mt8195_gamma_driver_data = {
 };
 
 static const struct of_device_id mtk_disp_gamma_driver_dt_match[] = {
+	{ .compatible = "mediatek,mt8163-disp-gamma",
+	  .data = &mt8163_gamma_driver_data},
 	{ .compatible = "mediatek,mt8173-disp-gamma",
 	  .data = &mt8173_gamma_driver_data},
 	{ .compatible = "mediatek,mt8183-disp-gamma",
