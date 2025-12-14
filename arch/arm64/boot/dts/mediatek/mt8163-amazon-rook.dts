@@ -37,6 +37,30 @@
 		};
 	};
 
+	disp_v1p8: regulator-disp-v1p8 {
+		compatible = "regulator-fixed";
+		pinctrl-0 = <&disp_v1p8_pins_default>;
+		pinctrl-names = "default";
+		regulator-name = "disp-v1p8";
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		gpio = <&pio 85 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	disp_v3p3: regulator-disp-v3p3 {
+		compatible = "regulator-fixed";
+		pinctrl-0 = <&disp_v3p3_pins_default>;
+		pinctrl-names = "default";
+		regulator-name = "disp-v3p3";
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&pio 125 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
 	rfkill {
 		compatible = "rfkill-gpio";
 		pinctrl-names = "default";
@@ -44,6 +68,50 @@
 		label = "rfkill-usb-wlan";
 		radio-type = "wlan";
 		shutdown-gpios = <&pio 27 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&dsi {
+	/delete-property/ resets;
+	status = "okay";
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	panel: panel@0 {
+		compatible = "amazon,rook-hx8379c";
+		reg = <0>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcm_pins_default>;
+
+		backlight = <&disp_backlight>;
+
+		id0-gpios = <&pio 32 GPIO_ACTIVE_HIGH>;
+		id1-gpios = <&pio 44 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&pio 83 GPIO_ACTIVE_LOW>;
+
+		vcn-supply = <&mt6323_vcn33_wifi_reg>;
+		vmch-supply = <&mt6323_vmch_reg>;
+		v1p8-supply = <&disp_v1p8>;
+		v3p3-supply = <&disp_v3p3>;
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&dsi_out>;
+			};
+		};
+	};
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port {
+			dsi_out: endpoint {
+				remote-endpoint = <&panel_in>;
+			};
+		};
 	};
 };
 
@@ -68,9 +136,22 @@
 	};
 };
 
+&mipi_tx0 {
+	/delete-property/ resets;
+	status = "okay";
+};
+
+&mt6323_vcn33_wifi_reg {
+	regulator-boot-on;
+};
+
 &mt6323_vibr_reg {
 	regulator-min-microvolt = <2800000>;
 	regulator-max-microvolt = <2800000>;
+};
+
+&mt6323_vmch_reg {
+	regulator-boot-on;
 };
 
 &mt6323_vusb_reg {
@@ -108,6 +189,30 @@
 			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
 				 <MT8163_PIN_76_SCL0__FUNC_SCL0_0>;
 			bias-disable;
+		};
+	};
+
+	disp_v1p8_pins_default: disp-v1p8-pins {
+		pins {
+			pinmux = <MT8163_PIN_85_MSDC2_CMD__FUNC_GPIO85>;
+		};
+	};
+
+	disp_v3p3_pins_default: disp-v3p3-pins {
+		pins {
+			pinmux = <MT8163_PIN_125_MSDC1_DAT2__FUNC_GPIO125>;
+		};
+	};
+
+	lcm_pins_default: lcm-pins {
+		pins-id {
+			pinmux = <MT8163_PIN_32_EINT10__FUNC_GPIO32>,
+				 <MT8163_PIN_44_EINT12__FUNC_GPIO44>;
+			input-enable;
+		};
+
+		pins-reset {
+			pinmux = <MT8163_PIN_83_LCM_RST__FUNC_GPIO83>;
 		};
 	};
 
