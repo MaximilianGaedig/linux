@@ -29,6 +29,17 @@
 	interrupt-parent = <&sysirq>;
 	compatible = "mediatek,mt8163";
 
+	aliases {
+		aal0 = &aal;
+		ccorr0 = &ccorr;
+		color0 = &color;
+		dither0 = &dither;
+		dsi0 = &dsi;
+		ovl0 = &ovl0;
+		pwm0 = &pwm0;
+		rdma0 = &rdma0;
+	};
+
 	cluster0_opp: opp-table-cluster0 {
 		compatible = "operating-points-v2";
 		opp-shared;
@@ -454,6 +465,17 @@
 			#mbox-cells = <2>;
 		};
 
+		mipi_tx0: dsi-phy@10215000 {
+			compatible = "mediatek,mt8163-mipi-tx";
+			reg = <0 0x10215000 0 0x1000>;
+			clocks = <&apmixedsys CLK_APMIXED_MIPI_26M>;
+			clock-output-names = "mipi_tx0_pll";
+			resets = <&infracfg MT8163_INFRA_RST0_MIPI_D>;
+			#clock-cells = <0>;
+			#phy-cells = <0>;
+			status = "disabled";
+		};
+
 		gic: interrupt-controller@10221000 {
 			compatible = "arm,gic-400";
 			reg = <0 0x10221000 0 0x1000>,
@@ -817,6 +839,116 @@
 			mboxes = <&gce 0 CMDQ_THR_PRIO_HIGHEST>,
 				 <&gce 1 CMDQ_THR_PRIO_HIGHEST>;
 			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0 0x1000>;
+		};
+
+		ovl0: ovl@14007000 {
+			compatible = "mediatek,mt8163-disp-ovl", "mediatek,mt8173-disp-ovl";
+			reg = <0 0x14007000 0 0x1000>;
+			interrupts = <GIC_SPI 184 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_OVL0>;
+			iommus = <&iommu M4U_PORT_DISP_OVL0>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0x7000 0x1000>;
+		};
+
+		rdma0: dma-controller@14009000 {
+			compatible = "mediatek,mt8163-disp-rdma", "mediatek,mt8173-disp-rdma";
+			reg = <0 0x14009000 0 0x1000>;
+			interrupts = <GIC_SPI 186 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_RDMA0>;
+			iommus = <&iommu M4U_PORT_DISP_RDMA0>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0x9000 0x1000>;
+		};
+
+		color: color@1400c000 {
+			compatible = "mediatek,mt8163-disp-color", "mediatek,mt8173-disp-color";
+			reg = <0 0x1400c000 0 0x1000>;
+			interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_COLOR>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xc000 0x1000>;
+		};
+
+		ccorr: ccorr@1400d000 {
+			compatible = "mediatek,mt8163-disp-ccorr", "mediatek,mt8192-disp-ccorr";
+			reg = <0 0x1400d000 0 0x1000>;
+			interrupts = <GIC_SPI 190 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_CCORR>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xd000 0x1000>;
+		};
+
+		aal: aal@1400e000 {
+			compatible = "mediatek,mt8163-disp-aal", "mediatek,mt8183-disp-aal";
+			reg = <0 0x1400e000 0 0x1000>;
+			interrupts = <GIC_SPI 191 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_AAL>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xe000 0x1000>;
+		};
+
+		gamma: gamma@1400f000 {
+			compatible = "mediatek,mt8163-disp-gamma";
+			reg = <0 0x1400f000 0 0x1000>;
+			interrupts = <GIC_SPI 192 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_GAMMA>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xf000 0x1000>;
+		};
+
+		dither: dither@14010000 {
+			compatible = "mediatek,mt8163-disp-dither", "mediatek,mt8183-disp-dither";
+			reg = <0 0x14010000 0 0x1000>;
+			interrupts = <GIC_SPI 193 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_DITHER>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1401XXXX 0x0000 0x1000>;
+		};
+
+		ufoe: ufoe@14011000 {
+			compatible = "mediatek,mt8163-disp-ufoe", "mediatek,mt8173-disp-ufoe";
+			reg = <0 0x14011000 0 0x1000>;
+			interrupts = <GIC_SPI 194 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_UFOE>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1401XXXX 0x1000 0x1000>;
+		};
+
+		dsi: dsi@14012000 {
+			compatible = "mediatek,mt8163-dsi";
+			reg = <0 0x14012000 0 0x1000>;
+			interrupts = <GIC_SPI 195 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DSI_ENGINE>,
+				 <&mmsys CLK_MM_DSI_DIGITAL>,
+				 <&mipi_tx0>;
+			clock-names = "engine", "digital", "hs";
+			resets = <&mmsys MT8163_MMSYS_RST_DSI>;
+			phys = <&mipi_tx0>;
+			phy-names = "dphy";
+			status = "disabled";
+		};
+
+		pwm0: pwm@14014000 {
+			compatible = "mediatek,mt8163-disp-pwm", "mediatek,mt8173-disp-pwm";
+			reg = <0 0x14014000 0 0x1000>;
+			#pwm-cells = <2>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			clocks = <&mmsys CLK_MM_DISP_PWM_26M>,
+				 <&mmsys CLK_MM_DISP_PWM_MM>;
+			clock-names = "main", "mm";
+			status = "disabled";
+		};
+
+		mutex: mutex@14015000 {
+			compatible = "mediatek,mt8163-disp-mutex";
+			reg = <0 0x14015000 0 0x1000>;
+			interrupts = <GIC_SPI 177 IRQ_TYPE_LEVEL_LOW>;
+			power-domains = <&spm MT8163_POWER_DOMAIN_MM>;
+			mediatek,gce-client-reg = <&gce SUBSYS_1401XXXX 0x5000 0x1000>;
+			mediatek,gce-events = <CMDQ_EVENT_MUTEX0_STREAM_EOF>,
+					      <CMDQ_EVENT_MUTEX1_STREAM_EOF>;
 		};
 
 		larb0: larb@14016000 {
