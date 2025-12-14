@@ -15,6 +15,14 @@
 		stdout-path = "serial0:921600n8";
 	};
 
+	disp_backlight: display-backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pwm0 0 500000>;
+		brightness-levels = <0 1023>;
+		num-interpolated-steps = <1023>;
+		default-brightness-level = <512>;
+	};
+
 	memory {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x20000000>;
@@ -138,6 +146,10 @@
 
 &pmic {
 	interrupts-extended = <&pio 24 IRQ_TYPE_LEVEL_HIGH>;
+};
+
+&pwm0 {
+	status = "okay";
 };
 
 &uart0 {
