@@ -4,6 +4,10 @@
  */
 
 /dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+
 #include "mt8163-amazon-common.dtsi"
 #include "mt8163-headless.dtsi"
 
@@ -14,6 +18,19 @@
 
 	/* Needed by stock bootloader */
 	version = "evt";
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_keys_pins_default>;
+
+		key-volume-up {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&pio 50 GPIO_ACTIVE_LOW>;
+			debounce-interval = <20>;
+		};
+	};
 };
 
 &mt6323_vusb_reg {
@@ -32,4 +49,14 @@
 	/* No 5V supply for OTG support. */
 	dr_mode = "peripheral";
 	status = "okay";
+};
+
+&pio {
+	gpio_keys_pins_default: gpio-keys-pins {
+		pins {
+			pinmux = <MT8163_PIN_50_EINT18__FUNC_GPIO50>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
 };
