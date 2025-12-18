@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * Copyright (c) 2026 Ben Grisdale <bengris32@protonmail.ch>
+ */
+
+&gpu {
+	status = "disabled";
+};
+
+&gce {
+	status = "disabled";
+};
+
+&mfgcfg {
+	status = "disabled";
+};
+
+&thermal {
+	status = "disabled";
+};
+
+&vdecsys {
+	status = "disabled";
+};
+
+&vencsys {
+	status = "disabled";
+};
+
+&mmsys {
+	status = "disabled";
+};
+
+&iommu {
+	status = "disabled";
+};
+
+&smi_common {
+	status = "disabled";
+};
+
+&larb0 {
+	status = "disabled";
+};
+
+&larb1 {
+	status = "disabled";
+};
+
+&larb2 {
+	status = "disabled";
+};
+
+&larb3 {
+	status = "disabled";
+};
+
+&ovl0 {
+	status = "disabled";
+};
+
+&rdma0 {
+	status = "disabled";
+};
+
+&color {
+	status = "disabled";
+};
+
+&ccorr {
+	status = "disabled";
+};
+
+&aal {
+	status = "disabled";
+};
+
+&gamma {
+	status = "disabled";
+};
+
+&dither {
+	status = "disabled";
+};
+
+&ufoe {
+	status = "disabled";
+};
+
+&mutex {
+	status = "disabled";
+};
