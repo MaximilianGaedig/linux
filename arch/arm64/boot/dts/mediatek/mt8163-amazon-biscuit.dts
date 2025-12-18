@@ -5,6 +5,7 @@
 
 /dts-v1/;
 #include "mt8163-amazon-common.dtsi"
+#include "mt8163-headless.dtsi"
 
 / {
 	model = "Amazon Echo Dot (2016)";
@@ -17,6 +18,10 @@
 
 &mt6323_vusb_reg {
 	regulator-always-on;
+};
+
+&thermal {
+	status = "disabled";
 };
 
 &u2phy0 {
