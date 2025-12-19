@@ -33,6 +33,20 @@
 	};
 };
 
+&keypad {
+	linux,keymap = <MATRIX_KEY(0x00, 0x00, KEY_ASSISTANT)
+			MATRIX_KEY(0x00, 0x01, KEY_VOLUMEDOWN)>;
+
+	keypad,num-rows = <1>;
+	keypad,num-columns = <2>;
+	debounce-delay-ms = <20>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&keypad_pins_default>;
+
+	status = "okay";
+};
+
 &mt6323_vusb_reg {
 	regulator-always-on;
 };
@@ -56,6 +70,14 @@
 		pins {
 			pinmux = <MT8163_PIN_50_EINT18__FUNC_GPIO50>;
 			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	keypad_pins_default: keypad-pins {
+		pins {
+			pinmux = <MT8163_PIN_36_KPCOL0__FUNC_KPCOL0>,
+				 <MT8163_PIN_37_KPCOL1__FUNC_KPCOL1>;
 			input-enable;
 		};
 	};
