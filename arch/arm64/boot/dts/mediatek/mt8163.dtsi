@@ -397,6 +397,15 @@
 			clock-names = "spi", "wrap";
 		};
 
+		keypad: keyboard@10010000 {
+			compatible = "mediatek,mt8163-keypad", "mediatek,mt6779-keypad";
+			reg = <0 0x10010000 0 0x1000>;
+			interrupts = <GIC_SPI 162 IRQ_TYPE_EDGE_FALLING>;
+			clocks = <&clk26m>;
+			clock-names = "kpd";
+			status = "disabled";
+		};
+
 		sysirq: intpol-controller@10200620 {
 			compatible = "mediatek,mt8163-sysirq", "mediatek,mt6577-sysirq";
 			reg = <0 0x10200620 0 0x20>;
