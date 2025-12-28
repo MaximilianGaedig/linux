@@ -175,10 +175,10 @@ struct mtk_composite {
 		.flags = 0,						\
 	}
 
-#define MUX_DIV_GATE(_id, _name, _parents,		\
+#define MUX_DIV_GATE_FLAGS(_id, _name, _parents,	\
 		_mux_reg, _mux_shift, _mux_width,	\
 		_div_reg, _div_shift, _div_width,	\
-		_gate_reg, _gate_shift) {		\
+		_gate_reg, _gate_shift, _flags) {	\
 		.id            = _id,			\
 		.name          = _name,			\
 		.parent_names  = _parents,		\
@@ -191,8 +191,18 @@ struct mtk_composite {
 		.divider_width = _div_width,		\
 		.gate_reg      = _gate_reg,		\
 		.gate_shift    = _gate_shift,		\
-		.flags         = CLK_SET_RATE_PARENT,	\
+		.flags         = _flags,		\
 	}
+
+#define MUX_DIV_GATE(_id, _name, _parents,		\
+		_mux_reg, _mux_shift, _mux_width,	\
+		_div_reg, _div_shift, _div_width,	\
+		_gate_reg, _gate_shift)			\
+	MUX_DIV_GATE_FLAGS(_id, _name, _parents,	\
+		_mux_reg, _mux_shift, _mux_width,	\
+		_div_reg, _div_shift, _div_width,	\
+		_gate_reg, _gate_shift,			\
+		CLK_SET_RATE_PARENT)
 
 int mtk_clk_register_composites(struct device *dev,
 				const struct mtk_composite *mcs, int num,
