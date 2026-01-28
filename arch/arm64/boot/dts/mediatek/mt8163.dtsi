@@ -425,6 +425,13 @@
 			};
 		};
 
+		rng@1020f000 {
+			compatible = "mediatek,mt8163-rng", "mediatek,mt7623-rng";
+			reg = <0 0x1020f000 0 0x1000>;
+			clocks = <&infracfg CLK_INFRA_TRNG>;
+			clock-names = "rng";
+		};
+
 		gic: interrupt-controller@10221000 {
 			compatible = "arm,gic-400";
 			reg = <0 0x10221000 0 0x1000>,
