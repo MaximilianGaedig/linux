@@ -663,6 +663,59 @@
 			compatible = "mediatek,mt8163-audsys", "syscon";
 			reg = <0 0x11220000 0 0x1000>;
 			#clock-cells = <1>;
+
+			afe: audio-controller {
+				compatible = "mediatek,mt8163-afe-pcm";
+				interrupts = <GIC_SPI 142 IRQ_TYPE_LEVEL_LOW>;
+				power-domains = <&spm MT8163_POWER_DOMAIN_AUDIO>;
+				clocks = <&infracfg CLK_INFRA_AUDIO>,
+					 <&topckgen CLK_TOP_AUDIO_SEL>,
+					 <&topckgen CLK_TOP_AUD_INTBUS_SEL>,
+					 <&topckgen CLK_TOP_AUD_1_SEL>,
+					 <&topckgen CLK_TOP_AUD_2_SEL>,
+					 <&apmixedsys CLK_APMIXED_AUD1PLL>,
+					 <&audiosys CLK_AUDIO_APLL_TUNER>,
+					 <&audiosys CLK_AUDIO_APLL1_DIV0>,
+					 <&apmixedsys CLK_APMIXED_AUD2PLL>,
+					 <&audiosys CLK_AUDIO_APLL2_TUNER>,
+					 <&audiosys CLK_AUDIO_APLL2_DIV0>,
+					 <&audiosys CLK_AUDIO_AFE>,
+					 <&audiosys CLK_AUDIO_ADC>,
+					 <&audiosys CLK_AUDIO_DAC>,
+					 <&audiosys CLK_AUDIO_DAC_PREDIS>,
+					 <&audiosys CLK_AUDIO_22M>,
+					 <&audiosys CLK_AUDIO_24M>,
+					 <&audiosys CLK_AUDIO_I2S>,
+					 <&audiosys CLK_AUDIO_APLL_I2S0>,
+					 <&audiosys CLK_AUDIO_APLL_I2S1>,
+					 <&audiosys CLK_AUDIO_APLL_I2S2>,
+					 <&audiosys CLK_AUDIO_APLL_I2S3>,
+					 <&clk26m>;
+				clock-names = "infrasys_aud",
+					      "top_pdn_aud",
+					      "top_pdn_aud_bus",
+					      "aud_1_sel",
+					      "aud_2_sel",
+					      "apll1",
+					      "apll1_tuner",
+					      "apll1_div",
+					      "apll2",
+					      "apll2_tuner",
+					      "apll2_div",
+					      "afe",
+					      "adc",
+					      "dac",
+					      "dac_predis",
+					      "22m",
+					      "24m",
+					      "top_i2s",
+					      "i2s0",
+					      "i2s1",
+					      "i2s2",
+					      "i2s3",
+					      "clk26m";
+				status = "disabled";
+			};
 		};
 
 		mmc0: mmc@11230000 {
