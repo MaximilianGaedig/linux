@@ -1191,8 +1191,14 @@ retry_read_config:
 		dev_err(&ts->client->dev,
 			"Invalid config (%d, %d, %d), using defaults\n",
 			ts->prop.max_x, ts->prop.max_y, ts->max_touch_num);
-		ts->prop.max_x = GOODIX_MAX_WIDTH - 1;
-		ts->prop.max_y = GOODIX_MAX_HEIGHT - 1;
+
+		/* Device tree may provide valid values for max_x and max_y
+		 * so check if they are valid, and if so, do not override them.
+		 */
+		if (!ts->prop.max_x || !ts->prop.max_y) {
+			ts->prop.max_x = GOODIX_MAX_WIDTH - 1;
+			ts->prop.max_y = GOODIX_MAX_HEIGHT - 1;
+		}
 		ts->max_touch_num = GOODIX_MAX_CONTACTS;
 		input_abs_set_max(ts->input_dev,
 				  ABS_MT_POSITION_X, ts->prop.max_x);
