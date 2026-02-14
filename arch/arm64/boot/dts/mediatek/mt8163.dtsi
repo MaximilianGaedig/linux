@@ -25,6 +25,26 @@
 	interrupt-parent = <&sysirq>;
 	compatible = "mediatek,mt8163";
 
+	gpu_opp: opp-table-gpu {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-520000000 {
+			opp-hz = /bits/ 64 <520000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-416000000 {
+			opp-hz = /bits/ 64 <416000000>;
+			opp-microvolt = <1150000>;
+		};
+
+		opp-299000000 {
+			opp-hz = /bits/ 64 <299000000>;
+			opp-microvolt = <1150000>;
+		};
+	};
+
 	vgpu_1v15: regulator-vgpu {
 		compatible = "regulator-fixed";
 		regulator-name = "vgpu-1v15";
@@ -560,6 +580,7 @@
 			assigned-clock-parents = <&apmixedsys CLK_APMIXED_MMPLL>;
 			power-domains = <&spm MT8163_POWER_DOMAIN_MFG>;
 			mali-supply = <&vgpu_1v15>;
+			operating-points-v2 = <&gpu_opp>;
 			#cooling-cells = <2>;
 			status = "disabled";
 		};
