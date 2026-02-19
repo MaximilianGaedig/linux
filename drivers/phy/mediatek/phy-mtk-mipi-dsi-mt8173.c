@@ -80,8 +80,12 @@
 
 #define MIPITX_DSI_PLL_CON2	0x58
 
+#define MIPITX_DSI_PLL_CHG	0x60
+#define RG_DSI_MPPLL_SDM_PCW_CHG	BIT(0)
+
 #define MIPITX_DSI_PLL_TOP	0x64
 #define RG_DSI_MPPLL_PRESERVE		GENMASK(15, 8)
+#define RG_DSI_MPPLL_PRESERVE_MT8163	GENMASK(11, 7)
 
 #define MIPITX_DSI_PLL_PWR	0x68
 #define RG_DSI_MPPLL_SDM_PWR_ON		BIT(0)
@@ -211,6 +215,101 @@ static int mtk_mipi_tx_pll_prepare(struct clk_hw *hw)
 	return 0;
 }
 
+static int mtk_mipi_tx_pll_prepare_mt8163(struct clk_hw *hw)
+{
+	struct mtk_mipi_tx *mipi_tx = mtk_mipi_tx_from_clk_hw(hw);
+	void __iomem *base = mipi_tx->regs;
+	u8 txdiv, txdiv0, txdiv1;
+	u32 reg;
+	u64 pcw;
+
+	dev_dbg(mipi_tx->dev, "prepare: %u Hz\n", mipi_tx->data_rate);
+
+	if (mipi_tx->data_rate >= 500000000) {
+		txdiv = 1;
+		txdiv0 = 0;
+		txdiv1 = 0;
+	} else if (mipi_tx->data_rate >= 250000000) {
+		txdiv = 2;
+		txdiv0 = 1;
+		txdiv1 = 0;
+	} else if (mipi_tx->data_rate >= 125000000) {
+		txdiv = 4;
+		txdiv0 = 2;
+		txdiv1 = 0;
+	} else if (mipi_tx->data_rate > 62000000) {
+		txdiv = 8;
+		txdiv0 = 2;
+		txdiv1 = 1;
+	} else if (mipi_tx->data_rate >= 50000000) {
+		txdiv = 16;
+		txdiv0 = 2;
+		txdiv1 = 2;
+	} else {
+		return -EINVAL;
+	}
+
+	for (reg = MIPITX_DSI_CLOCK_LANE;
+	     reg <= MIPITX_DSI_DATA_LANE3; reg += 4)
+		mtk_phy_update_bits(base + reg,
+				    RG_DSI_LNTx_RT_CODE,
+				    FIELD_PREP(RG_DSI_LNTx_RT_CODE, 0x8));
+
+	mtk_phy_set_bits(base + MIPITX_DSI_BG_CON,
+			    RG_DSI_BG_CKEN | RG_DSI_BG_CORE_EN |
+			    RG_DSI_BG_FAST_CHARGE);
+
+	usleep_range(30, 100);
+
+	mtk_phy_set_bits(base + MIPITX_DSI_TOP_CON, RG_DSI_LNT_HS_BIAS_EN);
+
+	mtk_phy_set_bits(base + MIPITX_DSI_CON,
+			 RG_DSI_CKG_LDOOUT_EN | RG_DSI_LDOCORE_EN);
+
+	mtk_phy_update_bits(base + MIPITX_DSI_PLL_PWR,
+			    RG_DSI_MPPLL_SDM_PWR_ON | RG_DSI_MPPLL_SDM_ISO_EN,
+			    RG_DSI_MPPLL_SDM_PWR_ON);
+
+	mtk_phy_clear_bits(base + MIPITX_DSI_BG_CON, RG_DSI_BG_FAST_CHARGE);
+
+	usleep_range(30, 100);
+
+	mtk_phy_update_bits(base + MIPITX_DSI_PLL_CON0,
+			    RG_DSI_MPPLL_TXDIV0 | RG_DSI_MPPLL_TXDIV1 |
+			    RG_DSI_MPPLL_PREDIV,
+			    FIELD_PREP(RG_DSI_MPPLL_TXDIV0, txdiv0) |
+			    FIELD_PREP(RG_DSI_MPPLL_TXDIV1, txdiv1));
+
+	/*
+	 * PLL PCW config
+	 * PCW bit 24~30 = integer part of pcw
+	 * PCW bit 0~23 = fractional part of pcw
+	 * pcw = data_Rate*4*txdiv/(Ref_clk*2);
+	 * Post DIV =4, so need data_Rate*4
+	 * Ref_clk is 26MHz
+	 */
+	pcw = div_u64(((u64)mipi_tx->data_rate * 2 * txdiv) << 24, 26000000);
+	writel(pcw, base + MIPITX_DSI_PLL_CON2);
+
+	mtk_phy_set_bits(base + MIPITX_DSI_PLL_CON1, RG_DSI_MPPLL_SDM_FRA_EN);
+
+	mtk_phy_update_field(base + MIPITX_DSI_PLL_TOP,
+			     RG_DSI_MPPLL_PRESERVE_MT8163,
+			     mipi_tx->driver_data->mppll_preserve);
+
+	mtk_phy_set_bits(base + MIPITX_DSI_PLL_CON0, RG_DSI_MPPLL_PLL_EN);
+
+	usleep_range(20, 100);
+
+	mtk_phy_clear_bits(base + MIPITX_DSI_PLL_CHG, RG_DSI_MPPLL_SDM_PCW_CHG);
+
+	mtk_phy_set_bits(base + MIPITX_DSI_PLL_CHG, RG_DSI_MPPLL_SDM_PCW_CHG);
+
+	mtk_phy_clear_bits(base + MIPITX_DSI_PLL_CON1, RG_DSI_MPPLL_SDM_SSC_EN);
+
+	return 0;
+}
+
 static void mtk_mipi_tx_pll_unprepare(struct clk_hw *hw)
 {
 	struct mtk_mipi_tx *mipi_tx = mtk_mipi_tx_from_clk_hw(hw);
@@ -253,6 +352,14 @@ static const struct clk_ops mtk_mipi_tx_pll_ops = {
 	.recalc_rate = mtk_mipi_tx_pll_recalc_rate,
 };
 
+static const struct clk_ops mtk_mipi_tx_pll_ops_mt8163 = {
+	.prepare = mtk_mipi_tx_pll_prepare_mt8163,
+	.unprepare = mtk_mipi_tx_pll_unprepare,
+	.round_rate = mtk_mipi_tx_pll_round_rate,
+	.set_rate = mtk_mipi_tx_pll_set_rate,
+	.recalc_rate = mtk_mipi_tx_pll_recalc_rate,
+};
+
 static void mtk_mipi_tx_power_on_signal(struct phy *phy)
 {
 	struct mtk_mipi_tx *mipi_tx = phy_get_drvdata(phy);
@@ -282,6 +389,13 @@ static void mtk_mipi_tx_power_off_signal(struct phy *phy)
 const struct mtk_mipitx_data mt2701_mipitx_data = {
 	.mppll_preserve = 3,
 	.mipi_tx_clk_ops = &mtk_mipi_tx_pll_ops,
+	.mipi_tx_enable_signal = mtk_mipi_tx_power_on_signal,
+	.mipi_tx_disable_signal = mtk_mipi_tx_power_off_signal,
+};
+
+const struct mtk_mipitx_data mt8163_mipitx_data = {
+	.mppll_preserve = 2,
+	.mipi_tx_clk_ops = &mtk_mipi_tx_pll_ops_mt8163,
 	.mipi_tx_enable_signal = mtk_mipi_tx_power_on_signal,
 	.mipi_tx_disable_signal = mtk_mipi_tx_power_off_signal,
 };
