@@ -3,6 +3,8 @@
  * Copyright (c) 2015 MediaTek Inc.
  */
 
+#include <linux/reset.h>
+
 #include "phy-mtk-mipi-dsi.h"
 
 inline struct mtk_mipi_tx *mtk_mipi_tx_from_clk_hw(struct clk_hw *hw)
@@ -154,6 +156,10 @@ static int mtk_mipi_tx_probe(struct platform_device *pdev)
 				      &clk_init.name);
 	if (ret < 0)
 		return dev_err_probe(dev, ret, "Failed to read clock-output-names\n");
+
+	ret = device_reset_optional(dev);
+	if (ret < 0)
+		return ret;
 
 	clk_init.ops = mipi_tx->driver_data->mipi_tx_clk_ops;
 
