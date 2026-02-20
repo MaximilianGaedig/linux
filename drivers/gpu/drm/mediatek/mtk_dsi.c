@@ -105,6 +105,7 @@
 
 #define DSI_RACK		0x84
 #define RACK				BIT(0)
+#define RACK_BYPASS			BIT(1)
 
 #define DSI_PHY_LCCON		0x104
 #define LC_HS_TX_EN			BIT(0)
@@ -194,6 +195,8 @@ struct mtk_dsi_driver_data {
 	bool has_size_ctl;
 	bool cmdq_long_packet_ctl;
 	bool support_per_frame_lp;
+	bool bypass_rack;
+	bool no_vm_done_irq;
 };
 
 struct mtk_dsi {
@@ -605,9 +608,14 @@ static void mtk_dsi_set_cmd_mode(struct mtk_dsi *dsi)
 
 static void mtk_dsi_set_interrupt_enable(struct mtk_dsi *dsi)
 {
-	u32 inten = LPRX_RD_RDY_INT_FLAG | CMD_DONE_INT_FLAG | VM_DONE_INT_FLAG;
+	u32 inten = LPRX_RD_RDY_INT_FLAG | CMD_DONE_INT_FLAG;
+
+	if (!dsi->driver_data->no_vm_done_irq)
+		inten |= VM_DONE_INT_FLAG;
 
 	writel(inten, dsi->regs + DSI_INTEN);
+	if (dsi->driver_data->bypass_rack)
+		writel(RACK_BYPASS, dsi->regs + DSI_RACK);
 }
 
 static void mtk_dsi_irq_data_set(struct mtk_dsi *dsi, u32 irq_bit)
@@ -649,10 +657,12 @@ static irqreturn_t mtk_dsi_irq(int irq, void *dev_id)
 	status = readl(dsi->regs + DSI_INTSTA) & flag;
 
 	if (status) {
-		do {
-			mtk_dsi_mask(dsi, DSI_RACK, RACK, RACK);
-			tmp = readl(dsi->regs + DSI_INTSTA);
-		} while (tmp & DSI_BUSY);
+		if (!dsi->driver_data->bypass_rack) {
+			do {
+				mtk_dsi_mask(dsi, DSI_RACK, RACK, RACK);
+				tmp = readl(dsi->regs + DSI_INTSTA);
+			} while (tmp & DSI_BUSY);
+		}
 
 		mtk_dsi_mask(dsi, DSI_INTSTA, status, 0);
 		mtk_dsi_irq_data_set(dsi, status);
@@ -668,12 +678,21 @@ static s32 mtk_dsi_switch_to_cmd_mode(struct mtk_dsi *dsi, u8 irq_flag, u32 t)
 	mtk_dsi_set_cmd_mode(dsi);
 	struct drm_device *drm = dsi->bridge.dev;
 
-	if (!mtk_dsi_wait_for_irq_done(dsi, irq_flag, t)) {
+	/*
+	 * If the DSI engine does not signal a VM done interrupt
+	 * after completing the mode switch then don't wait for it.
+	 *
+	 * Nothing else needs to be done here since mtk_dsi_host_send_cmd()
+	 * would wait for the engine to go idle; this works out because
+	 * DSI_BUSY is always set when running in video mode anyway.
+	 */
+	if (!dsi->driver_data->no_vm_done_irq &&
+	    !mtk_dsi_wait_for_irq_done(dsi, irq_flag, t)) {
 		drm_err(drm, "failed to switch cmd mode\n");
 		return -ETIME;
-	} else {
-		return 0;
 	}
+
+	return 0;
 }
 
 static void mtk_dsi_lane_ready(struct mtk_dsi *dsi)
@@ -1272,6 +1291,13 @@ static void mtk_dsi_remove(struct platform_device *pdev)
 	mipi_dsi_host_unregister(&dsi->host);
 }
 
+static const struct mtk_dsi_driver_data mt8163_dsi_driver_data = {
+	.reg_cmdq_off = 0x200,
+	.reg_vm_cmd_off = 0x130,
+	.bypass_rack = true,
+	.no_vm_done_irq = true,
+};
+
 static const struct mtk_dsi_driver_data mt8173_dsi_driver_data = {
 	.reg_cmdq_off = 0x200,
 	.reg_vm_cmd_off = 0x130,
@@ -1312,6 +1338,7 @@ static const struct mtk_dsi_driver_data mt8188_dsi_driver_data = {
 
 static const struct of_device_id mtk_dsi_of_match[] = {
 	{ .compatible = "mediatek,mt2701-dsi", .data = &mt2701_dsi_driver_data },
+	{ .compatible = "mediatek,mt8163-dsi", .data = &mt8163_dsi_driver_data },
 	{ .compatible = "mediatek,mt8167-dsi", .data = &mt2701_dsi_driver_data },
 	{ .compatible = "mediatek,mt8173-dsi", .data = &mt8173_dsi_driver_data },
 	{ .compatible = "mediatek,mt8183-dsi", .data = &mt8183_dsi_driver_data },
