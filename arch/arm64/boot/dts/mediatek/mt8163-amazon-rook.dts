@@ -43,6 +43,7 @@
 		pinctrl-names = "default";
 		regulator-name = "disp-v1p8";
 		regulator-boot-on;
+		regulator-always-on;
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <1800000>;
 		gpio = <&pio 85 GPIO_ACTIVE_HIGH>;
@@ -55,6 +56,7 @@
 		pinctrl-names = "default";
 		regulator-name = "disp-v3p3";
 		regulator-boot-on;
+		regulator-always-on;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
 		gpio = <&pio 125 GPIO_ACTIVE_HIGH>;
@@ -143,6 +145,7 @@
 
 &mt6323_vcn33_wifi_reg {
 	regulator-boot-on;
+	regulator-always-on;
 };
 
 &mt6323_vibr_reg {
@@ -152,6 +155,7 @@
 
 &mt6323_vmch_reg {
 	regulator-boot-on;
+	regulator-always-on;
 };
 
 &mt6323_vusb_reg {
