@@ -11,4 +11,7 @@
 	model = "Amazon Echo Show 5 (2021) (v4.3)";
 	compatible = "amazon,cronos-v4.3", "amazon,cronos", "mediatek,mt8163";
 	chassis-type = "embedded";
+
+	/* Needed by stock bootloader */
+	version = "pvt_4_3";
 };
