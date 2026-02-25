@@ -4,7 +4,39 @@
  * Copyright (c) 2025-2026 Jack Matthews <jack@jackmatthe.ws>
  */
 
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
 #include "mt8163-amazon-common.dtsi"
+
+/ {
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_keys_pins>;
+
+		key-volume-up {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&pio 36 GPIO_ACTIVE_LOW>;
+			debounce-interval = <20>;
+		};
+
+		key-volume-down {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&pio 37 GPIO_ACTIVE_LOW>;
+			debounce-interval = <20>;
+		};
+
+		switch-camera-lens-cover {
+			label = "Camera Lens Cover";
+			linux,input-type = <EV_SW>;
+			linux,code = <SW_CAMERA_LENS_COVER>;
+			gpios = <&pio 142 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
 
 &mt6323_vusb_reg {
 	regulator-always-on;
@@ -18,4 +50,16 @@
 	/* No 5V supply for OTG support. */
 	dr_mode = "peripheral";
 	status = "okay";
+};
+
+&pio {
+	gpio_keys_pins: gpio-keys-pins {
+		pins {
+			pinmux = <MT8163_PIN_36_KPCOL0__FUNC_GPIO36>,
+				 <MT8163_PIN_37_KPCOL1__FUNC_GPIO37>,
+				 <MT8163_PIN_142_EINT21__FUNC_GPIO142>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
 };
