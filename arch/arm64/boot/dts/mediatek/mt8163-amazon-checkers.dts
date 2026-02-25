@@ -11,4 +11,7 @@
 	model = "Amazon Echo Show 5 (2019)";
 	compatible = "amazon,checkers", "mediatek,mt8163";
 	chassis-type = "embedded";
+
+	/* Needed by stock bootloader */
+	version = "dvt";
 };
