@@ -5,3 +5,17 @@
  */
 
 #include "mt8163-amazon-common.dtsi"
+
+&mt6323_vusb_reg {
+	regulator-always-on;
+};
+
+&u2phy0 {
+	status = "okay";
+};
+
+&usb0 {
+	/* No 5V supply for OTG support. */
+	dr_mode = "peripheral";
+	status = "okay";
+};
