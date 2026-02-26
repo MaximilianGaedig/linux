@@ -16,10 +16,13 @@
 #include <linux/i2c.h>
 #include <linux/mutex.h>
 #include <linux/regmap.h>
+#include <linux/regulator/consumer.h>
+
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
 
 /* JSA1212 reg address */
+#define JSA1212_ID_REG			0x00
 #define JSA1212_CONF_REG		0x01
 #define JSA1212_INT_REG			0x02
 #define JSA1212_PXS_LT_REG		0x03
@@ -111,13 +114,26 @@ enum jsa1212_op_mode {
 	JSA1212_OPMODE_PXS_EN,
 };
 
+enum {
+	jsa1212 = 0,
+	jsa1214,
+};
+
 struct jsa1212_data {
 	struct i2c_client *client;
 	struct mutex lock;
+	const struct jsa1212_chip_info *chip_info;
 	u8 als_rng_idx;
 	bool als_en; /* ALS enable status */
 	bool pxs_en; /* proximity enable status */
 	struct regmap *regmap;
+};
+
+struct jsa1212_chip_info {
+	const char *name;
+	u8 chipid;
+	const struct iio_chan_spec *channels;
+	int num_channels;
 };
 
 /* ALS range idx to val mapping */
@@ -260,8 +276,31 @@ static const struct iio_chan_spec jsa1212_channels[] = {
 	}
 };
 
+static const struct iio_chan_spec jsa1214_channels[] = {
+	{
+		.type = IIO_LIGHT,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |
+			BIT(IIO_CHAN_INFO_SCALE),
+	}
+};
+
 static const struct iio_info jsa1212_info = {
 	.read_raw		= &jsa1212_read_raw,
+};
+
+static const struct jsa1212_chip_info jsa1212_chip_info_tbl[] = {
+	[jsa1212] = {
+		.name = JSA1212_DRIVER_NAME,
+		.chipid = 0x00,
+		.channels = jsa1212_channels,
+		.num_channels = ARRAY_SIZE(jsa1212_channels),
+	},
+	[jsa1214] = {
+		.name = "jsa1214",
+		.chipid = 0x21,
+		.channels = jsa1214_channels,
+		.num_channels = ARRAY_SIZE(jsa1214_channels),
+	},
 };
 
 static int jsa1212_chip_init(struct jsa1212_data *data)
@@ -310,34 +349,47 @@ static int jsa1212_probe(struct i2c_client *client)
 {
 	struct jsa1212_data *data;
 	struct iio_dev *indio_dev;
-	struct regmap *regmap;
-	int ret;
+	int chipid_raw, ret;
 
 	indio_dev = devm_iio_device_alloc(&client->dev, sizeof(*data));
 	if (!indio_dev)
 		return -ENOMEM;
 
-	regmap = devm_regmap_init_i2c(client, &jsa1212_regmap_config);
-	if (IS_ERR(regmap)) {
-		dev_err(&client->dev, "Regmap initialization failed.\n");
-		return PTR_ERR(regmap);
-	}
-
 	data = iio_priv(indio_dev);
-
-	i2c_set_clientdata(client, indio_dev);
 	data->client = client;
-	data->regmap = regmap;
+
+	data->regmap = devm_regmap_init_i2c(client, &jsa1212_regmap_config);
+	if (IS_ERR(data->regmap))
+		return PTR_ERR(data->regmap);
+
+	data->chip_info = i2c_get_match_data(client);
+    	if (!data->chip_info)
+        	return dev_err_probe(&client->dev, -ENODEV, "Could not find matching chip data\n");
 
 	mutex_init(&data->lock);
 
-	ret = jsa1212_chip_init(data);
+	ret = devm_regulator_get_enable_optional(&client->dev, "vdd");
+	if (ret < 0 && ret != -ENODEV)
+		return dev_err_probe(&client->dev, ret,
+				     "Failed to get regulator\n");
+
+	/* Verify Chip ID */
+	ret = regmap_read(data->regmap, JSA1212_ID_REG, &chipid_raw);
 	if (ret < 0)
 		return ret;
 
-	indio_dev->channels = jsa1212_channels;
-	indio_dev->num_channels = ARRAY_SIZE(jsa1212_channels);
-	indio_dev->name = JSA1212_DRIVER_NAME;
+	if (chipid_raw != data->chip_info->chipid) {
+		dev_err(&client->dev, "ID mismatch: got 0x%x, expected 0x%x\n",
+			chipid_raw, data->chip_info->chipid);
+		return -ENODEV;
+	}
+	ret = jsa1212_chip_init(data);
+	if (ret < 0)
+		return dev_err_probe(&client->dev, ret, "chip init failed\n");
+
+	indio_dev->channels = data->chip_info->channels;
+	indio_dev->num_channels = data->chip_info->num_channels;
+	indio_dev->name = data->chip_info->name;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
 	indio_dev->info = &jsa1212_info;
@@ -421,22 +473,32 @@ static DEFINE_SIMPLE_DEV_PM_OPS(jsa1212_pm_ops, jsa1212_suspend,
 				jsa1212_resume);
 
 static const struct acpi_device_id jsa1212_acpi_match[] = {
-	{"JSA1212", 0},
+	{"JSA1212", (kernel_ulong_t)&jsa1212_chip_info_tbl[jsa1212] },
 	{ }
 };
 MODULE_DEVICE_TABLE(acpi, jsa1212_acpi_match);
 
 static const struct i2c_device_id jsa1212_id[] = {
-	{ .name = JSA1212_DRIVER_NAME },
+	{ .name = JSA1212_DRIVER_NAME,
+	  .driver_data = (kernel_ulong_t)&jsa1212_chip_info_tbl[jsa1212] },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, jsa1212_id);
+
+
+static const struct of_device_id jsa1212_of_match[] = {
+	{ .compatible = "solteam,jsa1212", .data = &jsa1212_chip_info_tbl[jsa1212] },
+	{ .compatible = "solteam,jsa1214", .data = &jsa1212_chip_info_tbl[jsa1214]  },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, jsa1212_of_match);
 
 static struct i2c_driver jsa1212_driver = {
 	.driver = {
 		.name	= JSA1212_DRIVER_NAME,
 		.pm	= pm_sleep_ptr(&jsa1212_pm_ops),
-		.acpi_match_table = jsa1212_acpi_match,
+		.acpi_match_table = ACPI_PTR(jsa1212_acpi_match),
+		.of_match_table = jsa1212_of_match,
 	},
 	.probe		= jsa1212_probe,
 	.remove		= jsa1212_remove,
