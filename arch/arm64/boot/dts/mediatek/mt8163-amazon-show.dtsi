@@ -38,6 +38,20 @@
 	};
 };
 
+&i2c0 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_default>;
+	status = "okay";
+
+	light-sensor@44 {
+		compatible = "solteam,jsa1214";
+		reg = <0x44>;
+
+		vdd-supply = <&mt6323_vcn28_reg>;
+	};
+};
+
 &mt6323_vusb_reg {
 	regulator-always-on;
 };
@@ -60,6 +74,14 @@
 				 <MT8163_PIN_142_EINT21__FUNC_GPIO142>;
 			bias-pull-up;
 			input-enable;
+		};
+	};
+
+	i2c0_pins_default: i2c0-pins {
+		pins {
+			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
+				 <MT8163_PIN_76_SCL0__FUNC_SCL0_0>;
+			bias-disable;
 		};
 	};
 };
