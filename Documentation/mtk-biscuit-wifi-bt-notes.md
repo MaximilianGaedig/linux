@@ -1,13 +1,17 @@
 # MT6625L WiFi/BT/GPS port notes (Echo Dot 2016 "biscuit", MT8163)
 
-Status as of 2026-08-06 (updated, second pass): **devicetree wiring done;
-the conn_soc WMT/STP/BT core now compiles and links cleanly against this
-tree's 6.x kernel headers (three real .ko files); wlan/gen2 (the WiFi MAC
-driver) is roughly half-ported and stops at a real, non-mechanical
-cfg80211 API blocker.** Nothing has been boot-tested on real hardware.
-This document is the handoff for whoever continues. Section 6 (bottom) has
-the up-to-date honest assessment and concrete next steps -- read that
-first if you're picking this up.
+Status as of 2026-08-06 (third pass): **the entire driver set --
+conn_soc (WMT/STP/BT core), common_detect, btif, and wlan/gen2 (the WiFi
+MAC driver) -- now compiles and links against this tree's 7.0-rc6
+headers, in both the built-in and the modular configuration, and a
+complete `arch/arm64/boot/Image` builds with all of it linked in.**
+mt8163-amazon-biscuit.dtb now compiles too (it never had before), which
+finally gives real `dtc` validation of the consys/wifi DT nodes.
+**Nothing has been boot-tested on real hardware.** This document is the
+handoff for whoever continues. Sections 4b/5/6 (bottom) have the
+up-to-date state, next steps, and honest assessment -- read those first
+if you're picking this up. Sections 3 and 4 are historical and describe
+earlier passes.
 
 ## 1. Hardware/architecture facts established
 
@@ -328,6 +332,10 @@ board). Renamed to `mt8163/` and adapted for real (not just renamed):
 
 ### 4.4 wlan/gen2: partially ported, stops at a real (non-mechanical) wall
 
+**[SUPERSEDED by section 4b -- this wall has since been gone through.
+Kept because the description of what the blockers were is still an
+accurate account of what had to be reconciled.]**
+
 Ran the same compile-and-fix loop on
 `drivers/misc/mediatek/connectivity/wlan/gen2` (`make
 M=drivers/misc/mediatek/connectivity/wlan/gen2 CONFIG_MTK_COMBO_WIFI=m
@@ -378,74 +386,396 @@ understood and correctly re-implemented per callback -- not
 find-replaced. This is genuine driver engineering, not mechanical
 porting, and is where this session's effort budget ran out.
 
+## 4b. Third pass: everything compiles, and the whole tree builds
+
+### 4b.0 Build environment (reproduce this first)
+
+There is no cross-toolchain on `PATH` by default in this sandbox, but a
+working aarch64 GCC 15.3 is already sitting in
+`/home/user/proj/alexa2-rev/cross-bin/` (as
+`aarch64-unknown-linux-gnu-*`). flex/bison (for Kconfig) and openssl
+headers (for `certs/extract-cert`) come from nix. The helper script used
+for every build in this pass is `/home/user/proj/alexa2-rev/build-wifi/mk.sh`:
+
+    #!/usr/bin/env bash
+    SRC=/home/user/proj/alexa2-rev/linux-mtk-biscuit-wifi
+    O=/home/user/proj/alexa2-rev/build-wifi
+    export PATH=/home/user/proj/alexa2-rev/cross-bin:$PATH
+    exec nix-shell -p flex bison openssl pkg-config --run \
+      "make -C $SRC O=$O ARCH=arm64 CROSS_COMPILE=aarch64-unknown-linux-gnu- $*"
+
+Then:
+
+    ./mk.sh mt8163_biscuit_defconfig
+    ./mk.sh -j8
+
+That is verified to go all the way to `arch/arm64/boot/Image` plus
+`arch/arm64/boot/dts/mediatek/mt8163-amazon-biscuit.dtb`.
+`arch/arm64/configs/mt8163_biscuit_defconfig` is new in this pass and is
+exactly the configuration that was tested (`make savedefconfig` of it,
+with the previous session's machine-specific `CONFIG_INITRAMFS_SOURCE`
+absolute path stripped out -- add your own back if you want an embedded
+initramfs).
+
+**Use GCC, not clang.** The previous pass built with clang, which treats
+`-Wincompatible-pointer-types` as a warning. GCC 14+ makes it a hard
+error. That difference is not cosmetic: an ops table whose members have
+the wrong function-pointer types is an ABI mismatch that the kernel will
+happily call into and crash on. Something like fifteen of the errors
+fixed in this pass were invisible under clang.
+
+Two config prerequisites that are easy to get wrong: without
+`CONFIG_NET`/`CONFIG_CFG80211` this driver cannot even be type-checked
+(`struct net_device` has no `ieee80211_ptr` member at all), and
+`CONFIG_WEXT_PRIV` -- which `gl_wext.c` requires for
+`iw_handler_def`'s `.private`/`.private_args` -- is a hidden symbol that
+can only be turned on by a driver `select`ing it, which is one of the
+reasons real Kconfig entries had to be written (4b.2).
+
+### 4b.1 wlan/gen2 now compiles and links
+
+`wlan_gen2.ko` (~600 KB) builds. The cfg80211 wall described in 4.4 was
+worked through callback by callback against this tree's
+`include/net/cfg80211.h`. The interesting ones:
+
+- **Key ops** (`add_key`/`get_key`/`del_key`/`set_default_key`/
+  `set_default_mgmt_key`) and `tdls_mgmt` gained an `int link_id` naming
+  which link of an 802.11be multi-link device is meant (v6.0 MLO
+  rework); -1 for non-MLO. This is single-link 802.11n silicon, so all
+  of them accept and ignore it. Same story for the newer `int radio_idx`
+  on `set_wiphy_params`/`set_tx_power`/`get_tx_power`.
+
+- **`mgmt_frame_register` -> `update_mgmt_frame_registrations`** (v5.8)
+  is the one genuinely semantic change, not a rename. The old callback
+  was an *edge* notification: one call per (frame_type, register vs
+  unregister) transition, handed the full 16-bit frame control value and
+  a bool. The new one is a *level* notification: cfg80211 recomputes the
+  complete set of registered subtypes and hands over
+  `struct mgmt_frame_regs`, whose bitmaps are indexed by
+  `BIT(frame_type >> 4)` -- i.e. by 802.11 subtype, so probe request is
+  BIT(4) and action is BIT(13) -- split into per-interface vs
+  device-global and unicast vs multicast, distinctions the old callback
+  could not express. Both copies (AIS in `gl_cfg80211.c`, P2P in
+  `gl_p2p_cfg80211.c`) now rebuild their two filter bits from
+  `upd->interface_stypes` and only poke the firmware when the recomputed
+  filter actually differs, because unlike the old callback this one is
+  allowed to fire with nothing changed.
+
+- **`WIPHY_FLAG_SUPPORTS_SCHED_SCAN`** was deleted in v4.12 when
+  cfg80211 learned to run several scheduled scans concurrently: the
+  boolean flag became `wiphy->max_sched_scan_reqs`, a count, which
+  `nl80211_start_sched_scan()` now gates on. Set to 1, because
+  `mtk_cfg80211_sched_scan_stop()` ignores the reqid it is handed and
+  cancels "the" scan -- it can only track one.
+
+- **`change_beacon`** takes `struct cfg80211_ap_update` (a superset of
+  `cfg80211_beacon_data`, adding FILS discovery and unsolicited
+  broadcast probe response parameters this driver does not implement)
+  since v6.7; **`stop_ap`** and **`set_bitrate_mask`** gained link_id;
+  **`set_monitor_channel`** gained the `struct net_device *` it applies
+  to.
+
+- **`ndo_select_queue`** lost `accel_priv` (v4.19) and the
+  `select_queue_fallback_t` pointer (v5.2), gaining
+  `struct net_device *sb_dev`. Neither of this driver's two
+  implementations ever called `fallback()` -- they pick the queue purely
+  from the 802.1d priority derived from the DSCP bits -- so nothing was
+  lost.
+
+- **`cfg80211_roam_info`**'s flat `.bss`/`.bssid`/`.channel` moved into a
+  per-link array. For a non-MLO roam the contract is `valid_links == 0`
+  and the new AP in `links[0]`, which is what `cfg80211_roamed()` reads.
+
+- `struct station_parameters`' `supported_rates`/`ht_capa`/`vht_capa`
+  moved into the nested `link_sta_params`.
+
+Non-cfg80211 drift in the same driver: `sched_clock()` moved header,
+`netif_rx_ni()` removed (v5.18 -- `netif_rx()` handles process context
+itself now), `struct timespec`/`get_monotonic_boottime()` ->
+`timespec64`/`ktime_get_boottime_ts64()`, `proc_create()` wants
+`struct proc_ops`, `access_ok()` lost its VERIFY_READ/WRITE argument,
+`init_timer()`+`->data` -> `timer_setup()`+`timer_container_of()`,
+`del_timer_sync()` -> `timer_delete_sync()`, `class_create()` lost
+`THIS_MODULE`, `dma_zalloc_coherent()` -> `dma_alloc_coherent()`,
+`platform_driver::remove` returns void, `show_stack()` gained a loglvl
+argument (and is not exported to modules at all -- `sched_show_task()`
+is the exported equivalent), `sched_setscheduler()` unexported in favour
+of `sched_set_fifo()`/`sched_set_normal()`.
+
+**The firmware loader was rewritten on `request_firmware()`.** The old
+`kalFirmwareOpen/Load/Size/Close` chain hand-rolled `filp_open()` +
+`vfs_read()` of `/etc/firmware/WIFI_RAM_CODE_<chipid>` wrapped in
+`set_fs(get_ds())` (gone since v5.10), a direct poke at
+`filp->f_op->llseek` to get the file size, and -- worst -- temporarily
+setting the *calling task's* fsuid/fsgid to 0 by taking
+`get_current_cred()`, casting away the const and writing through it.
+That is not a scoped credential override; it mutates the live cred the
+calling process is running under, and this path is reachable from
+process context. All of it is replaced by ~40 lines on
+`request_firmware()`.
+
+**Consequence for whoever sources the blob** (still open, see section 5):
+it is now looked up on the standard firmware search path
+(`/lib/firmware`, `/lib/firmware/updates`, `CONFIG_EXTRA_FIRMWARE_DIR`,
+...), *not* at the literal path `/etc/firmware`. The file name is
+unchanged and on this SoC resolves to **`WIFI_RAM_CODE_8163`**
+(`CFG_FW_FILENAME` + the chip id `glGetChipInfo()` formats from
+`MTK_CHIP_ID_8163`).
+
+### 4b.2 Real Kconfig/Makefile integration (`make` now finds it by itself)
+
+Previously the driver could only be built with `make M=<dir>` and config
+symbols supplied on the command line. Now:
+
+- `drivers/misc/mediatek/Kconfig` -- `MTK_CONNECTIVITY` menu with
+  `MTK_COMBO`, `MTK_COMBO_BT`, `MTK_COMBO_WIFI`, `MTK_COMBO_CHIP`
+  (string, default `"CONSYS_8163"`, the value Amazon's own
+  `biscuit_defconfig` uses), `MTK_WAPI_SUPPORT`, and a `source` of
+  `btif/Kconfig`. `MTK_COMBO_WIFI` depends on `CFG80211` and selects
+  `WIRELESS_EXT`/`WEXT_PRIV`/`CFG80211_WEXT`; `MTK_COMBO` selects
+  `ZLIB_DEFLATE` (stp_dbg.c compresses coredumps) and `MTK_COMBO_BT`
+  depends on `BT`.
+- `drivers/misc/mediatek/Makefile` and
+  `drivers/misc/mediatek/connectivity/Makefile`, hooked in from
+  `drivers/misc/{Kconfig,Makefile}`.
+
+The `connectivity/Makefile` deserves a note, because its *absence* was
+causing silent misconfiguration rather than a visible failure. frank-w's
+tree ships the leaf driver directories but not this parent Makefile, and
+three `-D` flags that the code branches on were therefore never defined:
+
+- `MTK_WCN_WMT_STP_EXP_SYMBOL_ABSTRACT` selects the function-pointer
+  indirection layer in `common_detect/wmt_stp_exp.c`. That indirection
+  is the entire point of common_detect: it loads first, detects the
+  chip, and then dispatches into whichever transport driver registered
+  itself, instead of hard-linking against one. Undefined, essentially
+  all of `wmt_stp_exp.h` (lines 50-616) vanishes and `wmt_stp_exp.c`
+  compiles to nothing.
+  **This is the root cause of the `mtk_wcn_wmt_ic_info_get()`
+  "declaration mysteriously never visible" puzzle from section 4.2 and
+  next-step 7 of the old section 5** -- the declaration was inside that
+  `#ifdef` the whole time. The `extern` workaround at the call site has
+  been removed.
+- `MTK_WCN_REMOVE_KERNEL_MODULE` (conn_soc) and `MTK_WCN_BUILT_IN_DRIVER`
+  (wlan/gen2) switch those drivers from `module_init()`/`module_exit()`
+  to plain entry points (`mtk_wcn_soc_common_drv_init()`,
+  `mtk_wcn_stpbt_drv_init()`, `mtk_wcn_wmt_wifi_init()`,
+  `mtk_wcn_wlan_gen2_init()`) that common_detect's `drv_init/`
+  dispatcher calls in order once the chip is identified.
+- `WMT_IDC_SUPPORT=0` (no LTE modem here) and `CONFIG_MTK_WCN_ARM64`.
+
+All modelled on
+`amazon-biscuit-kernel/drivers/misc/mediatek/connectivity/Makefile`,
+which is the authority for CONSYS_8163.
+
+A related trap, hit three separate times: **an `obj-y` object in a
+subtree reached through `obj-m` is silently dropped by kbuild.** That is
+why `btif` had in fact never been compiled by this port at all (contrary
+to what section 4.1 claims), and why common_detect's
+`mtk_wcn_stub_alps.o`/`wmt_stp_exp.o`/`wmt_gpio.o` produced a pile of
+undefined symbols in the modular build. Both fixed by gating on the
+config symbol / folding into the module's object list.
+
+And another: **Kconfig string values now reach Makefiles unquoted.**
+`include/config/auto.conf` used to write `CONFIG_FOO="bar"` and now
+writes `CONFIG_FOO=bar`, so every `$(filter "CONSYS_%",$(CONFIG_MTK_COMBO_CHIP))`
+test in common_detect silently matched nothing -- which is how the
+SoC-vs-discrete-chip selection this whole driver is built around had
+quietly turned itself off.
+
+### 4b.3 Both configurations verified
+
+- **built-in** (`CONFIG_MTK_COMBO=y` etc., what Amazon ships and what
+  `mt8163_biscuit_defconfig` selects): full `make` completes; `nm
+  vmlinux` shows `mtk_wcn_soc_common_drv_init`, `mtk_wcn_stpbt_drv_init`,
+  `mtk_wcn_wlan_gen2_init`, `mtk_wcn_btif_write`, `mtk_wmt_probe`,
+  `HifAhbProbe`, `wlanProbe`.
+- **modular** (`=m`): `btif.ko`, `mtk_wmt_detect.ko`,
+  `mtk_stp_wmt_soc.ko`, `mtk_stp_bt_soc.ko`, `mtk_wmt_wifi_soc.ko`,
+  `wlan_gen2.ko`, no unresolved symbols, no dependency cycle.
+
+Built-in is the one to trust: the `drv_init` dispatcher design means
+common_detect calls into conn_soc while conn_soc calls back into
+common_detect's export layer, and Amazon ships `=y` for exactly that
+reason. The modular build is convenient for iteration (rebuilding one
+`.ko` beats rebuilding vmlinux) but is the less-travelled path.
+
+### 4b.4 Real bugs found and fixed along the way
+
+Not API drift -- actual defects, mostly surfaced by building with a
+modern strict compiler for the first time:
+
+1. **Unbounded `copy_from_user()` from a world-writable procfs file.**
+   `procDbgLevelWrite()` and `procTxDoneCfgWrite()` in `gl_proc.c` sized
+   their copy as `kalStrLen(aucProcBuf)` (the length of whatever a
+   previous *reader* left in the shared static buffer) then
+   `if (u4CopySize >= count + 1) u4CopySize = count;`. `count` is
+   userspace-controlled, so `count + 1` wraps to 0 at `SIZE_MAX`, the
+   test always passes, and the copy size becomes `SIZE_MAX` -- into a
+   1536-byte static array, from a 0664 procfs file. GCC's compile-time
+   `check_copy_size()` proved it (`__bad_copy_to`). The correct
+   `sizeof()` was still there, commented out next to the `strlen` that
+   replaced it.
+2. **`const PUINT8` does not mean what its author thought.** `PUINT8` is
+   a typedef for `UINT8 *`, so `const PUINT8` is `UINT8 * const` -- a
+   const *pointer* to mutable data -- not a pointer to const data. Both
+   `mtk_bt_hci_receive()` and common_detect's `MTK_WCN_STP_IF_RX`
+   typedef had it, and disagreed with conn_soc's own `stp_exp.h`.
+3. **Section mismatch on `platform_driver::remove`** in the AHB HIF:
+   declared `__exit` and referenced via `__exit_p()` from a `.data` ops
+   table. `->remove` runs on *any* device unbind, not just module
+   unload, so in a built-in build (where `.exit.text` is discarded) that
+   is a dangling function pointer.
+4. **Two timestamp bugs in btif**, found by porting `struct timeval` by
+   hand rather than mechanically: the "BTIF Tx IRQ happened N times"
+   message printed `end_timer.tv_usec` twice and never printed
+   `end_timer.tv_sec`, and `mtk_btif_rxd_be_blocked_by_timer()`
+   open-coded a borrow when subtracting timestamps and got the borrow
+   branch wrong (added where it should have subtracted), inflating the
+   reported gap whenever the microsecond field wrapped. Replaced with
+   `timespec64_sub()`.
+5. **The AGPS notify path was never guarded.**
+   `kalIndicateAgpsNotify()` calls `cfg80211_testmode_alloc_event_skb()`
+   / `cfg80211_testmode_event()`, which have always been
+   `CONFIG_NL80211_TESTMODE`-only. It only ever built because MediaTek's
+   own configs always enabled testmode.
+6. Two **pre-existing blockers in this tree, unrelated to the WiFi
+   work**, but in the way of any full build, so fixed here:
+   `mt8163.dtsi` used `THERMAL_NO_LIMIT` without including
+   `<dt-bindings/thermal/thermal.h>` (so the biscuit DTB had never been
+   compiled at all), and `drivers/clk/mediatek/clk-mt8163-apmixedsys.c`
+   passed a `struct device_node *` to `mtk_clk_register_plls()`, which
+   takes a `struct device *`.
+
+### 4b.5 Bonus: the DT wiring is now dtc-validated
+
+Because the DTB compiles for the first time, the consys node added in an
+earlier pass has finally been checked by `dtc` rather than only by the C
+preprocessor. `dtc -I dtb -O dts` on
+`mt8163-amazon-biscuit.dtb` shows the node with all three `reg` windows
+(mcu / AP_RGU / topckgen), `resets = <&watchdog 12>` (=
+`MT8163_TOPRGU_CONN_MCU_RST`), `reset-names = "connsys"`, the four
+`vcn*-supply` phandles and the `wifi_reset_init` pinctrl group, all
+resolving. That closes the "no dtc available, only preprocessor-checked"
+caveat from section 3 -- though it still says nothing about whether
+those values are *correct* for the hardware, only that they are
+well-formed and their phandles resolve.
+
 ## 5. Concrete next steps, in order
 
-1. **Boot-test what's here.** Nothing in this port has touched real
-   hardware yet. Get `mt8163-amazon-biscuit.dtb` building with a real
-   `dtc` (not available in this sandbox -- only got a C-preprocessor
-   syntax check, not full semantic/binding validation) and boot it with
-   `mtk_stp_wmt_soc.ko` loaded (needs a full kernel build first, unlike
-   the compile-only testing done so far) to see whether `mtk_wmt_probe()`
-   gets past `devm_reset_control_get()` and the regulator gets calls, and
-   whether CONSYS power-on actually happens. This alone would validate
-   or invalidate several of the unverified items in section 4.3.
-2. **wlan/gen2's cfg80211_ops surface** (section 4.4) is the concrete
-   next blocker. Go through each mismatch in `os/linux/gl_init.c`
-   one at a time against a current `include/net/cfg80211.h` in this
-   tree -- each one needs its own small research pass (what changed,
-   why, what the driver's existing MLME code actually needs from the
-   callback) rather than a bulk mechanical fix.
-3. **Wire real Kconfig entries** for `CONFIG_MTK_COMBO`/
-   `CONFIG_MTK_COMBO_BT`/`CONFIG_MTK_COMBO_WIFI` (currently only passed
-   via `make` command line for compile-testing, not real Kconfig/
-   menuconfig options) so this can go into a normal defconfig.
-4. **Verify the raw-PMIC-regmap question** from section 4.3 (try
-   without it first; if VCN28/33 power sequencing works fine through the
-   regulator_*() calls alone, delete the dead pwrap path entirely rather
-   than carry the NULL-guards forever).
-5. **BT**: decide whether to keep MediaTek's userspace-attach chardev
-   model (`/dev/stpbt` + a small `mtkbt`-alike userspace daemon calling
-   `hci_uart`-style ioctls -- the actual BTIF layer for this now exists
-   in-tree, see section 4.1) or invest in writing a proper in-kernel
-   `hci_register_dev()`-based driver on top of the STP core. The
-   userspace-attach model is less work and BTIF now compiles; that's
-   probably the pragmatic path to a working BT stack sooner, even if a
-   native `hci_dev` driver would be cleaner long-term.
-6. **No firmware blob has been sourced yet.** MT6625 needs a ROM
-   patch/EEPROM file at minimum (WMT downloads it during consys init) --
-   check `amazon-biscuit-kernel`'s vendor partition / initramfs, or Fire
-   OS `/vendor/firmware` equivalent, for `WIFI_RAM_CODE_MT6625.bin` or
-   similarly named blobs; without it consys init will hang even once
-   everything above compiles, probes, and resets cleanly.
-7. If you want to chase the `mtk_wcn_wmt_ic_info_get()` header-visibility
-   mystery from section 4.2 down for its own sake (not blocking, just
-   unsatisfying), the reproduction is: preprocess
-   `linux/pub/stp_chrdev_bt.c` from within
-   `drivers/misc/mediatek/connectivity/common/conn_soc/` with the exact
-   flags `make V=1` shows for that file, `-E` instead of `-c -o ...`,
-   and grep the output for `mtk_wcn_wmt_hwver_get` (shows up, declared
-   right before `ic_info_get` in the source) vs `mtk_wcn_wmt_ic_info_get`
-   (doesn't).
+Everything below is now genuinely gated on hardware, not on more
+compiling. Rewritten for the third pass; the old list is superseded.
+
+1. **Source the firmware blob.** Nothing will come up without it, and
+   this is now the single biggest unknown. WMT downloads a ROM
+   patch/firmware image into CONSYS during init; the driver asks
+   `request_firmware()` for **`WIFI_RAM_CODE_8163`**, so it needs to
+   land in `/lib/firmware/` (see 4b.1 -- the path changed from the old
+   hardcoded `/etc/firmware`). Look in the device's own vendor
+   partition, Fire OS `/vendor/firmware` or `/etc/firmware`, or
+   `amazon-biscuit-kernel`'s companion filesystem images. There may also
+   be a BT patch blob and an NVRAM/EEPROM calibration file
+   (`WIFI_CUSTOM_parameter`-ish) -- the `CFG_SUPPORT_NVRAM` path in
+   `os/linux/platform.c` reads one, and MAC address + TX power
+   calibration come from it, so WiFi may associate but perform badly (or
+   come up with a random MAC) without it.
+
+2. **Boot-test.** `make ARCH=arm64 mt8163_biscuit_defconfig && make`
+   gives an Image with everything built in. The first questions to
+   answer, in order:
+   - does `mtk_wmt_probe()` (conn_soc, `mt8163/mtk_wcn_consys_hw.c`)
+     bind to the `consys@18070000` node at all;
+   - does `devm_reset_control_get(dev, "connsys")` succeed -- i.e. does
+     this tree's TOPRGU/watchdog reset controller actually implement bit
+     12 the way the DT wiring assumes (see 4.3, still unverified against
+     silicon);
+   - do the four `regulator_enable()` calls on
+     vcn18/vcn28/vcn33_bt/vcn33_wifi succeed;
+   - does CONSYS come out of reset and does the firmware download
+     handshake complete.
+   Expect to need `CONFIG_DYNAMIC_DEBUG` and the driver's own
+   `/proc/driver/wmt_dbg` level knobs.
+
+3. **Resolve the raw-PMIC-regmap question** (section 4.3). The
+   `pwrap_node_to_regmap()` path pokes MT6323 registers 0x41C/0x416/0x418
+   directly and is currently stubbed out with `pmic_regmap == NULL` and
+   every call site guarded. If step 2 shows CONSYS powering up fine
+   through the `regulator_*()` calls alone, delete the dead path rather
+   than carrying the NULL-guards. If it does not, that is the first
+   place to look.
+
+4. **BT bring-up.** `/dev/stpbt` should appear once conn_soc probes.
+   Decide between MediaTek's userspace-attach model (a small
+   `mtkbt`/`hciattach`-alike opening `/dev/stpbt`) and finishing the
+   in-kernel `hci_register_dev()` path -- note that path *does* exist in
+   `stp_chrdev_bt.c` behind `#ifdef MTK_BT_HCI` and now compiles
+   (`MTK_COMBO_BT` depends on `BT` for that reason), it is just untested
+   and its `mtk_bt_hci_*` callbacks are visibly half-finished
+   (`mtk_bt_hci_flush()` is a `pr_err("todo")` stub). The userspace
+   model is less work and is what shipped on the device.
+
+5. **WiFi bring-up.** `wlan0` should register once `HifAhbProbe()` binds
+   to `wifi@180f0000`. Beyond "does it associate", two things are known
+   to be feature-gaps rather than bugs, and are worth knowing before
+   chasing them: `CONFIG_NL80211_TESTMODE` is off in the tested
+   defconfig, so MediaTek's testmode/AGPS-assist channel compiles out
+   (see 4b.4 item 5); and the P2P/Wi-Fi-Direct path is compiled but has
+   had zero exercise.
+
+6. **Then, and only then, worry about code quality.** The build is
+   currently noisy with `-Wmissing-prototypes` and similar; none of it
+   is load-bearing and cleaning it up before the thing works would be
+   backwards.
 
 ## 6. Honest assessment
 
-Real, verifiable progress since the first pass: the WMT/STP/BT core
-(`conn_soc`) compiles and links into three `.ko` files against this
-tree's 6.x kernel headers -- something no prior art (the 2017 BPI
-thread, frank-w's own later branches) is documented as having achieved
-past kernel 6.0. The WiFi MAC driver (`wlan/gen2`) is roughly half
-compiling, with a real, well-scoped, well-documented next blocker
-(cfg80211 ops surface drift) rather than a vague "doesn't work."
+What is verified, first-hand, in this pass:
 
-That said, be honest with whoever reads this: **nothing has been
-boot-tested.** Everything above is "compiles cleanly," which is a real
-and meaningful milestone (especially given nothing like this has
-compiled on any post-4.14 kernel before, per the available prior art),
-but it is not the same as "works." The reset-controller wiring, the
-raw-PMIC-regmap question, and the whole CONSYS firmware-download/WMT
-handshake sequence are all unverified against real silicon. The
-honest confidence ordering is: DT syntax (high, but not dtc-validated) >
-conn_soc compiles (high) > conn_soc's specific register/reset choices
-(medium -- reasoned from source comments and DT bindings, not tested) >
-wlan/gen2 compiles (partial, real blocker documented) > anything
-actually working on hardware (zero -- untested).
+- `make ARCH=arm64 CROSS_COMPILE=aarch64-unknown-linux-gnu-
+  mt8163_biscuit_defconfig && make` exits 0 and produces
+  `arch/arm64/boot/Image` (~14 MB) and
+  `arch/arm64/boot/dts/mediatek/mt8163-amazon-biscuit.dtb`.
+- `nm vmlinux` shows the driver's probe and init entry points actually
+  linked in, so it is not being silently dropped.
+- The same tree also builds cleanly with the drivers as modules, giving
+  six `.ko` files with no unresolved symbols.
+- `dtc -I dtb` on the produced DTB shows the consys node with its reg
+  windows, reset, regulators and pinctrl resolving.
+
+What is **not** verified, and should not be represented as working:
+
+- **Nothing has run on hardware. Not once.** No probe, no power-on
+  sequence, no firmware download, no interface. "Builds" is a real
+  milestone -- as far as the available prior art shows, no post-4.14
+  kernel has ever built this chip's driver stack, let alone a 7.0-rc6
+  one -- but it is a long way from "works".
+- The reset-controller wiring (bit 12 of TOPRGU) is reasoned from a
+  source comment cross-referenced against
+  `dt-bindings/reset/mediatek,mt8163-wdt.h`. It is a real match, not a
+  guess, but it is not a measurement.
+- The raw MT6323 PMIC pokes are stubbed out entirely. Whether they were
+  load-bearing or redundant with the regulator calls is unknown.
+- No firmware blob has been located, so the WMT init path has never been
+  exercised even in theory.
+- The `mt8127` AHB PDMA backend is reused for MT8163 on the reasoning
+  that it contains nothing MT8127-specific. That reasoning is from
+  reading the code, not from a datasheet.
+- Every cfg80211 callback whose new `link_id`/`radio_idx` argument is
+  ignored is *correct for single-link, single-radio hardware*, which
+  this is -- but that is an argument, not a test.
+- The `request_firmware()` rewrite changes where the blob is looked for.
+  That is the right call, but it means an old-style `/etc/firmware`
+  layout copied off the device will not be found.
+
+Confidence ordering, updated:
+
+    builds (high, directly verified)
+      > DT is well-formed (high, now dtc-validated)
+        > module/symbol wiring is sane (high, both configs link)
+          > the API semantics reconciliations are right (medium-high --
+            reasoned per callback against this tree's headers, several
+            real bugs found in the process, but untested)
+            > the register/reset/power choices are right (medium --
+              cross-referenced, not measured)
+              > anything actually works on silicon (unknown, zero
+                evidence either way)
