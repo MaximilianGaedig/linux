@@ -45,6 +45,18 @@
 			reg = <0 0x43000000 0 0x30000>;
 			no-map;
 		};
+
+		/*
+		 * WIFI/BT/GPS (MT6625L combo, integrated CONSYS subsystem)
+		 * firmware/ROM-patch/coredump scratch region. Size matches
+		 * Amazon's downstream biscuit.dtsi.
+		 */
+		consys_reserved_memory: consys-reserve-memory {
+			compatible = "mediatek,consys-reserve-memory";
+			no-map;
+			size = <0 0x200000>;
+			alignment = <0 0x200000>;
+		};
 	};
 
 	vgpu_1v15: regulator-vgpu {
@@ -227,4 +239,35 @@
 				 <MT8163_PIN_80_UTXD0__FUNC_UTXD0>;
 		};
 	};
+
+	/*
+	 * MT6625L combo WIFI/BT/GPS reset/WMT handshake lines. These four
+	 * pins (WB_RSTB/WB_SCLK/WB_SDATA/WB_SEN) are the same on every
+	 * biscuit-family board per Amazon's downstream biscuit.dtsi.
+	 */
+	wifi_reset_init: wifireset-pins {
+		pins {
+			pinmux = <MT8163_PIN_60_WB_RSTB__FUNC_WB_RSTB>,
+				 <MT8163_PIN_63_WB_SCLK__FUNC_WB_SCLK>,
+				 <MT8163_PIN_64_WB_SDATA__FUNC_WB_SDATA>,
+				 <MT8163_PIN_65_WB_SEN__FUNC_WB_SEN>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
+};
+
+&consys {
+	pinctrl-names = "default", "wifi_reset_init";
+	pinctrl-0 = <&wifi_reset_init>;
+	pinctrl-1 = <&wifi_reset_init>;
+	vcn18-supply = <&mt6323_vcn18_reg>;
+	vcn28-supply = <&mt6323_vcn28_reg>;
+	vcn33_bt-supply = <&mt6323_vcn33_bt_reg>;
+	vcn33_wifi-supply = <&mt6323_vcn33_wifi_reg>;
+	status = "okay";
+};
+
+&wifi {
+	status = "okay";
 };
