@@ -391,6 +391,19 @@
 			interrupts = <GIC_SPI 237 IRQ_TYPE_LEVEL_LOW>,  /* BGF_EINT */
 				     <GIC_SPI 236 IRQ_TYPE_LEVEL_LOW>;  /* WDT_EINT */
 			memory-region = <&consys_reserved_memory>;
+			/*
+			 * The conn_soc WMT driver's mtk_wmt_probe() does
+			 * devm_reset_control_get(&pdev->dev, "connsys") and
+			 * calls reset_control_reset() on it during the
+			 * CONSYS CPU power-on sequence (asserts bit 12 of
+			 * TOPRGU's 0x10007018, per the driver's own comment
+			 * -- "[12]=1'b1 ... assert CONNSYS CPU SW reset").
+			 * That matches TOPRGU_CONN_MCU_RST (=12) exactly, so
+			 * this is a high-confidence (not yet hardware-tested)
+			 * match rather than a guess.
+			 */
+			resets = <&watchdog MT8163_TOPRGU_CONN_MCU_RST>;
+			reset-names = "connsys";
 			status = "disabled";
 		};
 
