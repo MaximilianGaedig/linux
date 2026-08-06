@@ -155,7 +155,7 @@ mtk_p2p_cfg80211func_channel_format_switch(IN struct ieee80211_channel *channel,
 */
 
 int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
-			     struct net_device *ndev,
+			     struct net_device *ndev, int link_id,
 			     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -214,7 +214,7 @@ int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
 }
 
 int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
-			     struct net_device *ndev,
+			     struct net_device *ndev, int link_id,
 			     u8 key_index,
 			     bool pairwise,
 			     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
@@ -232,7 +232,8 @@ int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
 }
 
 int mtk_p2p_cfg80211_del_key(struct wiphy *wiphy,
-			     struct net_device *ndev, u8 key_index, bool pairwise, const u8 *mac_addr)
+			     struct net_device *ndev, int link_id,
+			     u8 key_index, bool pairwise, const u8 *mac_addr)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	PARAM_REMOVE_KEY_T prRemoveKey;
@@ -267,7 +268,8 @@ int mtk_p2p_cfg80211_del_key(struct wiphy *wiphy,
 
 int
 mtk_p2p_cfg80211_set_default_key(struct wiphy *wiphy,
-				 struct net_device *netdev, u8 key_index, bool unicast, bool multicast)
+				 struct net_device *netdev, int link_id,
+				 u8 key_index, bool unicast, bool multicast)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 
@@ -449,7 +451,7 @@ int mtk_p2p_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *req
 	return i4RetRslt;
 }				/* mtk_p2p_cfg80211_scan */
 
-int mtk_p2p_cfg80211_set_wiphy_params(struct wiphy *wiphy, u32 changed)
+int mtk_p2p_cfg80211_set_wiphy_params(struct wiphy *wiphy, int radio_idx, u32 changed)
 {
 	INT_32 i4Rslt = -EINVAL;
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -519,7 +521,7 @@ int mtk_p2p_cfg80211_leave_ibss(struct wiphy *wiphy, struct net_device *dev)
 }
 
 int mtk_p2p_cfg80211_set_txpower(struct wiphy *wiphy,
-				 struct wireless_dev *wdev,
+				 struct wireless_dev *wdev, int radio_idx,
 				 enum nl80211_tx_power_setting type, int mbm)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -534,8 +536,8 @@ int mtk_p2p_cfg80211_set_txpower(struct wiphy *wiphy,
 }
 
 int mtk_p2p_cfg80211_get_txpower(struct wiphy *wiphy,
-				 struct wireless_dev *wdev,
-				 int *dbm)
+				 struct wireless_dev *wdev, int radio_idx,
+				 unsigned int link_id, int *dbm)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 
@@ -594,7 +596,7 @@ int mtk_p2p_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *dev, struc
 		prGlueInfo = *((P_GLUE_INFO_T *) wiphy_priv(wiphy));
 
 #if 1
-		mtk_p2p_cfg80211_set_channel(wiphy, chandef);
+		mtk_p2p_cfg80211_set_channel(wiphy, dev, chandef);
 #else
 		prGlueInfo->prAdapter->rWifiVar.prP2PConnSettings->ucOperatingChnl =
 		    (chandef->chan->center_freq - 2407) / 5;
@@ -727,8 +729,16 @@ int mtk_p2p_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *dev, struc
 	return i4Rslt;
 }				/* mtk_p2p_cfg80211_start_ap */
 
-int mtk_p2p_cfg80211_change_beacon(struct wiphy *wiphy, struct net_device *dev, struct cfg80211_beacon_data *info)
+/*
+ * ->change_beacon now takes a struct cfg80211_ap_update instead of a bare
+ * struct cfg80211_beacon_data (v6.7).  cfg80211_ap_update is a superset: the
+ * beacon data plus the FILS discovery / unsolicited broadcast probe response
+ * parameters, which this driver does not implement.  Unwrap and carry on.
+ */
+int mtk_p2p_cfg80211_change_beacon(struct wiphy *wiphy, struct net_device *dev, struct cfg80211_ap_update *upd)
 {
+	struct cfg80211_beacon_data *info = upd ? &upd->beacon : NULL;
+
 	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T) NULL;
 	INT_32 i4Rslt = -EINVAL;
 	P_MSG_P2P_BEACON_UPDATE_T prP2pBcnUpdateMsg = (P_MSG_P2P_BEACON_UPDATE_T) NULL;
@@ -838,7 +848,7 @@ int mtk_p2p_cfg80211_change_beacon(struct wiphy *wiphy, struct net_device *dev, 
 	return i4Rslt;
 }				/* mtk_p2p_cfg80211_change_beacon */
 
-int mtk_p2p_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *dev)
+int mtk_p2p_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *dev, unsigned int link_id)
 {
 	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T) NULL;
 	INT_32 i4Rslt = -EINVAL;
@@ -1321,7 +1331,12 @@ mtk_p2p_cfg80211_change_iface(IN struct wiphy *wiphy,
 
 }				/* mtk_p2p_cfg80211_change_iface */
 
-int mtk_p2p_cfg80211_set_channel(IN struct wiphy *wiphy,
+/*
+ * ->set_monitor_channel gained the struct net_device * it operates on (v6.9),
+ * so that a wiphy with more than one monitor interface can be told which one.
+ * There is only ever one here, so it is unused.
+ */
+int mtk_p2p_cfg80211_set_channel(IN struct wiphy *wiphy, IN struct net_device *dev,
 				 struct cfg80211_chan_def *chandef)
 {
 	INT_32 i4Rslt = -EINVAL;
@@ -1350,6 +1365,7 @@ int mtk_p2p_cfg80211_set_channel(IN struct wiphy *wiphy,
 int
 mtk_p2p_cfg80211_set_bitrate_mask(IN struct wiphy *wiphy,
 				  IN struct net_device *dev,
+				  IN unsigned int link_id,
 				  IN const u8 *peer, IN const struct cfg80211_bitrate_mask *mask)
 {
 	INT_32 i4Rslt = -EINVAL;
@@ -1371,82 +1387,60 @@ mtk_p2p_cfg80211_set_bitrate_mask(IN struct wiphy *wiphy,
 	return i4Rslt;
 }				/* mtk_p2p_cfg80211_set_bitrate_mask */
 
-void mtk_p2p_cfg80211_mgmt_frame_register(IN struct wiphy *wiphy,
-					  struct wireless_dev *wdev,
-					  IN u16 frame_type, IN bool reg)
+/*----------------------------------------------------------------------------*/
+/*!
+ * @brief cfg80211 handler: management frame registrations changed (P2P netdev).
+ *
+ * Replaces the removed .mgmt_frame_register (v5.8).  See the AIS-side twin,
+ * mtk_cfg80211_update_mgmt_frame_registrations() in gl_cfg80211.c, for the
+ * full explanation of the edge-notification -> level-notification change and
+ * of the BIT(frame_type >> 4) subtype encoding used by upd->interface_stypes.
+ *
+ * The P2P path keeps its own filter word (prP2PInfo->u4OsMgmtFrameFilter) and
+ * its own main-thread wakeup flag (GLUE_FLAG_FRAME_FILTER_BIT rather than
+ * GLUE_FLAG_FRAME_FILTER_AIS_BIT), so it stays a separate callback rather
+ * than sharing the AIS one.
+ */
+/*----------------------------------------------------------------------------*/
+void mtk_p2p_cfg80211_update_mgmt_frame_registrations(IN struct wiphy *wiphy,
+						      IN struct wireless_dev *wdev,
+						      IN struct mgmt_frame_regs *upd)
 {
-#if 0
-	P_MSG_P2P_MGMT_FRAME_REGISTER_T prMgmtFrameRegister = (P_MSG_P2P_MGMT_FRAME_REGISTER_T) NULL;
-#endif
 	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T) NULL;
+	UINT_32 u4NewFilter;
 
-	do {
-		if ((wiphy == NULL) || (wdev == NULL))
-			break;
+	if ((wiphy == NULL) || (wdev == NULL) || (upd == NULL))
+		return;
 
-		DBGLOG(P2P, TRACE, "mtk_p2p_cfg80211_mgmt_frame_register\n");
+	prGlueInfo = *((P_GLUE_INFO_T *) wiphy_priv(wiphy));
+	if ((prGlueInfo == NULL) || (prGlueInfo->prP2PInfo == NULL))
+		return;
 
-		prGlueInfo = *((P_GLUE_INFO_T *) wiphy_priv(wiphy));
+	u4NewFilter = prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter &
+	    ~(PARAM_PACKET_FILTER_PROBE_REQ | PARAM_PACKET_FILTER_ACTION_FRAME);
 
-		switch (frame_type) {
-		case MAC_FRAME_PROBE_REQ:
-			if (reg) {
-				prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter |= PARAM_PACKET_FILTER_PROBE_REQ;
-				DBGLOG(P2P, TRACE, "Open packet filer probe request\n");
-			} else {
-				prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter &= ~PARAM_PACKET_FILTER_PROBE_REQ;
-				DBGLOG(P2P, TRACE, "Close packet filer probe request\n");
-			}
-			break;
-		case MAC_FRAME_ACTION:
-			if (reg) {
-				prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter |= PARAM_PACKET_FILTER_ACTION_FRAME;
-				DBGLOG(P2P, TRACE, "Open packet filer action frame.\n");
-			} else {
-				prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter &= ~PARAM_PACKET_FILTER_ACTION_FRAME;
-				DBGLOG(P2P, TRACE, "Close packet filer action frame.\n");
-			}
-			break;
-		default:
-			DBGLOG(P2P, ERROR, "Ask frog to add code for mgmt:%x\n", frame_type);
-			break;
-		}
+	if (upd->interface_stypes & BIT(MAC_FRAME_PROBE_REQ >> 4))
+		u4NewFilter |= PARAM_PACKET_FILTER_PROBE_REQ;
 
-		if ((prGlueInfo->prAdapter != NULL) && (prGlueInfo->prAdapter->fgIsP2PRegistered == TRUE)) {
+	if (upd->interface_stypes & BIT(MAC_FRAME_ACTION >> 4))
+		u4NewFilter |= PARAM_PACKET_FILTER_ACTION_FRAME;
 
-			/* prGlueInfo->u4Flag |= GLUE_FLAG_FRAME_FILTER; */
-			set_bit(GLUE_FLAG_FRAME_FILTER_BIT, &prGlueInfo->ulFlag);
+	DBGLOG(P2P, TRACE, "%s: stypes if=0x%08x global=0x%08x, filter 0x%08x -> 0x%08x\n",
+			   __func__, upd->interface_stypes, upd->global_stypes,
+			   prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter, u4NewFilter);
 
-			/* wake up main thread */
-			wake_up_interruptible(&prGlueInfo->waitq);
+	if (u4NewFilter == prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter)
+		return;
 
-			if (in_interrupt())
-				DBGLOG(P2P, TRACE, "It is in interrupt level\n");
-		}
-#if 0
+	prGlueInfo->prP2PInfo->u4OsMgmtFrameFilter = u4NewFilter;
 
-		prMgmtFrameRegister = (P_MSG_P2P_MGMT_FRAME_REGISTER_T) cnmMemAlloc(prGlueInfo->prAdapter,
-										    RAM_TYPE_MSG,
-										    sizeof
-										    (MSG_P2P_MGMT_FRAME_REGISTER_T));
+	if ((prGlueInfo->prAdapter != NULL) && (prGlueInfo->prAdapter->fgIsP2PRegistered == TRUE)) {
+		set_bit(GLUE_FLAG_FRAME_FILTER_BIT, &prGlueInfo->ulFlag);
 
-		if (prMgmtFrameRegister == NULL) {
-			ASSERT(FALSE);
-			break;
-		}
-
-		prMgmtFrameRegister->rMsgHdr.eMsgId = MID_MNY_P2P_MGMT_FRAME_REGISTER;
-
-		prMgmtFrameRegister->u2FrameType = frame_type;
-		prMgmtFrameRegister->fgIsRegister = reg;
-
-		mboxSendMsg(prGlueInfo->prAdapter, MBOX_ID_0, (P_MSG_HDR_T) prMgmtFrameRegister, MSG_SEND_METHOD_BUF);
-
-#endif
-
-	} while (FALSE);
-
-}				/* mtk_p2p_cfg80211_mgmt_frame_register */
+		/* wake up main thread */
+		wake_up_interruptible(&prGlueInfo->waitq);
+	}
+}				/* mtk_p2p_cfg80211_update_mgmt_frame_registrations */
 
 BOOLEAN
 mtk_p2p_cfg80211func_channel_format_switch(IN struct ieee80211_channel *channel,

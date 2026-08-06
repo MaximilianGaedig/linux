@@ -615,7 +615,7 @@ static struct cfg80211_ops mtk_p2p_ops = {
 	.del_station = mtk_p2p_cfg80211_del_station,
 	.set_monitor_channel = mtk_p2p_cfg80211_set_channel,
 	.set_bitrate_mask = mtk_p2p_cfg80211_set_bitrate_mask,
-	.mgmt_frame_register = mtk_p2p_cfg80211_mgmt_frame_register,
+	.update_mgmt_frame_registrations = mtk_p2p_cfg80211_update_mgmt_frame_registrations,
 	.get_station = mtk_p2p_cfg80211_get_station,
 	.add_key = mtk_p2p_cfg80211_add_key,
 	.get_key = mtk_p2p_cfg80211_get_key,
@@ -876,8 +876,9 @@ unsigned int _p2p_cfg80211_classify8021d(struct sk_buff *skb)
 
 static const UINT_16 au16Wlan1dToQueueIdx[8] = { 1, 0, 0, 1, 2, 2, 3, 3 };
 
+/* see wlanSelectQueue() in gl_init.c for why the signature changed */
 static UINT_16 p2pSelectQueue(struct net_device *dev, struct sk_buff *skb,
-				void *accel_priv, select_queue_fallback_t fallback)
+				struct net_device *sb_dev)
 {
 	skb->priority = _p2p_cfg80211_classify8021d(skb);
 
