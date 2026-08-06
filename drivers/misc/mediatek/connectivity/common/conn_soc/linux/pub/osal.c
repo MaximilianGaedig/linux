@@ -34,6 +34,7 @@
 */
 #include "osal_typedef.h"
 #include "osal.h"
+#include <linux/sched/debug.h>
 
 /*******************************************************************************
 *                              C O N S T A N T S
@@ -308,8 +309,14 @@ _osal_inline_ UINT16 osal_crc16(const UINT8 *buffer, const UINT32 length)
 
 _osal_inline_ VOID osal_thread_show_stack(P_OSAL_THREAD pThread)
 {
-	/* show_stack() gained a 3rd (loglvl) argument. */
-	return show_stack(pThread->pThread, NULL, KERN_INFO);
+	/*
+	 * show_stack() is not exported to modules, so it cannot be used here
+	 * once this driver is built as a .ko.  sched_show_task() is the
+	 * exported (GPL) equivalent for "dump some other task's state and
+	 * backtrace", which is exactly what this diagnostic wants -- it
+	 * prints the task state line and then calls show_stack() itself.
+	 */
+	sched_show_task(pThread->pThread);
 }
 
 /*

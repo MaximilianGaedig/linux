@@ -3746,18 +3746,25 @@ WLAN_STATUS wfdAdjustThread(IN P_ADAPTER_T prAdapter, IN BOOLEAN fgEnable)
 	if (prAdapter->prGlueInfo->main_thread != NULL) {
 		if (fgEnable) {
 #ifdef LINUX
-			/* TODO the change schedule API shall be provided by OS glue layer */
-			/* Or the API shall be put in os glue layer */
-			struct sched_param param = {.sched_priority = WFD_TX_THREAD_PRIORITY };
-
-			sched_setscheduler(prAdapter->prGlueInfo->main_thread, SCHED_RR, &param);
+			/*
+			 * sched_setscheduler() stopped being exported to
+			 * modules in v5.9.  It was deliberately replaced by a
+			 * small set of intent-revealing helpers, precisely so
+			 * that drivers stop inventing their own RT priority
+			 * numbers: the kernel wants to own the priority
+			 * assignment, not have every driver pick one.
+			 * sched_set_fifo() is the "this thread needs to run
+			 * ahead of normal tasks" helper.  The old code asked
+			 * for SCHED_RR at priority 70 (WFD_TX_THREAD_PRIORITY)
+			 * to keep the Miracast/WFD TX path fed; sched_set_fifo()
+			 * expresses the same intent.
+			 */
+			sched_set_fifo(prAdapter->prGlueInfo->main_thread);
 #endif
 		} else {
 #ifdef LINUX
-			/* TODO the change schedule API shall be provided by OS glue layer */
-			struct sched_param param = {.sched_priority = 0 };
-
-			sched_setscheduler(prAdapter->prGlueInfo->main_thread, SCHED_NORMAL, &param);
+			/* back to a normal, nice-0 CFS task */
+			sched_set_normal(prAdapter->prGlueInfo->main_thread, 0);
 #endif
 		}
 	} else {

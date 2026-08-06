@@ -4414,12 +4414,14 @@ INT_32 kalHaltLock(UINT_32 waitMs)
 				"kalIoctl was executed longer than %u ms, show backtrace of tx_thread!\n",
 				kalGetTimeTick() - rHaltCtrl.u4HoldStart);
 			if (prGlueInfo)
-				show_stack(prGlueInfo->main_thread, NULL, KERN_ERR);
+				/* show_stack() is not exported to modules; see
+				 * osal_thread_show_stack() in conn_soc's osal.c */
+				sched_show_task(prGlueInfo->main_thread);
 		} else {
 			DBGLOG(INIT, ERROR, "halt lock held by %s pid %d longer than %u ms!\n",
 				rHaltCtrl.owner->comm, rHaltCtrl.owner->pid,
 				kalGetTimeTick() - rHaltCtrl.u4HoldStart);
-			show_stack(rHaltCtrl.owner, NULL, KERN_ERR);
+			sched_show_task(rHaltCtrl.owner);
 		}
 		return i4Ret;
 	}

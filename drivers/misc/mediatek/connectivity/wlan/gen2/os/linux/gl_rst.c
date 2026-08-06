@@ -59,6 +59,9 @@
 */
 BOOLEAN fgIsResetting = FALSE;
 UINT_32 g_IsNeedDoChipReset = 0;
+/* consumed by conn_soc's WiFi chardev (wmt_chrdev_wifi.c) to decide whether a
+ * chip reset is pending, so it has to cross the module boundary. */
+EXPORT_SYMBOL(g_IsNeedDoChipReset);
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A

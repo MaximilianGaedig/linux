@@ -52,12 +52,18 @@ ifeq ($(CONFIG_MTK_COMBO),y)
 endif
 
 ifeq ($(CONFIG_MTK_COMBO),m)
-	obj-y += mtk_wcn_stub_alps.o
-	obj-y += wmt_stp_exp.o
-	obj-y += wmt_gpio.o
-
 	obj-$(CONFIG_MTK_COMBO) += mtk_wmt_detect.o
 	mtk_wmt_detect-objs := wmt_detect.o
 	mtk_wmt_detect-objs += sdio_detect.o
 	mtk_wmt_detect-objs += wmt_detect_pwr.o
+	# These three were obj-y, which cannot work here: this whole subtree is
+	# reached through obj-m, so a built-in object in it is silently dropped
+	# and every symbol it defines (mtk_wcn_wmt_chipid_query,
+	# mtk_wcn_wmt_set_chipid, mt_combo_plt_*_deep_idle, gpio_ctrl_info, the
+	# entire wmt_stp_exp indirection layer) comes up undefined at modpost
+	# time.  They belong in the same module as the detect code that uses
+	# them.
+	mtk_wmt_detect-objs += mtk_wcn_stub_alps.o
+	mtk_wmt_detect-objs += wmt_stp_exp.o
+	mtk_wmt_detect-objs += wmt_gpio.o
 endif
