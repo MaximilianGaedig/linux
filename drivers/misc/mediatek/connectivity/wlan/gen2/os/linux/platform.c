@@ -380,11 +380,13 @@ static int nvram_read(char *filename, char *buf, ssize_t len, int offset)
 #if CFG_SUPPORT_NVRAM
 	struct file *fd;
 	int retLen = -1;
+	loff_t pos = offset;
 
-	mm_segment_t old_fs = get_fs();
-
-	set_fs(KERNEL_DS);
-
+	/* get_fs()/set_fs()/KERNEL_DS are gone (v5.10 set_fs() removal).  The
+	 * replacement for "read a file into a kernel buffer" is kernel_read(),
+	 * which takes an explicit loff_t and does not need an address-space
+	 * override at all.  It also does the seek for us via *pos, so the
+	 * open-coded f_op->llseek dance below is no longer needed. */
 	fd = filp_open(filename, O_RDONLY, 0644);
 
 	if (IS_ERR(fd)) {
@@ -392,31 +394,11 @@ static int nvram_read(char *filename, char *buf, ssize_t len, int offset)
 		return -1;
 	}
 
-	do {
-		//if ((fd->f_op == NULL) || (fd->f_op->read == NULL)) {
-		if ( fd->f_op == NULL ) {
-			DBGLOG(INIT, INFO, "[MT6620][nvram_read] : file can not be read!!\n");
-			break;
-		}
-
-		if (fd->f_pos != offset) {
-			if (fd->f_op->llseek) {
-				if (fd->f_op->llseek(fd, offset, 0) != offset) {
-					DBGLOG(INIT, INFO, "[MT6620][nvram_read] : failed to seek!!\n");
-					break;
-				}
-			} else {
-				fd->f_pos = offset;
-			}
-		}
-
-		retLen = vfs_read(fd, buf, len, &fd->f_pos);
-
-	} while (FALSE);
+	retLen = kernel_read(fd, buf, len, &pos);
+	if (retLen < 0)
+		DBGLOG(INIT, INFO, "[MT6620][nvram_read] : read failed (%d)!!\n", retLen);
 
 	filp_close(fd, NULL);
-
-	set_fs(old_fs);
 
 	return retLen;
 
@@ -445,11 +427,10 @@ static int nvram_write(char *filename, char *buf, ssize_t len, int offset)
 #if CFG_SUPPORT_NVRAM
 	struct file *fd;
 	int retLen = -1;
+	loff_t pos = offset;
 
-	mm_segment_t old_fs = get_fs();
-
-	set_fs(KERNEL_DS);
-
+	/* See nvram_read() above: set_fs()/KERNEL_DS removed, kernel_write()
+	 * is the kernel-buffer write path and seeks via *pos itself. */
 	fd = filp_open(filename, O_WRONLY | O_CREAT, 0644);
 
 	if (IS_ERR(fd)) {
@@ -457,30 +438,11 @@ static int nvram_write(char *filename, char *buf, ssize_t len, int offset)
 		return -1;
 	}
 
-	do {
-		if ((fd->f_op == NULL) || (fd->f_op->write == NULL)) {
-			DBGLOG(INIT, INFO, "[MT6620][nvram_write] : file can not be write!!\n");
-			break;
-		}
-		/* End of if */
-		if (fd->f_pos != offset) {
-			if (fd->f_op->llseek) {
-				if (fd->f_op->llseek(fd, offset, 0) != offset) {
-					DBGLOG(INIT, INFO, "[MT6620][nvram_write] : failed to seek!!\n");
-					break;
-				}
-			} else {
-				fd->f_pos = offset;
-			}
-		}
-
-		retLen = vfs_write(fd, buf, len, &fd->f_pos);
-
-	} while (FALSE);
+	retLen = kernel_write(fd, buf, len, &pos);
+	if (retLen < 0)
+		DBGLOG(INIT, INFO, "[MT6620][nvram_write] : write failed (%d)!!\n", retLen);
 
 	filp_close(fd, NULL);
-
-	set_fs(old_fs);
 
 	return retLen;
 

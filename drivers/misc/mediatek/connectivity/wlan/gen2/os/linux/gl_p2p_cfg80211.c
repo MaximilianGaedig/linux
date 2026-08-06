@@ -578,8 +578,13 @@ int mtk_p2p_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *dev, struc
 	PUINT_8 pucBuffer = (PUINT_8) NULL;
 	/* P_IE_SSID_T prSsidIE = (P_IE_SSID_T)NULL; */
 
-	struct wireless_dev *wdev = dev->ieee80211_ptr;
-	struct cfg80211_chan_def *chandef = &wdev->preset_chandef;
+	/* wdev->preset_chandef moved into wdev->links[link_id].ap.preset_chandef
+	 * with the MLO rework.  It is not the right source here anyway: since
+	 * cfg80211 gained struct cfg80211_ap_settings, the channel the AP is to
+	 * start on is handed to ->start_ap() directly in settings->chandef
+	 * (nl80211 fills it from NL80211_ATTR_WIPHY_FREQ, falling back to the
+	 * wdev's preset chandef itself).  Use that. */
+	struct cfg80211_chan_def *chandef = &settings->chandef;
 
 	do {
 		if ((wiphy == NULL) || (settings == NULL))

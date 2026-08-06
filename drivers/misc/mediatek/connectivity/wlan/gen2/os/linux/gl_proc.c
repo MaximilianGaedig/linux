@@ -499,13 +499,22 @@ static ssize_t procDbgLevelWrite(struct file *file, const char *buffer, size_t c
 {
 	UINT_32 u4NewDbgModule, u4NewDbgLevel;
 	UINT_8 i = 0;
-	UINT_32 u4CopySize = kalStrLen(aucProcBuf);//sizeof(aucProcBuf);
+	/* Real bug, not API drift: this was kalStrLen(aucProcBuf) -- the length
+	 * of whatever the *previous* reader happened to leave in the shared
+	 * buffer -- combined with "if (u4CopySize >= count + 1) u4CopySize =
+	 * count;" below.  count comes straight from userspace, so count + 1
+	 * wraps to 0 for count == SIZE_MAX, the test then always passes and
+	 * u4CopySize becomes SIZE_MAX: an unbounded copy_from_user() into a
+	 * 1536-byte static buffer.  GCC's check_copy_size() proves this at
+	 * compile time (__bad_copy_to).  Clamp to the buffer instead, leaving
+	 * one byte for the NUL terminator written below. */
+	UINT_32 u4CopySize = sizeof(aucProcBuf) - 1;
 	UINT_8 *temp = &aucProcBuf[0];
 
-	if (u4CopySize >= count + 1)
+	if (count < u4CopySize)
 		u4CopySize = count;
 
-	kalMemSet(aucProcBuf, 0, u4CopySize);
+	kalMemSet(aucProcBuf, 0, sizeof(aucProcBuf));
 
 	if (copy_from_user(aucProcBuf, buffer, u4CopySize)) {
 		kalPrint("error of copy from user\n");
@@ -537,10 +546,9 @@ static ssize_t procDbgLevelWrite(struct file *file, const char *buffer, size_t c
 }
 
 
-static const struct file_operations dbglevel_ops = {
-	.owner = THIS_MODULE,
-	.read = procDbgLevelRead,
-	.write = procDbgLevelWrite,
+static const struct proc_ops dbglevel_ops = {
+	.proc_read = procDbgLevelRead,
+	.proc_write = procDbgLevelWrite,
 };
 
 static ssize_t procTxDoneCfgRead(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
@@ -576,7 +584,16 @@ static ssize_t procTxDoneCfgWrite(struct file *file, const char *buffer, size_t 
 #define MODULE_NAME_LENGTH 6
 
 	UINT_8 i = 0;
-	UINT_32 u4CopySize = kalStrLen(aucProcBuf);//sizeof(aucProcBuf);
+	/* Real bug, not API drift: this was kalStrLen(aucProcBuf) -- the length
+	 * of whatever the *previous* reader happened to leave in the shared
+	 * buffer -- combined with "if (u4CopySize >= count + 1) u4CopySize =
+	 * count;" below.  count comes straight from userspace, so count + 1
+	 * wraps to 0 for count == SIZE_MAX, the test then always passes and
+	 * u4CopySize becomes SIZE_MAX: an unbounded copy_from_user() into a
+	 * 1536-byte static buffer.  GCC's check_copy_size() proves this at
+	 * compile time (__bad_copy_to).  Clamp to the buffer instead, leaving
+	 * one byte for the NUL terminator written below. */
+	UINT_32 u4CopySize = sizeof(aucProcBuf) - 1;
 	UINT_8 *temp = &aucProcBuf[0];
 	UINT_16 u2SetTxDoneCfg = 0;
 	UINT_16 u2ClsTxDoneCfg = 0;
@@ -584,10 +601,10 @@ static ssize_t procTxDoneCfgWrite(struct file *file, const char *buffer, size_t 
 	UINT_32 u4Enabled;
 	UINT_8 aucModuleArray[][MODULE_NAME_LENGTH] = {"ARP", "DNS", "TCP", "UDP", "EAPOL", "DHCP", "ICMP"};
 
-	if (u4CopySize >= count + 1)
+	if (count < u4CopySize)
 		u4CopySize = count;
 
-	kalMemSet(aucProcBuf, 0, u4CopySize);
+	kalMemSet(aucProcBuf, 0, sizeof(aucProcBuf));
 	if (copy_from_user(aucProcBuf, buffer, u4CopySize)) {
 		kalPrint("error of copy from user\n");
 		return -EFAULT;
@@ -622,10 +639,9 @@ static ssize_t procTxDoneCfgWrite(struct file *file, const char *buffer, size_t 
 	return count;
 }
 
-static const struct file_operations proc_txdone_ops = {
-	.owner = THIS_MODULE,
-	.read = procTxDoneCfgRead,
-	.write = procTxDoneCfgWrite,
+static const struct proc_ops proc_txdone_ops = {
+	.proc_read = procTxDoneCfgRead,
+	.proc_write = procTxDoneCfgWrite,
 };
 
 static ssize_t procAutoPerCfgRead(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
@@ -657,10 +673,9 @@ static ssize_t procAutoPerCfgWrite(struct file *file, const char *buffer, size_t
 	return 0;
 }
 
-static const struct file_operations auto_per_ops = {
-	.owner = THIS_MODULE,
-	.read = procAutoPerCfgRead,
-	.write = procAutoPerCfgWrite,
+static const struct proc_ops auto_per_ops = {
+	.proc_read = procAutoPerCfgRead,
+	.proc_write = procAutoPerCfgWrite,
 };
 
 
@@ -686,9 +701,8 @@ static ssize_t procCmdDebug(struct file *filp, char __user *buf, size_t count, l
 	return (ssize_t)u4CopySize;
 }
 
-static const struct file_operations proc_CmdDebug_ops = {
-	.owner = THIS_MODULE,
-	.read = procCmdDebug,
+static const struct proc_ops proc_CmdDebug_ops = {
+	.proc_read = procCmdDebug,
 };
 
 /*----------------------------------------------------------------------------*/
@@ -910,10 +924,9 @@ static ssize_t procfile_write(struct file *filp, const char __user *buffer, size
 	return len;
 }
 #endif
-	static const struct file_operations proc_fops = {
-		.owner = THIS_MODULE,
-		.read = procfile_read,
-		.write = procfile_write,
+	static const struct proc_ops proc_fops = {
+		.proc_read = procfile_read,
+		.proc_write = procfile_write,
 	};
 #endif
 

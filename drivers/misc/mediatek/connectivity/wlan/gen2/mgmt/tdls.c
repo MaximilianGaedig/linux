@@ -222,10 +222,10 @@ static VOID TdlsCmdTestRxIndicatePkts(GLUE_INFO_T *prGlueInfo, struct sk_buff *p
 	prSkb->protocol = eth_type_trans(prSkb, prNetDev);
 	prSkb->dev = prNetDev;
 
-	if (!in_interrupt())
-		netif_rx_ni(prSkb);	/* only in non-interrupt context */
-	else
-		netif_rx(prSkb);
+	/* netif_rx_ni() was removed in v5.18; netif_rx() itself now handles
+	 * being called from process context (it disables bh internally), so
+	 * the context split is no longer needed. */
+	netif_rx(prSkb);
 }
 
 #if TDLS_CFG_CMD_TEST
@@ -263,9 +263,9 @@ static void TdlsCmdTestAddPeer(P_GLUE_INFO_T prGlueInfo, UINT_8 *prInBuf, UINT_3
 	CmdStringMacParse(prInBuf, &prInBuf, &u4InBufLen, rCmd.arRspAddr);
 
 	/* init */
-	rCmd.rPeerInfo.supported_rates = NULL;
-	rCmd.rPeerInfo.ht_capa = &rCmd.rHtCapa;
-	rCmd.rPeerInfo.vht_capa = &rCmd.rVhtCapa; /* LINUX_KERNEL_VERSION >= 3.10.0 */
+	rCmd.rPeerInfo.link_sta_params.supported_rates = NULL;
+	rCmd.rPeerInfo.link_sta_params.ht_capa = &rCmd.rHtCapa;
+	rCmd.rPeerInfo.link_sta_params.vht_capa = &rCmd.rVhtCapa; /* LINUX_KERNEL_VERSION >= 3.10.0 */
 	rCmd.rPeerInfo.sta_flags_set = BIT(NL80211_STA_FLAG_TDLS_PEER);
 
 	/* send command to wifi task to handle */
@@ -1761,9 +1761,9 @@ static void TdlsCmdTestUpdatePeer(P_GLUE_INFO_T prGlueInfo, UINT_8 *prInBuf, UIN
 	CmdStringMacParse(prInBuf, &prInBuf, &u4InBufLen, rCmd.arRspAddr);
 
 	/* init */
-	rCmd.rPeerInfo.supported_rates = rCmd.arSupRate;
-	rCmd.rPeerInfo.ht_capa = &rCmd.rHtCapa;
-	rCmd.rPeerInfo.vht_capa = &rCmd.rVhtCapa; /* LINUX_KERNEL_VERSION >= 3.10.0 */
+	rCmd.rPeerInfo.link_sta_params.supported_rates = rCmd.arSupRate;
+	rCmd.rPeerInfo.link_sta_params.ht_capa = &rCmd.rHtCapa;
+	rCmd.rPeerInfo.link_sta_params.vht_capa = &rCmd.rVhtCapa; /* LINUX_KERNEL_VERSION >= 3.10.0 */
 	rCmd.rPeerInfo.sta_flags_set = BIT(NL80211_STA_FLAG_TDLS_PEER);
 	rCmd.rPeerInfo.uapsd_queues = 0xf;	/* all AC */
 	rCmd.rPeerInfo.max_sp = 0;	/* delivery all packets */

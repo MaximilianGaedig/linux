@@ -24,6 +24,8 @@
  ********************************************************************************
  */
 #include "precomp.h"
+/* sched_clock() moved out of <linux/sched.h> into its own header (v4.11) */
+#include <linux/sched/clock.h>
 
 enum EVENT_TYPE {
 	EVENT_RX,
