@@ -41,7 +41,7 @@
 
 /*-----------static function declearation----------------*/
 static int mtk_btif_probe(struct platform_device *pdev);
-static int mtk_btif_remove(struct platform_device *pdev);
+static void mtk_btif_remove(struct platform_device *pdev);
 static int mtk_btif_suspend(struct platform_device *pdev, pm_message_t state);
 static int mtk_btif_resume(struct platform_device *pdev);
 static int mtk_btif_drv_resume(struct device *dev);
@@ -193,7 +193,7 @@ static int g_max_pding_data_size = BTIF_RX_BUFFER_SIZE * 3 / 4;
 static int mtk_btif_dbg_lvl = BTIF_LOG_ERR;
 
 #if BTIF_RXD_BE_BLOCKED_DETECT
-static struct timeval btif_rxd_time_stamp[MAX_BTIF_RXD_TIME_REC];
+static struct timespec64 btif_rxd_time_stamp[MAX_BTIF_RXD_TIME_REC];
 #endif
 /*-----------Platform bus related structures----------------*/
 #define DRV_NAME "mtk_btif"
@@ -251,13 +251,13 @@ static int mtk_btif_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int mtk_btif_remove(struct platform_device *pdev)
+/* platform_driver::remove returns void now (v6.11) */
+static void mtk_btif_remove(struct platform_device *pdev)
 {
 /*Chaozhong: ToDo: to be implement*/
 	BTIF_INFO_FUNC("DO BTIF REMOVE\n");
 	platform_set_drvdata(pdev, NULL);
 	g_btif[0].private_data = NULL;
-	return 0;
 }
 
 int _btif_suspend(p_mtk_btif p_btif)
@@ -1739,16 +1739,17 @@ int _btif_enter_dpidle_from_on(p_mtk_btif p_btif)
 	unsigned int retry = 0;
 	unsigned int wait_period = 1;
 	unsigned int max_retry = MAX_WAIT_TIME_MS / wait_period;
-	struct timeval timer_start;
-	struct timeval timer_now;
+	struct timespec64 timer_start;
+	struct timespec64 timer_now;
 
-	do_gettimeofday(&timer_start);
+	ktime_get_real_ts64(&timer_start);
 
 	while ((!_btif_is_tx_complete(p_btif)) && (retry < max_retry)) {
-		do_gettimeofday(&timer_now);
+		ktime_get_real_ts64(&timer_now);
 		if ((MAX_WAIT_TIME_MS/1000) <= (timer_now.tv_sec - timer_start.tv_sec)) {
-			BTIF_WARN_FUNC("max retry timer expired, timer_start.tv_sec:%d, timer_now.tv_sec:%d,",
-				"retry:%d\n", timer_start.tv_sec, timer_now.tv_sec, retry);
+			BTIF_WARN_FUNC("max retry timer expired, timer_start.tv_sec:%lld, timer_now.tv_sec:%lld,",
+				"retry:%d\n", (long long)timer_start.tv_sec,
+				(long long)timer_now.tv_sec, retry);
 			break;
 		}
 		msleep(wait_period);
@@ -1879,9 +1880,12 @@ static int _btif_vfifo_init(p_mtk_btif_dma p_dma)
 	}
 
 /*vFIFO memory allocation*/
-	p_vfifo->p_vir_addr = dma_zalloc_coherent(dev,
-						  p_vfifo->vfifo_size,
-						  &p_vfifo->phy_addr, GFP_DMA | GFP_DMA32);
+	/* dma_zalloc_coherent() was removed in v5.0 -- dma_alloc_coherent()
+	 * has zeroed its allocation unconditionally since v5.0, so the
+	 * separate zeroing wrapper became redundant and was deleted. */
+	p_vfifo->p_vir_addr = dma_alloc_coherent(dev,
+						 p_vfifo->vfifo_size,
+						 &p_vfifo->phy_addr, GFP_DMA | GFP_DMA32);
 	if (p_vfifo->p_vir_addr == NULL) {
 		BTIF_ERR_FUNC("alloc vFIFO memory for BTIF failed\n");
 		return E_BTIF_FAIL;
@@ -2178,29 +2182,33 @@ static int mtk_btif_rxd_be_blocked_by_timer(void)
 	int ret = 0;
 	int counter = 0;
 	unsigned int i;
-	struct timeval now;
+	struct timespec64 now;
 	int time_gap[MAX_BTIF_RXD_TIME_REC];
 
-	do_gettimeofday(&now);
+	ktime_get_real_ts64(&now);
 
 	for (i = 0; i < MAX_BTIF_RXD_TIME_REC; i++) {
-		BTIF_INFO_FUNC("btif_rxd_time_stamp[%d]=%d.%d\n", i,
-			btif_rxd_time_stamp[i].tv_sec, btif_rxd_time_stamp[i].tv_usec);
-		if (now.tv_sec >= btif_rxd_time_stamp[i].tv_sec) {
-			time_gap[i] = now.tv_sec - btif_rxd_time_stamp[i].tv_sec;
-			time_gap[i] *= 1000000; /*second*/
-			if (now.tv_usec >= btif_rxd_time_stamp[i].tv_usec)
-				time_gap[i] += now.tv_usec - btif_rxd_time_stamp[i].tv_usec;
-			else
-				time_gap[i] += 1000000 - now.tv_usec + btif_rxd_time_stamp[i].tv_usec;
+		BTIF_INFO_FUNC("btif_rxd_time_stamp[%d]=%lld.%06ld\n", i,
+			(long long)btif_rxd_time_stamp[i].tv_sec,
+			btif_rxd_time_stamp[i].tv_nsec / 1000);
+		if (timespec64_compare(&now, &btif_rxd_time_stamp[i]) >= 0) {
+			/* same quantity as before -- gap in microseconds --
+			 * but computed with timespec64_sub() instead of the
+			 * open-coded borrow, whose "else" branch was wrong
+			 * anyway (it added 1000000 - now.tv_usec + stamp
+			 * .tv_usec rather than subtracting). */
+			struct timespec64 gap = timespec64_sub(now, btif_rxd_time_stamp[i]);
+
+			time_gap[i] = (int)(gap.tv_sec * 1000000 + gap.tv_nsec / 1000);
 
 			if (time_gap[i] > 1000000)
 				counter++;
 			BTIF_INFO_FUNC("time_gap[%d]=%d,counter:%d\n", i, time_gap[i], counter);
 		} else {
 			time_gap[i] = 0;
-			BTIF_ERR_FUNC("abnormal case now:%d < time_stamp[%d]:%d\n", now.tv_sec,
-							i, btif_rxd_time_stamp[i].tv_usec);
+			BTIF_ERR_FUNC("abnormal case now:%lld < time_stamp[%d]:%lld\n",
+					(long long)now.tv_sec, i,
+					(long long)btif_rxd_time_stamp[i].tv_sec);
 		}
 	}
 	if (counter > (MAX_BTIF_RXD_TIME_REC - 2))
@@ -2279,7 +2287,7 @@ static int btif_rx_thread(void *p_data)
 			break;
 		}
 #ifdef BTIF_RXD_BE_BLOCKED_DETECT
-		do_gettimeofday(&btif_rxd_time_stamp[i]);
+		ktime_get_real_ts64(&btif_rxd_time_stamp[i]);
 		i++;
 		if (i >= MAX_BTIF_RXD_TIME_REC)
 			i = 0;
@@ -2971,7 +2979,7 @@ int btif_log_buf_dmp_in(P_BTIF_LOG_QUEUE_T p_log_que, const char *p_buf,
 {
 	P_BTIF_LOG_BUF_T p_log_buf = NULL;
 	char *dir = NULL;
-	struct timeval *p_timer = NULL;
+	struct timespec64 *p_timer = NULL;
 	unsigned long flags;
 	bool output_flag = false;
 
@@ -2995,7 +3003,7 @@ int btif_log_buf_dmp_in(P_BTIF_LOG_QUEUE_T p_log_que, const char *p_buf,
 	p_timer = &p_log_buf->timer;
 
 /*log time stamp*/
-	do_gettimeofday(p_timer);
+	ktime_get_real_ts64(p_timer);
 
 /*record data information including length and content*/
 	p_log_buf->len = len;
@@ -3014,8 +3022,8 @@ int btif_log_buf_dmp_in(P_BTIF_LOG_QUEUE_T p_log_que, const char *p_buf,
 
 /*check if log dynamic output function is enabled or not*/
 	if (output_flag) {
-		pr_debug("BTIF-DBG, dir:%s, %d.%ds len:%d\n",
-		       dir, (int)p_timer->tv_sec, (int)p_timer->tv_usec, len);
+		pr_debug("BTIF-DBG, dir:%s, %lld.%06lds len:%d\n",
+		       dir, (long long)p_timer->tv_sec, p_timer->tv_nsec / 1000, len);
 /*output buffer content*/
 		btif_dump_data((char *)p_buf, len);
 	}
@@ -3034,7 +3042,7 @@ int btif_log_buf_dmp_out(P_BTIF_LOG_QUEUE_T p_log_que)
 	unsigned int len = 0;
 	unsigned int pkt_count = 0;
 	unsigned char *p_dir = NULL;
-	struct timeval *p_timer = NULL;
+	struct timespec64 *p_timer = NULL;
 	unsigned long flags;
 
 #if 0				/* no matter enable or not, we allowed output */
@@ -3064,11 +3072,11 @@ int btif_log_buf_dmp_out(P_BTIF_LOG_QUEUE_T p_log_que)
 
 			len = len > BTIF_LOG_SZ ? BTIF_LOG_SZ : len;
 
-			BTIF_INFO_FUNC("dir:%s, pkt_count:%d, %d.%ds len:%d\n",
+			BTIF_INFO_FUNC("dir:%s, pkt_count:%d, %lld.%06lds len:%d\n",
 			       p_dir,
 			       pkt_count++,
-			       (int)p_timer->tv_sec,
-			       (int)p_timer->tv_usec, len);
+			       (long long)p_timer->tv_sec,
+			       p_timer->tv_nsec / 1000, len);
 /*output buffer content*/
 			btif_dump_data(p_log_buf->buffer, len);
 			out_index++;

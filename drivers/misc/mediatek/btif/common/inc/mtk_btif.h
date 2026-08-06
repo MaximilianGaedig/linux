@@ -182,7 +182,11 @@ typedef void (*MTK_BTIF_RX_NOTIFY) (void);
 
 typedef struct _btif_log_buf_t_ {
 	unsigned int len;
-	struct timeval timer;
+	/* struct timeval was deleted in the y2038 cleanup (v5.6): its 32-bit
+	 * tv_sec overflows in 2038 on 32-bit builds.  timespec64 is the
+	 * replacement; note tv_usec becomes tv_nsec, so every consumer below
+	 * scales by 1000. */
+	struct timespec64 timer;
 	unsigned char buffer[BTIF_LOG_SZ];
 } BTIF_LOG_BUF_T, *P_BTIF_LOG_BUF_T;
 
