@@ -102,14 +102,6 @@ enum {
 };
 #define MTK_WIFI_COMMAND_MAX    (__STP_DBG_COMMAND_MAX - 1)
 
-static struct genl_family stp_dbg_gnl_family = {
-	.id = GENL_ID_GENERATE,
-	.hdrsize = 0,
-	.name = STP_DBG_FAMILY_NAME,
-	.version = 1,
-	.maxattr = STP_DBG_ATTR_MAX,
-};
-
 static void stp_dbg_nl_init(void);
 static void stp_dbg_nl_deinit(void);
 static int stp_dbg_nl_bind(struct sk_buff *skb, struct genl_info *info);
@@ -153,6 +145,23 @@ static struct genl_ops stp_dbg_gnl_ops_array[] = {
 		.doit = stp_dbg_nl_reset,
 		.dumpit = NULL,
 	},
+};
+
+/*
+ * GENL_ID_GENERATE (explicit "auto-assign my family id" request) and the
+ * separate genl_register_ops()/genl_register_family_with_ops() calls were
+ * removed once auto-assignment became the only mode: modern genl_family
+ * just carries its ops array (.ops/.n_ops/.module) and gets registered in
+ * one genl_register_family() call. See stp_dbg_nl_init() below.
+ */
+static struct genl_family stp_dbg_gnl_family = {
+	.hdrsize = 0,
+	.name = STP_DBG_FAMILY_NAME,
+	.version = 1,
+	.maxattr = STP_DBG_ATTR_MAX,
+	.module = THIS_MODULE,
+	.ops = stp_dbg_gnl_ops_array,
+	.n_ops = ARRAY_SIZE(stp_dbg_gnl_ops_array),
 };
 
 #if 0
@@ -1147,18 +1156,18 @@ static int stp_dbg_fill_hdr(struct stp_dbg_pkt_hdr *hdr, int type, int ack, int 
 			    int dbg_type)
 {
 
-	struct timeval now;
+	struct timespec64 now; /* was struct timeval */
 
 	if (!hdr) {
 		STP_DBG_ERR_FUNC("function invalid\n");
 		return -EINVAL;
 	}
-	do_gettimeofday(&now);
+	ktime_get_real_ts64(&now);
 	hdr->dbg_type = dbg_type;
 	hdr->ack = ack;
 	hdr->seq = seq;
 	hdr->sec = now.tv_sec;
-	hdr->usec = now.tv_usec;
+	hdr->usec = now.tv_nsec / NSEC_PER_USEC;
 	hdr->crc = crc;
 	hdr->dir = dir;	/* rx */
 	hdr->dmy = 0xffffffff;
@@ -1239,7 +1248,8 @@ static void stp_dbg_nl_init(void)
 
 	}
 #endif
-	if (genl_register_family_with_ops(&stp_dbg_gnl_family, stp_dbg_gnl_ops_array) != 0)
+	/* Ops are now embedded directly in stp_dbg_gnl_family (.ops/.n_ops). */
+	if (genl_register_family(&stp_dbg_gnl_family) != 0)
 		STP_DBG_ERR_FUNC("%s(): GE_NELINK family registration fail\n", __func__);
 }
 

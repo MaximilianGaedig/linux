@@ -57,11 +57,14 @@
 #include <aee.h>
 #endif
 #include <linux/kfifo.h>
-#ifdef CONFIG_PM_WAKELOCKS
+/*
+ * Always use mainline's struct wakeup_source (linux/pm_wakeup.h).
+ * There is no in-tree <linux/wakelock.h> on mainline -- that was an
+ * Android-common-kernel-only header. See osal.h/osal.c for the
+ * wakeup_source_register()/_unregister() based implementation this
+ * was adapted to for 6.x.
+ */
 #include <linux/pm_wakeup.h>
-#else
-#include <linux/wakelock.h>
-#endif
 #include <linux/log2.h>
 
 #ifndef _TYPEDEFS_H		/*fix redifine */

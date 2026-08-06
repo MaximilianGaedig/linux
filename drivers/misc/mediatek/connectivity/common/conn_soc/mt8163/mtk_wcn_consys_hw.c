@@ -26,10 +26,29 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/memblock.h>
+#include <linux/pinctrl/consumer.h>
 #include "osal_typedef.h"
 #include "mtk_wcn_consys_hw.h"
 #include <linux/mfd/mt6323/registers.h>
-#include <soc/mediatek/pmic_wrap.h>
+/*
+ * <soc/mediatek/pmic_wrap.h> and pwrap_node_to_regmap() were a
+ * MediaTek-downstream-only API (not in mainline; mainline's PMIC wrap
+ * driver is drivers/soc/mediatek/mtk-pmic-wrap.c and does not expose an
+ * of-node-to-regmap helper like this). This file uses pmic_regmap for a
+ * handful of *raw* MT6323 PMIC register pokes (VCN28/VCN33 BT+WIFI
+ * power sequencing, offsets 0x41C/0x416/0x418) as an alternative to the
+ * standard regulator_*() calls used elsewhere in this same file for the
+ * same rails (reg_VCN18/reg_VCN28/reg_VCN33_BT/reg_VCN33_WIFI, wired to
+ * mt6323.dtsi's regulator-fixed nodes and already working). It is NOT
+ * YET PORTED: pmic_regmap is left permanently NULL below (no
+ * "mediatek,pwrap-regmap" phandle is wired in this tree's DT), and
+ * every regmap_update_bits(pmic_regmap, ...) call site downstream is
+ * now guarded to skip rather than NULL-deref. Whether these raw pokes
+ * are actually load-bearing (vs. redundant with the regulator_*() calls
+ * already present) is unverified -- needs checking against Amazon's
+ * production behavior/logic analyzer before deciding whether to wire a
+ * real mainline regmap accessor here or delete this path entirely.
+ */
 #include <linux/regmap.h>
 #if CONSYS_EMI_MPU_SETTING
 #include <emi_mpu.h>
@@ -64,7 +83,8 @@
 ********************************************************************************
 */
 static INT32 mtk_wmt_probe(struct platform_device *pdev);
-static INT32 mtk_wmt_remove(struct platform_device *pdev);
+/* platform_driver.remove returns void since v6.11. */
+static VOID mtk_wmt_remove(struct platform_device *pdev);
 
 
 /*******************************************************************************
@@ -89,7 +109,8 @@ static struct regmap *pmic_regmap;
 #define DYNAMIC_DUMP_GROUP_NUM 5
 
 static const struct of_device_id apwmt_of_ids[] = {
-	{.compatible = "mediatek,mt7623-consys",}
+	{.compatible = "mediatek,mt8163-consys",},
+	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, apwmt_of_ids);
 
@@ -97,7 +118,7 @@ static struct platform_driver mtk_wmt_dev_drv = {
 	.probe = mtk_wmt_probe,
 	.remove = mtk_wmt_remove,
 	.driver = {
-		   .name = "mt7623consys",
+		   .name = "mt8163consys",
 		   .owner = THIS_MODULE,
 		   .of_match_table = of_match_ptr(apwmt_of_ids),
 		   },
@@ -127,7 +148,12 @@ set_pin_exit:
 
 	node = of_parse_phandle(pdev->dev.of_node, "mediatek,pwrap-regmap", 0);
 	if (node) {
-		pmic_regmap = pwrap_node_to_regmap(node);
+		/* pwrap_node_to_regmap() doesn't exist on mainline -- see the
+		 * comment on pmic_regmap's declaration. Nothing provides the
+		 * "mediatek,pwrap-regmap" phandle in this tree's DT yet
+		 * either, so this branch is currently dead in practice.
+		 */
+		pmic_regmap = NULL;
 		if (IS_ERR(pmic_regmap))
 			goto set_pmic_wrap_exit;
 	} else {
@@ -180,11 +206,9 @@ set_pmic_wrap_exit:
 	return 0;
 }
 
-static INT32 mtk_wmt_remove(struct platform_device *pdev)
+static VOID mtk_wmt_remove(struct platform_device *pdev)
 {
 	pm_runtime_disable(&pdev->dev);
-
-	return 0;
 }
 
 VOID mtk_wcn_consys_power_on(VOID)
@@ -257,11 +281,13 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			/*if co-clock mode: */
 			/*2.set VCN28 to SW control mode (with PMIC_WRAP API) */
 			/*turn on VCN28 LDO only when FMSYS is activated"  */
-			regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x0 << 14);/*V28*/
+			if (pmic_regmap)
+				regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x0 << 14);/*V28*/
 		} else {
 			/*if NOT co-clock: */
 			/*2.1.switch VCN28 to HW control mode (with PMIC_WRAP API) */
-			regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x1 << 14);/*V28*/
+			if (pmic_regmap)
+				regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x1 << 14);/*V28*/
 			/*2.2.turn on VCN28 LDO (with PMIC_WRAP API)" */
 			/*fix vcn28 not balance warning */
 			if (reg_VCN28) {
@@ -319,7 +345,8 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			clk_buf_ctrl(CLK_BUF_CONN, 0);
 #endif
 		} else {
-			regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x0 << 14);/*V28*/
+			if (pmic_regmap)
+				regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x0 << 14);/*V28*/
 			/*turn off VCN28 LDO (with PMIC_WRAP API)" */
 			if (reg_VCN28) {
 				if (regulator_disable(reg_VCN28))
@@ -474,12 +501,14 @@ INT32 mtk_wcn_consys_hw_bt_paldo_ctrl(UINT32 enable)
 			if (regulator_enable(reg_VCN33_BT))
 				WMT_PLAT_ERR_FUNC("WMT do BT PMIC on fail!\n");
 		}
-		regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x1 << 5);/*BT*/
+		if (pmic_regmap)
+			regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x1 << 5);/*BT*/
 		WMT_PLAT_INFO_FUNC("WMT do BT PMIC on\n");
 	} else {
 		/*do BT PMIC off */
 		/*switch BT PALDO control from HW mode to SW mode:0x416[5]-->0x0 */
-		regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x0 << 5);/*BT*/
+		if (pmic_regmap)
+			regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x0 << 5);/*BT*/
 		if (reg_VCN33_BT)
 			if (regulator_disable(reg_VCN33_BT))
 				WMT_PLAT_ERR_FUNC("WMT do BT PMIC off fail!\n");
@@ -503,12 +532,14 @@ INT32 mtk_wcn_consys_hw_wifi_paldo_ctrl(UINT32 enable)
 			else
 				WMT_PLAT_INFO_FUNC("WMT do WIFI PMIC on !\n");
 		}
-		regmap_update_bits(pmic_regmap, 0x418, 0x1 << 14, 0x1 << 14);/*WIFI*/
+		if (pmic_regmap)
+			regmap_update_bits(pmic_regmap, 0x418, 0x1 << 14, 0x1 << 14);/*WIFI*/
 		WMT_PLAT_INFO_FUNC("WMT do WIFI PMIC on\n");
 	} else {
 		/*do WIFI PMIC off */
 		/*switch WIFI PALDO control from HW mode to SW mode:0x418[14]-->0x0 */
-		regmap_update_bits(pmic_regmap, 0x418, 0x1 << 14, 0x0 << 14);/*WIFI*/
+		if (pmic_regmap)
+			regmap_update_bits(pmic_regmap, 0x418, 0x1 << 14, 0x0 << 14);/*WIFI*/
 		if (reg_VCN33_WIFI)
 			if (regulator_disable(reg_VCN33_WIFI))
 				WMT_PLAT_ERR_FUNC("WMT do WIFI PMIC off fail!\n");
@@ -579,9 +610,9 @@ INT32 mtk_wcn_consys_hw_restore(struct device *device)
 				   CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET));
 
 #if 1
-		pEmibaseaddr = ioremap_nocache(gConEmiPhyBase + CONSYS_EMI_AP_PHY_OFFSET, CONSYS_EMI_MEM_SIZE);
+		pEmibaseaddr = ioremap(gConEmiPhyBase + CONSYS_EMI_AP_PHY_OFFSET, CONSYS_EMI_MEM_SIZE);
 #else
-		pEmibaseaddr = ioremap_nocache(CONSYS_EMI_AP_PHY_BASE, CONSYS_EMI_MEM_SIZE);
+		pEmibaseaddr = ioremap(CONSYS_EMI_AP_PHY_BASE, CONSYS_EMI_MEM_SIZE);
 #endif
 		if (pEmibaseaddr) {
 			WMT_PLAT_INFO_FUNC("EMI mapping OK(0x%p)\n", pEmibaseaddr);
@@ -616,11 +647,27 @@ INT32 mtk_wcn_consys_hw_init(void)
 	INT32 i = 0;
 	struct device_node *node = NULL;
 
-	node = of_find_compatible_node(NULL, NULL, "mediatek,mt7623-consys");
+	node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-consys");
 	if (node) {
-		/* registers base address */
+		/*
+		 * biscuit's mt8163-amazon-common.dtsi consys@18070000 node
+		 * (copied from Amazon's real production DT) has 3 reg
+		 * entries in this order: CONN_MCU_CONFIG_BASE, AP_RGU_BASE,
+		 * TOPCKGEN_BASE -- matching Amazon's original 3.18 driver.
+		 * This frank-w-derived backend was already modernized to
+		 * use the reset-controller framework (see rstc /
+		 * devm_reset_control_get() below) instead of raw AP_RGU
+		 * MMIO poking, so ap_rgu_base is currently unused, but it
+		 * must still be consumed here (index 1) or the following
+		 * of_iomap(node, 2) for topckgen would silently read the
+		 * AP_RGU window instead.
+		 */
 		conn_reg.mcu_base = (SIZE_T) of_iomap(node, i);
 		WMT_PLAT_DBG_FUNC("Get mcu register base(0x%zx)\n", conn_reg.mcu_base);
+		i++;
+
+		conn_reg.ap_rgu_base = (SIZE_T) of_iomap(node, i);
+		WMT_PLAT_DBG_FUNC("Get ap_rgu register base(0x%zx)\n", conn_reg.ap_rgu_base);
 		i++;
 
 		conn_reg.topckgen_base = (SIZE_T) of_iomap(node, i);
@@ -660,11 +707,11 @@ INT32 mtk_wcn_consys_hw_init(void)
 				   CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET));
 
 #if 1
-		pEmibaseaddr = ioremap_nocache(gConEmiPhyBase + CONSYS_EMI_AP_PHY_OFFSET, CONSYS_EMI_MEM_SIZE);
+		pEmibaseaddr = ioremap(gConEmiPhyBase + CONSYS_EMI_AP_PHY_OFFSET, CONSYS_EMI_MEM_SIZE);
 #else
-		pEmibaseaddr = ioremap_nocache(CONSYS_EMI_AP_PHY_BASE, CONSYS_EMI_MEM_SIZE);
+		pEmibaseaddr = ioremap(CONSYS_EMI_AP_PHY_BASE, CONSYS_EMI_MEM_SIZE);
 #endif
-		/* pEmibaseaddr = ioremap_nocache(0x80090400,270*KBYTE); */
+		/* pEmibaseaddr = ioremap(0x80090400,270*KBYTE); */
 		if (pEmibaseaddr) {
 			WMT_PLAT_INFO_FUNC("EMI mapping OK(0x%p)\n", pEmibaseaddr);
 			memset_io(pEmibaseaddr, 0, CONSYS_EMI_MEM_SIZE);
@@ -718,7 +765,7 @@ UINT32 mtk_wcn_consys_soc_chipid(void)
 	return PLATFORM_SOC_CHIP;
 }
 
-struct pinctrl *mtk_wcn_consys_get_pinctrl()
+struct pinctrl *mtk_wcn_consys_get_pinctrl(void)
 {
 	return consys_pinctrl;
 }

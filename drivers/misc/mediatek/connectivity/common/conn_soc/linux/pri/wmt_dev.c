@@ -247,41 +247,23 @@ struct early_suspend wmt_early_suspend_handler = {
 
 #else
 
+/*
+ * The original screen-blank quirk here hooked the fbdev notifier chain
+ * (CONFIG_EARLYSUSPEND was Android-only and is long gone from mainline;
+ * this #else branch was the "mainline" fallback). Mainline itself has
+ * since removed FB_EVENT_BLANK/FB_BLANK_* from the fb notifier chain
+ * (fbdev blanking is handled internally / via backlight class now), so
+ * this can no longer compile as written. It is also not applicable to
+ * biscuit (no framebuffer/display on this headless device -- this
+ * logic looks copy-pasted from a phone-era MediaTek BSP into the BPI-R2
+ * router tree, where it was equally unused). Disabled rather than
+ * reimplemented; if some other board using this driver needs a real
+ * screen-blank power quirk, wire it through drm_panel_notifier or a
+ * backlight_ops callback instead.
+ */
 static struct notifier_block wmt_fb_notifier;
 static int wmt_fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
 {
-	struct fb_event *evdata = data;
-	INT32 blank;
-
-	WMT_DBG_FUNC("wmt_fb_notifier_callback\n");
-
-	/* If we aren't interested in this event, skip it immediately ... */
-	if (event != FB_EVENT_BLANK)
-		return 0;
-
-	blank = *(INT32 *)evdata->data;
-	WMT_DBG_FUNC("fb_notify(blank=%d)\n", blank);
-
-	switch (blank) {
-	case FB_BLANK_UNBLANK:
-		osal_lock_sleepable_lock(&g_es_lr_lock);
-		g_es_lr_flag_for_quick_sleep = 0;
-		g_es_lr_flag_for_lpbk_onoff = 1;
-		osal_unlock_sleepable_lock(&g_es_lr_lock);
-		WMT_WARN_FUNC("@@@@@@@@@@wmt enter UNBLANK @@@@@@@@@@@@@@\n");
-		schedule_work(&gPwrOnOffWork);
-		break;
-	case FB_BLANK_POWERDOWN:
-		osal_lock_sleepable_lock(&g_es_lr_lock);
-		g_es_lr_flag_for_quick_sleep = 1;
-		g_es_lr_flag_for_lpbk_onoff = 0;
-		osal_unlock_sleepable_lock(&g_es_lr_lock);
-		WMT_WARN_FUNC("@@@@@@@@@@wmt enter early POWERDOWN @@@@@@@@@@@@@@\n");
-		schedule_work(&gPwrOnOffWork);
-		break;
-	default:
-		break;
-	}
 	return 0;
 }
 #endif
@@ -1288,10 +1270,10 @@ static ssize_t wmt_dev_dbg_write(struct file *filp, const char __user *buffer, s
 
 INT32 wmt_dev_dbg_setup(VOID)
 {
-	static const struct file_operations wmt_dbg_fops = {
-		.owner = THIS_MODULE,
-		.read = wmt_dev_dbg_read,
-		.write = wmt_dev_dbg_write,
+	/* proc_create() has taken struct proc_ops (not file_operations) since v5.6. */
+	static const struct proc_ops wmt_dbg_fops = {
+		.proc_read = wmt_dev_dbg_read,
+		.proc_write = wmt_dev_dbg_write,
 	};
 	gWmtDbgEntry = proc_create(WMT_DBG_PROCNAME, 0664, NULL, &wmt_dbg_fops);
 	if (gWmtDbgEntry == NULL) {
@@ -1374,10 +1356,9 @@ static ssize_t wmt_dev_proc_for_aee_write(struct file *filp, const char __user *
 
 INT32 wmt_dev_proc_for_aee_setup(VOID)
 {
-	static const struct file_operations wmt_aee_fops = {
-		.owner = THIS_MODULE,
-		.read = wmt_dev_proc_for_aee_read,
-		.write = wmt_dev_proc_for_aee_write,
+	static const struct proc_ops wmt_aee_fops = {
+		.proc_read = wmt_dev_proc_for_aee_read,
+		.proc_write = wmt_dev_proc_for_aee_write,
 	};
 
 	gWmtDbgEntry = proc_create(WMT_AEE_PROCNAME, 0664, NULL, &wmt_aee_fops);
@@ -1442,7 +1423,6 @@ INT32 wmt_dev_read_file(PUINT8 pName, const PPUINT8 ppBufPtr, INT32 offset, INT3
 	INT32 file_len;
 	INT32 read_len;
 	PVOID pBuf;
-        mm_segment_t fs;
 
 	/* struct cred *cred = get_task_cred(current); */
 	//const struct cred *cred = get_current_cred();
@@ -1493,9 +1473,14 @@ INT32 wmt_dev_read_file(PUINT8 pName, const PPUINT8 ppBufPtr, INT32 offset, INT3
 			}
 		}
 
-                fs=get_fs();
-		read_len = vfs_read(fd, pBuf + padSzBuf, file_len, &fd->f_pos);
-                set_fs(fs);
+		/*
+		 * get_fs()/set_fs() (KERNEL_DS override) were removed from
+		 * mainline; kernel_read() already handles reading into a
+		 * kernel-space buffer without needing an address-space
+		 * override, so vfs_read() + set_fs(KERNEL_DS) is no longer
+		 * required (or possible) here.
+		 */
+		read_len = kernel_read(fd, pBuf + padSzBuf, file_len, &fd->f_pos);
 		if (read_len != file_len)
 			WMT_WARN_FUNC("read abnormal: read_len(%d), file_len(%d)\n", read_len, file_len);
 
@@ -1527,8 +1512,6 @@ INT32 wmt_dev_patch_get(PUINT8 pPatchName, osal_firmware **ppPatch, INT32 padSzB
 	/* struct cred *cred = get_task_cred(current); */
 	struct cred *cred = (struct cred *)get_current_cred();
 
-	mm_segment_t orig_fs = get_fs();
-
 	if (*ppPatch) {
 		WMT_WARN_FUNC("f/w patch already exists\n");
 		if ((*ppPatch)->data)
@@ -1554,11 +1537,12 @@ INT32 wmt_dev_patch_get(PUINT8 pPatchName, osal_firmware **ppPatch, INT32 padSzB
 	orig_gid = cred->fsgid.val;
 	cred->fsuid.val = cred->fsgid.val = 0;
 
-	set_fs(get_ds());
+	/* set_fs(KERNEL_DS)/get_ds() no longer exist -- kernel_read() in
+	 * wmt_dev_read_file() doesn't need the address-space override.
+	 */
 
 	/* load patch file from fs */
 	iRet = wmt_dev_read_file(pPatchName, (const PPUINT8)&pfw->data, 0, padSzBuf);
-	set_fs(orig_fs);
 
 	cred->fsuid.val = orig_uid;
 	cred->fsgid.val = orig_gid;
@@ -1710,7 +1694,12 @@ long wmt_dev_tm_temp_query(void)
 
 	static INT32 temp_table[HISTORY_NUM] = { 99 };	/* not query yet. */
 	static INT32 idx_temp_table;
-	static struct timeval query_time, now_time;
+	/*
+	 * struct timeval/do_gettimeofday() are gone from mainline (y2038
+	 * cleanup). Only .tv_sec (seconds) was ever used here, so a plain
+	 * time64_t from ktime_get_seconds() is a drop-in replacement.
+	 */
+	static time64_t query_time, now_time;
 
 	INT8 query_cond = 0;
 	INT32 current_temp = 0;
@@ -1726,7 +1715,7 @@ long wmt_dev_tm_temp_query(void)
 		}
 	}
 
-	do_gettimeofday(&now_time);
+	now_time = ktime_get_seconds();
 #if 1
 	/* Query condition 2: */
 	/* Moniter the ahb bus activity to decide if we have the need to query temperature. */
@@ -1757,8 +1746,8 @@ long wmt_dev_tm_temp_query(void)
 	/*  */
 	if (!query_cond) {
 		/* time overflow, we refresh temp table again for simplicity! */
-		if ((now_time.tv_sec < query_time.tv_sec) ||
-		    ((now_time.tv_sec > query_time.tv_sec) && (now_time.tv_sec - query_time.tv_sec) > REFRESH_TIME)) {
+		if ((now_time < query_time) ||
+		    ((now_time > query_time) && (now_time - query_time) > REFRESH_TIME)) {
 			query_cond = 1;
 
 			WMT_INFO_FUNC("It is long time (> %d sec) not to query, we must query temp temperature..\n",
@@ -1776,7 +1765,7 @@ long wmt_dev_tm_temp_query(void)
 		mtk_wcn_wmt_therm_ctrl(WMTTHERM_DISABLE);
 		idx_temp_table = (idx_temp_table + 1) % HISTORY_NUM;
 		temp_table[idx_temp_table] = current_temp;
-		do_gettimeofday(&query_time);
+		query_time = ktime_get_seconds();
 
 		WMT_INFO_FUNC("[Thermal] current_temp = 0x%x\n", (current_temp & 0xFF));
 	} else {
@@ -1789,8 +1778,8 @@ long wmt_dev_tm_temp_query(void)
 	/* Dump information */
 	/*  */
 	WMT_DBG_FUNC("[Thermal] idx_temp_table = %d\n", idx_temp_table);
-	WMT_DBG_FUNC("[Thermal] now.time = %d, query.time = %d, REFRESH_TIME = %d\n", now_time.tv_sec,
-		     query_time.tv_sec, REFRESH_TIME);
+	WMT_DBG_FUNC("[Thermal] now.time = %lld, query.time = %lld, REFRESH_TIME = %d\n", now_time,
+		     query_time, REFRESH_TIME);
 
 	WMT_DBG_FUNC("[0] = %d, [1] = %d, [2] = %d, [3] = %d, [4] = %d\n----\n",
 		     temp_table[0], temp_table[1], temp_table[2], temp_table[3], temp_table[4]);

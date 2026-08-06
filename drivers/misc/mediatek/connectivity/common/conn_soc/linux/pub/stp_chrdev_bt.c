@@ -34,6 +34,21 @@
 #include "stp_exp.h"
 #include "wmt_exp.h"
 
+/*
+ * mtk_wcn_wmt_ic_info_get() is defined and EXPORT_SYMBOL'd in
+ * common_detect/wmt_stp_exp.c and declared in common_detect/wmt_stp_exp.h,
+ * but that header's declaration never becomes visible here even after
+ * #include "wmt_stp_exp.h" (wmt_exp.h nested-includes wmt_stp_exp.h
+ * itself first, and something in that chain -- unclear exactly what,
+ * not worth chasing further -- causes the ic_info_get declaration
+ * specifically to be dropped by the time the include-guard closes; every
+ * other declaration in that header does show up). This codebase clearly
+ * shipped for years relying on implicit-function-declaration being a
+ * warning rather than a hard error, which is why this was never caught.
+ * A direct forward declaration is the simplest correct fix.
+ */
+extern UINT32 mtk_wcn_wmt_ic_info_get(ENUM_WMT_CHIPINFO_TYPE_T type);
+
 MODULE_LICENSE("Dual BSD/GPL");
 
 #ifdef MTK_BT_HCI
