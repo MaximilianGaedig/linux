@@ -783,200 +783,44 @@ VOID kalHifAhbKalWakeLockTimeout(IN P_GLUE_INFO_T prGlueInfo)
 
 #if CFG_ENABLE_FW_DOWNLOAD
 
-static struct file *filp;
-static uid_t orgfsuid;
-static gid_t orgfsgid;
-static mm_segment_t orgfs;
-
-/*----------------------------------------------------------------------------*/
-/*!
-* \brief This function is provided by GLUE Layer for internal driver stack to
-*        open firmware image in kernel space
-*
-* \param[in] prGlueInfo     Pointer of GLUE Data Structure
-*
-* \retval WLAN_STATUS_SUCCESS.
-* \retval WLAN_STATUS_FAILURE.
-*
-*/
-/*----------------------------------------------------------------------------*/
-WLAN_STATUS kalFirmwareOpen(IN P_GLUE_INFO_T prGlueInfo)
-{
-	UINT_8 aucFilePath[50];
-
-	/* FIX ME: since we don't have hotplug script in the filesystem
-	 * , so the request_firmware() KAPI can not work properly
-	 */
-
-	/* save uid and gid used for filesystem access.
-	 * set user and group to 0(root) */
-	struct cred *cred = (struct cred *)get_current_cred();
-
-	orgfsuid = cred->fsuid.val;
-	orgfsgid = cred->fsgid.val;
-	cred->fsuid.val = cred->fsgid.val = 0;
-
-	ASSERT(prGlueInfo);
-
-	orgfs = get_fs();
-	set_fs(get_ds());
-
-	/* open the fw file */
-#if defined(MT6620) & CFG_MULTI_ECOVER_SUPPORT
-	switch (mtk_wcn_wmt_hwver_get()) {
-	case WMTHWVER_MT6620_E1:
-	case WMTHWVER_MT6620_E2:
-	case WMTHWVER_MT6620_E3:
-	case WMTHWVER_MT6620_E4:
-	case WMTHWVER_MT6620_E5:
-		filp = filp_open("/etc/firmware/" CFG_FW_FILENAME, O_RDONLY, 0);
-		break;
-
-	case WMTHWVER_MT6620_E6:
-	default:
-		filp = filp_open("/etc/firmware/" CFG_FW_FILENAME "_E6", O_RDONLY, 0);
-		break;
-	}
-#elif defined(MT6628)
-/* filp = filp_open("/etc/firmware/"CFG_FW_FILENAME"_MT6628", O_RDONLY, 0); */
-/* filp = filp_open("/etc/firmware/"CFG_FW_FILENAME"_MT6582", O_RDONLY, 0); */
-#if 0				/* new wifi ram code mechanism, waiting firmware ready, then we can enable these code */
-	kalMemZero(aucFilePath, sizeof(aucFilePath));
-	kalMemCopy(aucFilePath, "/etc/firmware/" CFG_FW_FILENAME "_AD", sizeof("/etc/firmware/" CFG_FW_FILENAME "_AD"));
-	filp = filp_open(aucFilePath, O_RDONLY, 0);
-	if (!IS_ERR(filp))
-		goto open_success;
-#endif
-	kalMemZero(aucFilePath, sizeof(aucFilePath));
-	kalMemCopy(aucFilePath, "/etc/firmware/" CFG_FW_FILENAME "_", strlen("/etc/firmware/" CFG_FW_FILENAME "_"));
-	glGetChipInfo(prGlueInfo, &aucFilePath[strlen("/etc/firmware/" CFG_FW_FILENAME "_")]);
-
-	DBGLOG(INIT, INFO, "open file: %s\n", aucFilePath);
-
-	filp = filp_open(aucFilePath, O_RDONLY, 0);
-#else
-	filp = filp_open("/etc/firmware/" CFG_FW_FILENAME, O_RDONLY, 0);
-#endif
-	if (IS_ERR(filp)) {
-		DBGLOG(INIT, ERROR, "Open FW image: %s failed\n", CFG_FW_FILENAME);
-		goto error_open;
-	}
-#if 0
-open_success:
-#endif
-	DBGLOG(INIT, TRACE, "Open FW image: %s done\n", CFG_FW_FILENAME);
-	return WLAN_STATUS_SUCCESS;
-
-error_open:
-	/* restore */
-	set_fs(orgfs);
-	cred->fsuid.val = orgfsuid;
-	cred->fsgid.val = orgfsgid;
-	put_cred(cred);
-	return WLAN_STATUS_FAILURE;
-}
-
-/*----------------------------------------------------------------------------*/
-/*!
-* \brief This function is provided by GLUE Layer for internal driver stack to
-*        release firmware image in kernel space
-*
-* \param[in] prGlueInfo     Pointer of GLUE Data Structure
-*
-* \retval WLAN_STATUS_SUCCESS.
-* \retval WLAN_STATUS_FAILURE.
-*
-*/
-/*----------------------------------------------------------------------------*/
-WLAN_STATUS kalFirmwareClose(IN P_GLUE_INFO_T prGlueInfo)
-{
-	ASSERT(prGlueInfo);
-
-	if ((filp != NULL) && !IS_ERR(filp)) {
-		/* close firmware file */
-		filp_close(filp, NULL);
-
-		/* restore */
-		set_fs(orgfs);
-		{
-			struct cred *cred = (struct cred *)get_current_cred();
-
-			cred->fsuid.val = orgfsuid;
-			cred->fsgid.val = orgfsgid;
-			put_cred(cred);
-		}
-		filp = NULL;
-	}
-
-	return WLAN_STATUS_SUCCESS;
-}
-
-/*----------------------------------------------------------------------------*/
-/*!
-* \brief This function is provided by GLUE Layer for internal driver stack to
-*        load firmware image in kernel space
-*
-* \param[in] prGlueInfo     Pointer of GLUE Data Structure
-*
-* \retval WLAN_STATUS_SUCCESS.
-* \retval WLAN_STATUS_FAILURE.
-*
-*/
-/*----------------------------------------------------------------------------*/
-WLAN_STATUS kalFirmwareLoad(IN P_GLUE_INFO_T prGlueInfo, OUT PVOID prBuf, IN UINT_32 u4Offset, OUT PUINT_32 pu4Size)
-{
-	ASSERT(prGlueInfo);
-	ASSERT(pu4Size);
-	ASSERT(prBuf);
-
-	/* l = filp->f_path.dentry->d_inode->i_size; */
-#if 0
-	/* the object must have a read method */
-	if ((filp == NULL) || IS_ERR(filp) || (filp->f_op == NULL) || (filp->f_op->read == NULL)) {
-		goto error_read;
-	} else {
-		filp->f_pos = u4Offset;
-		*pu4Size = filp->f_op->read(filp, prBuf, *pu4Size, &filp->f_pos);
-	}
-#else
-	/* the object must have a read method */
-	if ((filp == NULL) || IS_ERR(filp) || (filp->f_op == NULL) ) {
-		goto error_read;
-	} else {
-		filp->f_pos = u4Offset;
-		*pu4Size = vfs_read(filp, prBuf, *pu4Size, &filp->f_pos);
-	}
-#endif
-
-	return WLAN_STATUS_SUCCESS;
-
-error_read:
-	return WLAN_STATUS_FAILURE;
-}
-
-/*----------------------------------------------------------------------------*/
-/*!
-* \brief This function is provided by GLUE Layer for internal driver stack to
-*        query firmware image size in kernel space
-*
-* \param[in] prGlueInfo     Pointer of GLUE Data Structure
-*
-* \retval WLAN_STATUS_SUCCESS.
-* \retval WLAN_STATUS_FAILURE.
-*
-*/
-/*----------------------------------------------------------------------------*/
-
-WLAN_STATUS kalFirmwareSize(IN P_GLUE_INFO_T prGlueInfo, OUT PUINT_32 pu4Size)
-{
-	ASSERT(prGlueInfo);
-	ASSERT(pu4Size);
-
-	//*pu4Size = filp->f_path.dentry->d_inode->i_size;
-	*pu4Size = filp->f_op->llseek(filp, 0, 2);
-
-	return WLAN_STATUS_SUCCESS;
-}
+/*
+ * Firmware image loading.
+ *
+ * This was originally a hand-rolled filp_open()/vfs_read() of
+ * "/etc/firmware/WIFI_RAM_CODE_<chipid>", wrapped in two things that no
+ * longer exist and one that never should have:
+ *
+ *   1. get_fs()/set_fs(get_ds()) around the read.  set_fs() was removed
+ *      entirely in v5.10 and vfs_read()/vfs_write() can no longer be pointed
+ *      at kernel buffers at all.
+ *
+ *   2. filp->f_op->llseek(filp, 0, 2) to get the file size, poking the
+ *      file_operations table by hand instead of going through vfs_llseek().
+ *
+ *   3. Temporarily setting the *calling task's* fsuid/fsgid to 0, by taking
+ *      get_current_cred(), casting away the const, and writing through it.
+ *      That does not create a private credential override -- it mutates the
+ *      live struct cred that the calling process is running under.  If this
+ *      path is ever reached from process context (it is: bringing the
+ *      interface up runs adapter start on the caller's task), that process
+ *      really does become fsuid 0 for the duration.  Whatever the intent, it
+ *      is a privilege-escalation window, not a sandbox.
+ *
+ * The comment that justified all of this said request_firmware() "can not
+ * work properly" because there is no hotplug script in the filesystem.  That
+ * has not been true since v2.6.33 gave the firmware loader a direct
+ * filesystem path that needs no userspace helper at all.  So: use
+ * request_firmware().  It reads the blob with the kernel's own credentials,
+ * needs no address-space games, gives us the size for free, and drops
+ * ~120 lines of open-coded VFS handling.
+ *
+ * Behaviour change worth knowing about: the blob is now looked up on the
+ * standard firmware search path (/lib/firmware, /lib/firmware/updates, the
+ * CONFIG_EXTRA_FIRMWARE_DIR built-in path, ...) rather than at the literal
+ * path /etc/firmware.  The file name is unchanged: "WIFI_RAM_CODE_8163" on
+ * this SoC, from CFG_FW_FILENAME plus the chip id that glGetChipInfo()
+ * formats.
+ */
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -986,14 +830,17 @@ WLAN_STATUS kalFirmwareSize(IN P_GLUE_INFO_T prGlueInfo, OUT PUINT_32 pu4Size)
 * \param ppvMapFileBuf  Pointer of pointer to memory-mapped firmware image
 * \param pu4FileLength  File length and memory mapped length as well
 
-* \retval Map File Handle, used for unammping
+* \retval Map File Handle, used for unmapping
 */
 /*----------------------------------------------------------------------------*/
-
 PVOID kalFirmwareImageMapping(IN P_GLUE_INFO_T prGlueInfo, OUT PPVOID ppvMapFileBuf, OUT PUINT_32 pu4FileLength)
 {
-	UINT_32 u4FwSize = 0;
+	const struct firmware *prFw = NULL;
+	struct device *prDev;
 	PVOID prFwBuffer = NULL;
+	UINT_8 aucFwName[64];
+	UINT_32 u4NameLen;
+	int i4Ret;
 
 	DEBUGFUNC("kalFirmwareImageMapping");
 
@@ -1001,34 +848,55 @@ PVOID kalFirmwareImageMapping(IN P_GLUE_INFO_T prGlueInfo, OUT PPVOID ppvMapFile
 	ASSERT(ppvMapFileBuf);
 	ASSERT(pu4FileLength);
 
-	do {
-		/* <1> Open firmware */
-		if (kalFirmwareOpen(prGlueInfo) != WLAN_STATUS_SUCCESS) {
-			DBGLOG(INIT, TRACE, "kalFirmwareOpen fail!\n");
-			break;
-		}
+	*ppvMapFileBuf = NULL;
+	*pu4FileLength = 0;
 
-		/* <2> Query firmare size */
-		kalFirmwareSize(prGlueInfo, &u4FwSize);
-		printk(KERN_ERR "%s firmware size %d\n", __FUNCTION__, u4FwSize);
-		/* <3> Use vmalloc for allocating large memory trunk */
-		prFwBuffer = vmalloc(ALIGN_4(u4FwSize));
-		/* <4> Load image binary into buffer */
-		if (kalFirmwareLoad(prGlueInfo, prFwBuffer, 0, &u4FwSize) != WLAN_STATUS_SUCCESS) {
-			vfree(prFwBuffer);
-			kalFirmwareClose(prGlueInfo);
-			DBGLOG(INIT, TRACE, "kalFirmwareLoad fail!\n");
-			break;
-		}
-		/* <5> write back info */
-		*pu4FileLength = u4FwSize;
-		*ppvMapFileBuf = prFwBuffer;
+	prDev = (struct device *)prGlueInfo->rHifInfo.Dev;
 
-		return prFwBuffer;
+	/* "WIFI_RAM_CODE_" + chip id, e.g. WIFI_RAM_CODE_8163 */
+	kalMemZero(aucFwName, sizeof(aucFwName));
+	u4NameLen = strlen(CFG_FW_FILENAME "_");
+	kalMemCopy(aucFwName, CFG_FW_FILENAME "_", u4NameLen);
+	glGetChipInfo(prGlueInfo, &aucFwName[u4NameLen]);
 
-	} while (FALSE);
+	DBGLOG(INIT, INFO, "requesting firmware: %s\n", aucFwName);
 
-	return NULL;
+	i4Ret = request_firmware(&prFw, (const char *)aucFwName, prDev);
+	if (i4Ret != 0) {
+		DBGLOG(INIT, ERROR, "request_firmware(%s) failed: %d\n", aucFwName, i4Ret);
+		return NULL;
+	}
+
+	if ((prFw->size == 0) || (prFw->size > 0x400000)) {
+		DBGLOG(INIT, ERROR, "firmware %s has implausible size %zu\n", aucFwName, prFw->size);
+		release_firmware(prFw);
+		return NULL;
+	}
+
+	/*
+	 * The caller (nicFwDownload() in nic_pwr_mgt.c) keeps this buffer alive
+	 * across DMA to the chip and frees it via kalFirmwareImageUnmapping(),
+	 * so copy out of the request_firmware() allocation and release it
+	 * immediately rather than holding the firmware handle.  Use vmalloc:
+	 * the image is a few hundred KB and need not be physically contiguous.
+	 */
+	prFwBuffer = vmalloc(ALIGN_4(prFw->size));
+	if (prFwBuffer == NULL) {
+		DBGLOG(INIT, ERROR, "vmalloc(%zu) for firmware failed\n", ALIGN_4(prFw->size));
+		release_firmware(prFw);
+		return NULL;
+	}
+
+	kalMemCopy(prFwBuffer, prFw->data, prFw->size);
+
+	*pu4FileLength = (UINT_32) prFw->size;
+	*ppvMapFileBuf = prFwBuffer;
+
+	DBGLOG(INIT, INFO, "firmware %s loaded, %u bytes\n", aucFwName, *pu4FileLength);
+
+	release_firmware(prFw);
+
+	return prFwBuffer;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -1042,18 +910,15 @@ PVOID kalFirmwareImageMapping(IN P_GLUE_INFO_T prGlueInfo, OUT PPVOID ppvMapFile
 * \retval none
 */
 /*----------------------------------------------------------------------------*/
-
 VOID kalFirmwareImageUnmapping(IN P_GLUE_INFO_T prGlueInfo, IN PVOID prFwHandle, IN PVOID pvMapFileBuf)
 {
 	DEBUGFUNC("kalFirmwareImageUnmapping");
 
 	ASSERT(prGlueInfo);
 
-	/* pvMapFileBuf might be NULL when file doesn't exist */
+	/* pvMapFileBuf might be NULL when the firmware file doesn't exist */
 	if (pvMapFileBuf)
 		vfree(pvMapFileBuf);
-
-	kalFirmwareClose(prGlueInfo);
 }
 
 #endif
@@ -1623,10 +1488,9 @@ WLAN_STATUS kalRxIndicatePkts(IN P_GLUE_INFO_T prGlueInfo, IN PVOID apvPkts[], I
 		DBGLOG(BOW, TRACE, "\n");
 #endif
 
-		if (!in_interrupt())
-			netif_rx_ni(prSkb);	/* only in non-interrupt context */
-		else
-			netif_rx(prSkb);
+		/* netif_rx_ni() removed in v5.18; netif_rx() handles process
+		 * context itself now, so the split is no longer needed. */
+		netif_rx(prSkb);
 
 		wlanReturnPacket(prGlueInfo->prAdapter, NULL);
 	}
@@ -1758,12 +1622,21 @@ kalIndicateStatusAndComplete(IN P_GLUE_INFO_T prGlueInfo, IN WLAN_STATUS eStatus
 						    prGlueInfo->u4ReqIeLength,
 						    prGlueInfo->aucRspIe, prGlueInfo->u4RspIeLength, GFP_KERNEL);
 				*/
+				/*
+				 * cfg80211_roam_info's flat .bss/.bssid/.channel
+				 * fields moved into a per-link array with the MLO
+				 * rework (v6.0).  For a non-MLO roam the contract
+				 * is: leave valid_links at 0 and put the new AP in
+				 * links[0] -- see the kerneldoc above the struct,
+				 * and cfg80211_roamed(), which reads links[0] when
+				 * valid_links is zero.
+				 */
 				struct cfg80211_roam_info roam_info = {
-							.bss = bss,
 						    .req_ie = prGlueInfo->aucReqIe,
 						    .req_ie_len = prGlueInfo->u4ReqIeLength,
 						    .resp_ie = prGlueInfo->aucRspIe,
-							.resp_ie_len = prGlueInfo->u4RspIeLength
+							.resp_ie_len = prGlueInfo->u4RspIeLength,
+						    .links[0].bss = bss,
 				};
 				cfg80211_roamed(prGlueInfo->prDevHandler,
 						    &roam_info,
@@ -3326,14 +3199,21 @@ UINT_32 kalGetTxPendingCmdCount(IN P_GLUE_INFO_T prGlueInfo)
 
 /* static struct timer_list tickfn; */
 
-VOID kalOsTimerInitialize(IN P_GLUE_INFO_T prGlueInfo, IN PVOID prTimerHandler)
+/*
+ * init_timer() plus a hand-set ->function/->data pair was replaced by
+ * timer_setup() in v4.15: struct timer_list lost its untyped "unsigned long
+ * data" field and the callback now receives the timer_list itself, from which
+ * the owning object is recovered with timer_container_of() (the v6.x rename
+ * of from_timer()).  Passing the handler through as a bare PVOID also hid the
+ * signature change from the compiler, so the prototype is tightened here to
+ * the real callback type.
+ */
+VOID kalOsTimerInitialize(IN P_GLUE_INFO_T prGlueInfo, IN PFN_OS_TIMER_CALLBACK prTimerHandler)
 {
 
 	ASSERT(prGlueInfo);
 
-	init_timer(&(prGlueInfo->tickfn));
-	prGlueInfo->tickfn.function = prTimerHandler;
-	prGlueInfo->tickfn.data = (ULONG) prGlueInfo;
+	timer_setup(&(prGlueInfo->tickfn), prTimerHandler, 0);
 }
 
 /* Todo */
@@ -3350,7 +3230,7 @@ VOID kalOsTimerInitialize(IN P_GLUE_INFO_T prGlueInfo, IN PVOID prTimerHandler)
 BOOLEAN kalSetTimer(IN P_GLUE_INFO_T prGlueInfo, IN UINT_32 u4Interval)
 {
 	ASSERT(prGlueInfo);
-	del_timer_sync(&(prGlueInfo->tickfn));
+	timer_delete_sync(&(prGlueInfo->tickfn));
 
 	prGlueInfo->tickfn.expires = jiffies + u4Interval * HZ / MSEC_PER_SEC;
 	add_timer(&(prGlueInfo->tickfn));
@@ -3374,7 +3254,7 @@ BOOLEAN kalCancelTimer(IN P_GLUE_INFO_T prGlueInfo)
 
 	clear_bit(GLUE_FLAG_TIMEOUT_BIT, &prGlueInfo->ulFlag);
 
-	if (del_timer_sync(&(prGlueInfo->tickfn)) >= 0)
+	if (timer_delete_sync(&(prGlueInfo->tickfn)) >= 0)
 		return TRUE;
 	else
 		return FALSE;
@@ -3434,10 +3314,10 @@ UINT_32 kalRandomNumber(VOID)
  * \retval (none)
  */
 /*----------------------------------------------------------------------------*/
-VOID kalTimeoutHandler(ULONG arg)
+VOID kalTimeoutHandler(struct timer_list *t)
 {
 
-	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T) arg;
+	P_GLUE_INFO_T prGlueInfo = timer_container_of(prGlueInfo, t, tickfn);
 
 	ASSERT(prGlueInfo);
 
@@ -3817,20 +3697,20 @@ UINT_32 kalGetMfpSetting(IN P_GLUE_INFO_T prGlueInfo)
 }
 #endif
 
+/*
+ * Small file helpers used by the NVRAM/coredump paths.  get_fs()/set_fs()
+ * are gone (v5.10) and vfs_read()/vfs_write() may no longer be aimed at
+ * kernel buffers; kernel_read()/kernel_write() are the direct replacements
+ * and need no address-space override.  filp_open() never needed one -- the
+ * path string is already a kernel pointer -- so that wrapper just loses it.
+ */
 struct file *kalFileOpen(const char *path, int flags, int rights)
 {
 	struct file *filp = NULL;
-	mm_segment_t oldfs;
-	int err = 0;
 
-	oldfs = get_fs();
-	set_fs(get_ds());
 	filp = filp_open(path, flags, rights);
-	set_fs(oldfs);
-	if (IS_ERR(filp)) {
-		err = PTR_ERR(filp);
+	if (IS_ERR(filp))
 		return NULL;
-	}
 	return filp;
 }
 
@@ -3841,30 +3721,16 @@ VOID kalFileClose(struct file *file)
 
 UINT_32 kalFileRead(struct file *file, UINT_64 offset, UINT_8 *data, UINT_32 size)
 {
-	mm_segment_t oldfs;
-	INT_32 ret;
+	loff_t pos = offset;
 
-	oldfs = get_fs();
-	set_fs(get_ds());
-
-	ret = vfs_read(file, data, size, &offset);
-
-	set_fs(oldfs);
-	return ret;
+	return kernel_read(file, data, size, &pos);
 }
 
 UINT_32 kalFileWrite(struct file *file, UINT_64 offset, UINT_8 *data, UINT_32 size)
 {
-	mm_segment_t oldfs;
-	INT_32 ret;
+	loff_t pos = offset;
 
-	oldfs = get_fs();
-	set_fs(get_ds());
-
-	ret = vfs_write(file, data, size, &offset);
-
-	set_fs(oldfs);
-	return ret;
+	return kernel_write(file, data, size, &pos);
 }
 
 UINT_32 kalWriteToFile(const PUINT_8 pucPath, BOOLEAN fgDoAppend, PUINT_8 pucData, UINT_32 u4Size)
@@ -4158,8 +4024,18 @@ VOID kalIndicateRxMgmtFrame(IN P_GLUE_INFO_T prGlueInfo, IN P_SW_RFB_T prSwRfb)
 }				/* kalIndicateRxMgmtFrame */
 
 #if CFG_SUPPORT_AGPS_ASSIST
+/*
+ * The AGPS notification channel is carried over nl80211 testmode events.
+ * cfg80211_testmode_alloc_event_skb()/cfg80211_testmode_event() only exist
+ * under CONFIG_NL80211_TESTMODE -- they always did, but this driver never
+ * guarded its use of them, which only worked because MediaTek's own configs
+ * always had testmode on.  Guard it: with testmode off the AGPS assist
+ * notifications are simply not delivered, which is a feature gap, not a
+ * build break, and the three call sites already ignore the return value.
+ */
 BOOLEAN kalIndicateAgpsNotify(P_ADAPTER_T prAdapter, UINT_8 cmd, PUINT_8 data, UINT_16 dataLen)
 {
+#ifdef CONFIG_NL80211_TESTMODE
 	P_GLUE_INFO_T prGlueInfo = prAdapter->prGlueInfo;
 
 	struct sk_buff *skb = cfg80211_testmode_alloc_event_skb(priv_to_wiphy(prGlueInfo),
@@ -4185,6 +4061,9 @@ BOOLEAN kalIndicateAgpsNotify(P_ADAPTER_T prAdapter, UINT_8 cmd, PUINT_8 data, U
 nla_put_failure:
 	kfree_skb(skb);
 	return FALSE;
+#else /* !CONFIG_NL80211_TESTMODE */
+	return FALSE;
+#endif
 }
 #endif
 
@@ -4408,10 +4287,14 @@ int kalMetRemoveProcfs(void)
 #endif
 UINT_64 kalGetBootTime(void)
 {
-	struct timespec ts;
+	/* struct timespec was removed in the y2038 cleanup (v5.6) and
+	 * get_monotonic_boottime() was replaced by ktime_get_boottime_ts64()
+	 * back in v4.18.  Same clock (CLOCK_BOOTTIME: monotonic including
+	 * suspend), 64-bit seconds. */
+	struct timespec64 ts;
 	UINT_64 bootTime = 0;
 
-	get_monotonic_boottime(&ts);
+	ktime_get_boottime_ts64(&ts);
 	/* we assign ts.tv_sec to bootTime first, then multiply USEC_PER_SEC
 	   this will prevent multiply result turn to a negative value on 32bit system */
 	bootTime = ts.tv_sec;
@@ -4531,12 +4414,12 @@ INT_32 kalHaltLock(UINT_32 waitMs)
 				"kalIoctl was executed longer than %u ms, show backtrace of tx_thread!\n",
 				kalGetTimeTick() - rHaltCtrl.u4HoldStart);
 			if (prGlueInfo)
-				show_stack(prGlueInfo->main_thread, NULL);
+				show_stack(prGlueInfo->main_thread, NULL, KERN_ERR);
 		} else {
 			DBGLOG(INIT, ERROR, "halt lock held by %s pid %d longer than %u ms!\n",
 				rHaltCtrl.owner->comm, rHaltCtrl.owner->pid,
 				kalGetTimeTick() - rHaltCtrl.u4HoldStart);
-			show_stack(rHaltCtrl.owner, NULL);
+			show_stack(rHaltCtrl.owner, NULL, KERN_ERR);
 		}
 		return i4Ret;
 	}

@@ -244,7 +244,7 @@ static int HifAhbMiscClose(IN struct inode *Inodep, IN struct file *Filp);
 
 static int HifAhbPltmProbe(IN struct platform_device *PDev);
 
-static void __exit HifAhbPltmRemove(IN struct platform_device *PDev);
+static void HifAhbPltmRemove(IN struct platform_device *PDev);
 
 #ifdef CONFIG_PM
 static int HifAhbPltmSuspend(IN struct platform_device *PDev, pm_message_t Message);
@@ -324,7 +324,7 @@ struct platform_driver MtkPltmAhbDriver = {
 	.suspend = NULL,
 	.resume = NULL,
 #endif /* CONFIG_PM */
-	.remove = __exit_p(HifAhbPltmRemove),
+	.remove = HifAhbPltmRemove,
 };
 
 static struct platform_device *HifAhbPDev;
@@ -1562,8 +1562,14 @@ static int HifAhbPltmProbe(IN struct platform_device *PDev)
 */
 /*----------------------------------------------------------------------------*/
 /* platform_driver::remove lost its int return value (v6.11: remove_new was
- * folded back into remove); errors here were always ignored anyway. */
-static void __exit HifAhbPltmRemove(IN struct platform_device *PDev)
+ * folded back into remove); errors here were always ignored anyway.
+ *
+ * It also must not be __exit/__exit_p: ->remove runs on any device unbind
+ * (including an explicit unbind through sysfs), not only on module unload,
+ * so putting it in .exit.text and referencing it from a .data ops table is
+ * a genuine section mismatch -- modpost flags it, and discarding
+ * .exit.text in a built-in build would leave a dangling pointer. */
+static void HifAhbPltmRemove(IN struct platform_device *PDev)
 {
 #if (MTK_WCN_SINGLE_MODULE == 0)
 	mtk_wcn_wmt_wlan_unreg();

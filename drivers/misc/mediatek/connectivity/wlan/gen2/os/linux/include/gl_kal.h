@@ -1253,7 +1253,12 @@ VOID kalPacketFree(IN P_GLUE_INFO_T prGlueInfo, IN PVOID pvPacket);
 
 PVOID kalPacketAlloc(IN P_GLUE_INFO_T prGlueInfo, IN UINT_32 u4Size, OUT PUINT_8 *ppucData);
 
-VOID kalOsTimerInitialize(IN P_GLUE_INFO_T prGlueInfo, IN PVOID prTimerHandler);
+/* the ->function type of a struct timer_list, post-timer_setup().  Note
+ * PFN_TIMER_CALLBACK in include/typedef.h is a different, driver-internal
+ * timer abstraction (cnm_timer) and is unrelated. */
+typedef void (*PFN_OS_TIMER_CALLBACK)(struct timer_list *);
+
+VOID kalOsTimerInitialize(IN P_GLUE_INFO_T prGlueInfo, IN PFN_OS_TIMER_CALLBACK prTimerHandler);
 
 BOOLEAN kalSetTimer(IN P_GLUE_INFO_T prGlueInfo, IN OS_SYSTIME rInterval);
 
@@ -1450,7 +1455,7 @@ VOID kalScanDone(IN P_GLUE_INFO_T prGlueInfo, IN ENUM_KAL_NETWORK_TYPE_INDEX_T e
 
 UINT_32 kalRandomNumber(VOID);
 
-VOID kalTimeoutHandler(ULONG arg);
+VOID kalTimeoutHandler(struct timer_list *t);
 
 VOID kalSetEvent(P_GLUE_INFO_T pr);
 
