@@ -10,7 +10,9 @@
 MTK_PLATFORM ?= mt8127
 export MTK_PLATFORM
 
-obj-$(CONFIG_MTK_COMBO)		+= connectivity/common/conn_soc/
-obj-$(CONFIG_MTK_COMBO)		+= connectivity/common/common_detect/
-obj-$(CONFIG_MTK_COMBO_WIFI)	+= connectivity/wlan/gen2/
+# connectivity/Makefile sets the subsystem-wide -D flags (built-in vs module
+# entry points, the STP export indirection layer, ...) and descends into the
+# individual drivers itself -- do not bypass it by pointing at the leaf
+# directories directly, or those flags will be missing.
+obj-$(CONFIG_MTK_COMBO)		+= connectivity/
 obj-$(CONFIG_MTK_BTIF)		+= btif/

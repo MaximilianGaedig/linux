@@ -432,8 +432,18 @@ mtk_bt_hci_flush(struct hci_dev *hdev)
 	return 0;
 }
 
+/*
+ * Real bug, not API drift: this was "const PUINT8 data".  PUINT8 is a
+ * typedef for UINT8 *, so "const PUINT8" declares a *const pointer to
+ * mutable data* (UINT8 * const), not a pointer to const data.  The STP
+ * core's MTK_WCN_STP_IF_RX callback type is void (*)(const UINT8 *, INT32)
+ * -- pointer to const -- so this never matched, it just went unnoticed
+ * because the two conflicting typedefs of MTK_WCN_STP_IF_RX (conn_soc's
+ * include/stp_exp.h vs common_detect's wmt_stp_exp.h, which repeats the
+ * same const-in-the-wrong-place mistake) are rarely in scope together.
+ */
 static void
-mtk_bt_hci_receive(const PUINT8 data, INT32 size)
+mtk_bt_hci_receive(const UINT8 *data, INT32 size)
 {
 	int err;
 

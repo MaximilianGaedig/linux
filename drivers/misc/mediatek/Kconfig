@@ -14,6 +14,7 @@ if MTK_CONNECTIVITY
 config MTK_COMBO
 	tristate "MT66xx combo chip WMT/STP core"
 	depends on OF
+	select ZLIB_DEFLATE
 	help
 	  The Wireless Management Team (WMT) / Serial Transport Protocol
 	  (STP) core.  This is the shared transport that muxes the WiFi,
@@ -44,6 +45,7 @@ config MTK_COMBO_CHIP
 config MTK_COMBO_BT
 	tristate "MT66xx combo chip Bluetooth (/dev/stpbt)"
 	depends on MTK_COMBO
+	depends on BT
 	help
 	  Exposes the combo chip's Bluetooth function as a character
 	  device, /dev/stpbt.  Note that this is *not* an in-kernel

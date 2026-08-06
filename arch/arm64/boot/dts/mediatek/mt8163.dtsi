@@ -22,6 +22,7 @@
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
 #include <dt-bindings/reset/mediatek,mt8163-mmsys.h>
 #include <dt-bindings/reset/mediatek,mt8163-wdt.h>
+#include <dt-bindings/thermal/thermal.h>
 
 / {
 	#address-cells = <2>;

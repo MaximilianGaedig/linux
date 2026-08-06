@@ -83,7 +83,15 @@
 typedef void (*MTK_WCN_STP_EVENT_CB) (void);
 typedef INT32(*MTK_WCN_STP_IF_TX) (const PUINT8 data, const UINT32 size, PUINT32 written_size);
 /* export for HIF driver */
-typedef void (*MTK_WCN_STP_IF_RX) (const PUINT8 data, INT32 size);
+/* NB: "const PUINT8" here would mean UINT8 * const -- a const pointer to
+ * mutable data -- not a pointer to const data, which is what an RX callback
+ * wants and what conn_soc's own include/stp_exp.h declares.  The two headers
+ * disagreed; this one had the const in the wrong place.  Corrected to match
+ * the transport side, which is the one actually handing over the buffer.
+ * (The neighbouring typedefs repeat the same mistake, but nothing currently
+ * assigns to them across the two headers, so they are left alone rather than
+ * churned.) */
+typedef void (*MTK_WCN_STP_IF_RX) (const UINT8 *data, INT32 size);
 
 typedef enum {
 	STP_UART_IF_TX = 0,
