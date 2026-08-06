@@ -2416,7 +2416,7 @@ TdlsTestTdlsFrameSend(ADAPTER_T *prAdapter, VOID *pvSetBuffer, UINT_32 u4SetBuff
 	prWdev = (struct wireless_dev *)prGlueInfo->prDevHandler->ieee80211_ptr;
 
 	TdlsexCfg80211TdlsMgmt(prWdev->wiphy, NULL,
-			prCmd->arRspAddr, prCmd->ucFmeType, 1,
+			prCmd->arRspAddr, -1, prCmd->ucFmeType, 1,
 			0, 0, /* open/none */
 			FALSE, NULL, 0);
 
@@ -3701,8 +3701,10 @@ VOID TdlsexBssExtCapParse(STA_RECORD_T *prStaRec, UINT_8 *pucIE)
 */
 /*----------------------------------------------------------------------------*/
 int
+/* ->tdls_mgmt gained an "int link_id" after the peer address (v6.0 MLO
+ * rework); -1 means "not an MLO link".  Ignored -- single-link hardware. */
 TdlsexCfg80211TdlsMgmt(struct wiphy *wiphy, struct net_device *dev,
-		       const u8 *peer, u8 action_code, u8 dialog_token,
+		       const u8 *peer, int link_id, u8 action_code, u8 dialog_token,
 		       u16 status_code, u32 peer_capability,
 		       bool initiator, const u8 *buf, size_t len)
 {

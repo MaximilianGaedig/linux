@@ -907,7 +907,7 @@ static struct cfg80211_ops mtk_wlan_ops = {
 	.cancel_remain_on_channel = mtk_cfg80211_cancel_remain_on_channel,
 	.mgmt_tx = mtk_cfg80211_mgmt_tx,
 /* .mgmt_tx_cancel_wait        = mtk_cfg80211_mgmt_tx_cancel_wait, */
-	.mgmt_frame_register = mtk_cfg80211_mgmt_frame_register,
+	.update_mgmt_frame_registrations = mtk_cfg80211_update_mgmt_frame_registrations,
 #ifdef CONFIG_NL80211_TESTMODE
 	.testmode_cmd = mtk_cfg80211_testmode_cmd,
 #endif
@@ -1143,8 +1143,17 @@ unsigned int _cfg80211_classify8021d(struct sk_buff *skb)
 
 static const UINT_16 au16Wlan1dToQueueIdx[8] = { 1, 0, 0, 1, 2, 2, 3, 3 };
 
+/*
+ * ->ndo_select_queue lost its accel_priv/fallback pair.  accel_priv went away
+ * in v4.19 (the Fujitsu FJES accelerator was the only user) and the
+ * select_queue_fallback_t function pointer in v5.2, replaced by a plain
+ * "struct net_device *sb_dev" (the subordinate/"upper" device, NULL for us).
+ * A driver that used to call fallback() now calls netdev_pick_tx() directly;
+ * this one never did -- it picks the queue purely from the 802.1d priority it
+ * just derived from the DSCP bits -- so the new signature is all we need.
+ */
 static UINT_16 wlanSelectQueue(struct net_device *dev, struct sk_buff *skb,
-				void *accel_priv, select_queue_fallback_t fallback)
+				struct net_device *sb_dev)
 {
 	skb->priority = _cfg80211_classify8021d(skb);
 
@@ -1615,8 +1624,18 @@ static void createWirelessDevice(void)
 	prWiphy->cipher_suites = mtk_cipher_suites;
 	prWiphy->n_cipher_suites = ARRAY_SIZE(mtk_cipher_suites);
 	prWiphy->flags = WIPHY_FLAG_SUPPORTS_FW_ROAM
-			| WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL
-			| WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+			| WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
+	/*
+	 * WIPHY_FLAG_SUPPORTS_SCHED_SCAN was dropped in v4.12 when cfg80211
+	 * gained support for several concurrent scheduled scans: the boolean
+	 * "I support sched scan" flag became a count of how many requests can
+	 * be in flight at once, and cfg80211 now derives capability from that
+	 * (see nl80211_start_sched_scan()'s max_sched_scan_reqs check).  This
+	 * driver keeps exactly one sched-scan request -- mtk_cfg80211_sched_
+	 * scan_stop() ignores the reqid it is handed and just cancels "the"
+	 * scan -- so declare 1, not more.
+	 */
+	prWiphy->max_sched_scan_reqs = 1;
 	prWiphy->regulatory_flags = REGULATORY_CUSTOM_REG;
 #if CFG_SUPPORT_TDLS
 	TDLSEX_WIPHY_FLAGS_INIT(prWiphy->flags);

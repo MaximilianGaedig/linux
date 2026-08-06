@@ -376,7 +376,7 @@ typedef struct _TDLS_CMD_CORE_T {
 
 int
 TdlsexCfg80211TdlsMgmt(struct wiphy *wiphy, struct net_device *dev,
-		       const u8 *peer, u8 action_code, u8 dialog_token,
+		       const u8 *peer, int link_id, u8 action_code, u8 dialog_token,
 		       u16 status_code, u32 peer_capability,
 		       bool initiator, const u8 *buf, size_t len);
 

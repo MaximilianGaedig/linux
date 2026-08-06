@@ -221,26 +221,36 @@ int
 mtk_cfg80211_change_iface(struct wiphy *wiphy,
 			  struct net_device *ndev, enum nl80211_iftype type,/* u32 *flags,*/ struct vif_params *params);
 
+/*
+ * The key management ops all gained an "int link_id" argument after the
+ * net_device with the 802.11be MLO rework (v6.0).  It selects which link of a
+ * multi-link device the key belongs to, and is -1 for a non-MLO connection.
+ * This driver is single-link 802.11n hardware and has no MLO concept at all,
+ * so every one of these ignores it.
+ */
 int
 mtk_cfg80211_add_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
+		     struct net_device *ndev, int link_id,
 		     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params);
 
 int
 mtk_cfg80211_get_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
+		     struct net_device *ndev, int link_id,
 		     u8 key_index,
 		     bool pairwise,
 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
 );
 
 int
-mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool pairwise, const u8 *mac_addr);
+mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, int link_id,
+		     u8 key_index, bool pairwise, const u8 *mac_addr);
 
 int
-mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool unicast, bool multicast);
+mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, int link_id,
+			     u8 key_index, bool unicast, bool multicast);
 
-int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, u8 key_index);
+int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, int link_id,
+				      u8 key_index);
 
 int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac, struct station_info *sinfo);
 
@@ -284,9 +294,9 @@ mtk_cfg80211_mgmt_tx(struct wiphy *wiphy,
 		     struct cfg80211_mgmt_tx_params *params,
 		     u64 *cookie);
 
-void mtk_cfg80211_mgmt_frame_register(IN struct wiphy *wiphy,
-				      IN struct wireless_dev *wdev,
-				      IN u16 frame_type, IN bool reg);
+void mtk_cfg80211_update_mgmt_frame_registrations(IN struct wiphy *wiphy,
+						  IN struct wireless_dev *wdev,
+						  IN struct mgmt_frame_regs *upd);
 
 int mtk_cfg80211_mgmt_tx_cancel_wait(struct wiphy *wiphy, struct wireless_dev *wdev, u64 cookie);
 

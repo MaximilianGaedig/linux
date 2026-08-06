@@ -519,11 +519,14 @@ static long mt6620_ampc_ioctl(IN struct file *filp, IN unsigned int cmd, IN OUT 
 
 	if ((prGlueInfo->rBowInfo.fgIsRegistered == FALSE) || (prGlueInfo->ulFlag & GLUE_FLAG_HALT))
 		return -EFAULT;
-	/* permission check */
-	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
-	else if (_IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
+	/* permission check.  access_ok() lost its VERIFY_READ/VERIFY_WRITE
+	 * type argument in v5.0: no architecture Linux still supports can
+	 * range-check reads and writes differently, so the direction was
+	 * always ignored and the constants were removed.  The remaining
+	 * check (is this a valid userspace address range) is direction
+	 * independent, so the two arms collapse into one. */
+	if (_IOC_DIR(cmd) & (_IOC_READ | _IOC_WRITE))
+		err = !access_ok((void __user *)arg, _IOC_SIZE(cmd));
 	if (err)
 		return -EFAULT;
 

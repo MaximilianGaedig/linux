@@ -168,7 +168,7 @@ mtk_cfg80211_change_iface(struct wiphy *wiphy,
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_add_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
+		     struct net_device *ndev, int link_id,
 		     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
 {
 	PARAM_KEY_T rKey;
@@ -247,7 +247,7 @@ mtk_cfg80211_add_key(struct wiphy *wiphy,
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_get_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
+		     struct net_device *ndev, int link_id,
 		     u8 key_index,
 		     bool pairwise,
 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *))
@@ -274,7 +274,8 @@ mtk_cfg80211_get_key(struct wiphy *wiphy,
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool pairwise, const u8 *mac_addr)
+int mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, int link_id,
+			 u8 key_index, bool pairwise, const u8 *mac_addr)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
@@ -325,7 +326,8 @@ int mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_in
  */
 /*----------------------------------------------------------------------------*/
 int
-mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool unicast, bool multicast)
+mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, int link_id,
+			     u8 key_index, bool unicast, bool multicast)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 
@@ -349,7 +351,8 @@ mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, u8 ke
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, u8 key_index)
+int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, int link_id,
+				      u8 key_index)
 {
 	return 0;
 }
@@ -538,7 +541,7 @@ int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
 	if ((wiphy == NULL) || (mac == NULL) || (params == NULL))
 		return -EINVAL;
 
-	DBGLOG(TDLS, INFO, "%s: 0x%p 0x%x\n", __func__, params->supported_rates, params->sta_flags_set);
+	DBGLOG(TDLS, INFO, "%s: 0x%p 0x%x\n", __func__, params->link_sta_params.supported_rates, params->sta_flags_set);
 
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER)))
 		return -EOPNOTSUPP;
@@ -553,13 +556,13 @@ int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
 	kalMemZero(&rCmdUpdate, sizeof(rCmdUpdate));
 	kalMemCopy(rCmdUpdate.aucPeerMac, mac, 6);
 
-	if (params->supported_rates != NULL) {
-		u4Temp = params->supported_rates_len;
+	if (params->link_sta_params.supported_rates != NULL) {
+		u4Temp = params->link_sta_params.supported_rates_len;
 		if (u4Temp > TDLS_CMD_PEER_UPDATE_SUP_RATE_MAX) {
 			u4Temp = TDLS_CMD_PEER_UPDATE_SUP_RATE_MAX;
-			DBGLOG(TDLS, ERROR, "%s sup rate too long: %d\n", __func__, params->supported_rates_len);
+			DBGLOG(TDLS, ERROR, "%s sup rate too long: %d\n", __func__, params->link_sta_params.supported_rates_len);
 		}
-		kalMemCopy(rCmdUpdate.aucSupRate, params->supported_rates, u4Temp);
+		kalMemCopy(rCmdUpdate.aucSupRate, params->link_sta_params.supported_rates, u4Temp);
 		rCmdUpdate.u2SupRateLen = u4Temp;
 	}
 
@@ -585,18 +588,18 @@ int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
 		rCmdUpdate.u2ExtCapLen = u4Temp;
 	}
 
-	if (params->ht_capa != NULL) {
+	if (params->link_sta_params.ht_capa != NULL) {
 		DBGLOG(TDLS, INFO, "%s: peer is 11n device\n", __func__);
 
-		rCmdUpdate.rHtCap.u2CapInfo = params->ht_capa->cap_info;
-		rCmdUpdate.rHtCap.ucAmpduParamsInfo = params->ht_capa->ampdu_params_info;
-		rCmdUpdate.rHtCap.u2ExtHtCapInfo = params->ht_capa->extended_ht_cap_info;
-		rCmdUpdate.rHtCap.u4TxBfCapInfo = params->ht_capa->tx_BF_cap_info;
-		rCmdUpdate.rHtCap.ucAntennaSelInfo = params->ht_capa->antenna_selection_info;
+		rCmdUpdate.rHtCap.u2CapInfo = params->link_sta_params.ht_capa->cap_info;
+		rCmdUpdate.rHtCap.ucAmpduParamsInfo = params->link_sta_params.ht_capa->ampdu_params_info;
+		rCmdUpdate.rHtCap.u2ExtHtCapInfo = params->link_sta_params.ht_capa->extended_ht_cap_info;
+		rCmdUpdate.rHtCap.u4TxBfCapInfo = params->link_sta_params.ht_capa->tx_BF_cap_info;
+		rCmdUpdate.rHtCap.ucAntennaSelInfo = params->link_sta_params.ht_capa->antenna_selection_info;
 		kalMemCopy(rCmdUpdate.rHtCap.rMCS.arRxMask,
-			   params->ht_capa->mcs.rx_mask, sizeof(rCmdUpdate.rHtCap.rMCS.arRxMask));
-		rCmdUpdate.rHtCap.rMCS.u2RxHighest = params->ht_capa->mcs.rx_highest;
-		rCmdUpdate.rHtCap.rMCS.ucTxParams = params->ht_capa->mcs.tx_params;
+			   params->link_sta_params.ht_capa->mcs.rx_mask, sizeof(rCmdUpdate.rHtCap.rMCS.arRxMask));
+		rCmdUpdate.rHtCap.rMCS.u2RxHighest = params->link_sta_params.ht_capa->mcs.rx_highest;
+		rCmdUpdate.rHtCap.rMCS.ucTxParams = params->link_sta_params.ht_capa->mcs.tx_params;
 		rCmdUpdate.fgIsSupHt = TRUE;
 	}
 
@@ -651,7 +654,7 @@ int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
 	   Only MAC address of the peer is valid.
 	 */
 
-	DBGLOG(TDLS, INFO, "%s: 0x%p %d\n", __func__, params->supported_rates, params->supported_rates_len);
+	DBGLOG(TDLS, INFO, "%s: 0x%p %d\n", __func__, params->link_sta_params.supported_rates, params->link_sta_params.supported_rates_len);
 
 	/* sanity check */
 	if (!(params->sta_flags_set & BIT(NL80211_STA_FLAG_TDLS_PEER)))
@@ -674,15 +677,15 @@ int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
 
 	DBGLOG(TDLS, INFO, "<tdls_cmd> %s: capability = 0x%x\n", __func__, rCmdCreate.u2CapInfo);
 
-	if ((params->supported_rates != NULL) && (params->supported_rates_len != 0)) {
+	if ((params->link_sta_params.supported_rates != NULL) && (params->link_sta_params.supported_rates_len != 0)) {
 		UINT32 u4Idx;
 
 		DBGLOG(TDLS, INFO, "<tdls_cmd> %s: sup rate = 0x", __func__);
 
 		rIeSup.ucId = ELEM_ID_SUP_RATES;
-		rIeSup.ucLength = params->supported_rates_len;
+		rIeSup.ucLength = params->link_sta_params.supported_rates_len;
 		for (u4Idx = 0; u4Idx < rIeSup.ucLength; u4Idx++) {
-			rIeSup.aucSupportedRates[u4Idx] = params->supported_rates[u4Idx];
+			rIeSup.aucSupportedRates[u4Idx] = params->link_sta_params.supported_rates[u4Idx];
 			DBGLOG(TDLS, INFO, "%x ", rIeSup.aucSupportedRates[u4Idx]);
 		}
 		DBGLOG(TDLS, INFO, "\n");
@@ -1365,79 +1368,72 @@ int mtk_cfg80211_flush_pmksa(struct wiphy *wiphy, struct net_device *ndev)
 	return 0;
 }
 
-void mtk_cfg80211_mgmt_frame_register(IN struct wiphy *wiphy,
-				      IN struct wireless_dev *wdev,
-				      IN u16 frame_type, IN bool reg)
+/*----------------------------------------------------------------------------*/
+/*!
+ * @brief cfg80211 handler: management frame registrations changed.
+ *
+ * This replaces the old .mgmt_frame_register callback, which was removed in
+ * v5.8.  The two are shaped quite differently:
+ *
+ *   - .mgmt_frame_register was an *edge* notification: cfg80211 called it once
+ *     per (frame_type, register/unregister) transition, passing the full
+ *     16-bit frame control value (e.g. 0x0040 for probe request) and a bool.
+ *     A driver was expected to maintain its own registration refcount/state.
+ *
+ *   - .update_mgmt_frame_registrations is a *level* notification: cfg80211
+ *     recomputes the complete set of registered management frame subtypes and
+ *     hands us the resulting bitmaps, indexed by BIT(frame_type >> 4) -- i.e.
+ *     by 802.11 frame subtype, so probe request is BIT(4) and action is
+ *     BIT(13).  It also splits per-interface from device-global registrations
+ *     (and unicast from multicast RX), which the old callback could not
+ *     express.  The callback may sleep and may be called with no change at
+ *     all, so we have to diff against our own state ourselves.
+ *
+ * Mapping onto this driver: it has exactly two RX management-frame filter
+ * bits, probe request and action frame, both per-interface, so we rebuild
+ * those two bits from upd->interface_stypes and only poke the main thread
+ * when the result actually differs from what the firmware has.
+ */
+/*----------------------------------------------------------------------------*/
+void mtk_cfg80211_update_mgmt_frame_registrations(IN struct wiphy *wiphy,
+						  IN struct wireless_dev *wdev,
+						  IN struct mgmt_frame_regs *upd)
 {
-#if 0
-	P_MSG_P2P_MGMT_FRAME_REGISTER_T prMgmtFrameRegister = (P_MSG_P2P_MGMT_FRAME_REGISTER_T) NULL;
-#endif
 	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T) NULL;
+	UINT_32 u4NewFilter;
 
-	do {
+	if ((wiphy == NULL) || (upd == NULL))
+		return;
 
-		DBGLOG(REQ, LOUD, "mtk_cfg80211_mgmt_frame_register\n");
+	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
+	if (prGlueInfo == NULL)
+		return;
 
-		prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
+	u4NewFilter = prGlueInfo->u4OsMgmtFrameFilter &
+	    ~(PARAM_PACKET_FILTER_PROBE_REQ | PARAM_PACKET_FILTER_ACTION_FRAME);
 
-		switch (frame_type) {
-		case MAC_FRAME_PROBE_REQ:
-			if (reg) {
-				prGlueInfo->u4OsMgmtFrameFilter |= PARAM_PACKET_FILTER_PROBE_REQ;
-				DBGLOG(REQ, LOUD, "Open packet filer probe request\n");
-			} else {
-				prGlueInfo->u4OsMgmtFrameFilter &= ~PARAM_PACKET_FILTER_PROBE_REQ;
-				DBGLOG(REQ, LOUD, "Close packet filer probe request\n");
-			}
-			break;
-		case MAC_FRAME_ACTION:
-			if (reg) {
-				prGlueInfo->u4OsMgmtFrameFilter |= PARAM_PACKET_FILTER_ACTION_FRAME;
-				DBGLOG(REQ, LOUD, "Open packet filer action frame.\n");
-			} else {
-				prGlueInfo->u4OsMgmtFrameFilter &= ~PARAM_PACKET_FILTER_ACTION_FRAME;
-				DBGLOG(REQ, LOUD, "Close packet filer action frame.\n");
-			}
-			break;
-		default:
-			DBGLOG(REQ, TRACE, "Ask frog to add code for mgmt:%x\n", frame_type);
-			break;
-		}
+	if (upd->interface_stypes & BIT(MAC_FRAME_PROBE_REQ >> 4))
+		u4NewFilter |= PARAM_PACKET_FILTER_PROBE_REQ;
 
-		if (prGlueInfo->prAdapter != NULL) {
-			/* prGlueInfo->ulFlag |= GLUE_FLAG_FRAME_FILTER_AIS; */
-			set_bit(GLUE_FLAG_FRAME_FILTER_AIS_BIT, &prGlueInfo->ulFlag);
+	if (upd->interface_stypes & BIT(MAC_FRAME_ACTION >> 4))
+		u4NewFilter |= PARAM_PACKET_FILTER_ACTION_FRAME;
 
-			/* wake up main thread */
-			wake_up_interruptible(&prGlueInfo->waitq);
+	DBGLOG(REQ, LOUD, "%s: stypes if=0x%08x global=0x%08x, filter 0x%08x -> 0x%08x\n",
+			  __func__, upd->interface_stypes, upd->global_stypes,
+			  prGlueInfo->u4OsMgmtFrameFilter, u4NewFilter);
 
-			if (in_interrupt())
-				DBGLOG(REQ, TRACE, "It is in interrupt level\n");
-		}
-#if 0
+	if (u4NewFilter == prGlueInfo->u4OsMgmtFrameFilter)
+		return;
 
-		prMgmtFrameRegister = (P_MSG_P2P_MGMT_FRAME_REGISTER_T) cnmMemAlloc(prGlueInfo->prAdapter,
-										    RAM_TYPE_MSG,
-										    sizeof
-										    (MSG_P2P_MGMT_FRAME_REGISTER_T));
+	prGlueInfo->u4OsMgmtFrameFilter = u4NewFilter;
 
-		if (prMgmtFrameRegister == NULL) {
-			ASSERT(FALSE);
-			break;
-		}
+	if (prGlueInfo->prAdapter != NULL) {
+		set_bit(GLUE_FLAG_FRAME_FILTER_AIS_BIT, &prGlueInfo->ulFlag);
 
-		prMgmtFrameRegister->rMsgHdr.eMsgId = MID_MNY_P2P_MGMT_FRAME_REGISTER;
-
-		prMgmtFrameRegister->u2FrameType = frame_type;
-		prMgmtFrameRegister->fgIsRegister = reg;
-
-		mboxSendMsg(prGlueInfo->prAdapter, MBOX_ID_0, (P_MSG_HDR_T) prMgmtFrameRegister, MSG_SEND_METHOD_BUF);
-
-#endif
-
-	} while (FALSE);
-
-}				/* mtk_cfg80211_mgmt_frame_register */
+		/* wake up main thread */
+		wake_up_interruptible(&prGlueInfo->waitq);
+	}
+}				/* mtk_cfg80211_update_mgmt_frame_registrations */
 
 /*----------------------------------------------------------------------------*/
 /*!
