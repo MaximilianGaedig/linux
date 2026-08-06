@@ -3497,5 +3497,7 @@ module_exit(exitWlan);
 
 MODULE_AUTHOR(NIC_AUTHOR);
 MODULE_DESCRIPTION(NIC_DESC);
-MODULE_SUPPORTED_DEVICE(NIC_NAME);
+/* MODULE_SUPPORTED_DEVICE() was purely informational and was removed
+ * from mainline entirely (no replacement); dropped.
+ */
 MODULE_LICENSE("GPL");

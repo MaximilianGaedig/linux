@@ -517,10 +517,20 @@
 
 #define DRV_NAME "["CHIP_NAME"]: "
 
-#define CONFIG_ANDROID 1
-/* Define if target platform is Android.
- * It should already be defined in Android kernel source
+/*
+ * This used to be unconditionally #define CONFIG_ANDROID 1 ("should
+ * already be defined in Android kernel source" -- i.e. this driver
+ * assumed an Android-common-kernel target). Mainline has no
+ * <linux/wakelock.h> and no CONFIG_ANDROID Kconfig symbol, so forcing
+ * this on breaks the build; the various KAL_WAKE_LOCK_*() macros in
+ * gl_kal.h already have a real no-op fallback for the !CONFIG_ANDROID
+ * case (see there), so this just disables the wake-lock-during-timer
+ * optimization rather than porting it to wakeup_source (as was done
+ * for the conn_soc WMT/STP core in mt8163/wmt_plat_alps.c and
+ * linux/pub/osal.c) -- worth doing properly later if it turns out to
+ * matter for suspend/resume behavior.
  */
+#define CONFIG_ANDROID 0
 
 /* for CFG80211 IE buffering mechanism */
 #define CFG_CFG80211_IE_BUF_LEN     (512)

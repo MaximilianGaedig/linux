@@ -1061,7 +1061,13 @@
 #include "precomp.h"
 #include "mgmt/rsn.h"
 
-#include <stddef.h>
+/*
+ * Bare <stddef.h> (libc freestanding header) isn't reachable under
+ * kbuild's -nostdinc with no compiler -isystem fallback in this kernel
+ * version -- use the kernel's own equivalent (offsetof, NULL, etc.)
+ * instead, same as the rest of this codebase already does elsewhere.
+ */
+#include <linux/stddef.h>
 
 /******************************************************************************
 *                              C O N S T A N T S
