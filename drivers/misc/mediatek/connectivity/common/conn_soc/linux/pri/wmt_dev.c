@@ -2398,7 +2398,7 @@ static int WMT_init(void)
 	}
 	WMT_INFO_FUNC("driver(major %d) installed\n", gWmtMajor);
 #if WMT_CREATE_NODE_DYNAMIC
-	wmt_class = class_create(THIS_MODULE, "stpwmt");
+	wmt_class = class_create("stpwmt");
 	if (IS_ERR(wmt_class))
 		goto error;
 	wmt_dev = device_create(wmt_class, NULL, devID, NULL, "stpwmt");

@@ -26,6 +26,21 @@ config MTK_COMBO
 	  To compile this as a module, choose M here: the modules will be
 	  called mtk_stp_wmt_soc, mtk_stp_bt_soc and mtk_wmt_wifi_soc.
 
+config MTK_COMBO_CHIP
+	string "Combo chip model"
+	depends on MTK_COMBO
+	default "CONSYS_8163"
+	help
+	  Which member of the combo chip family is fitted, in MediaTek's own
+	  naming.  The driver Makefiles pattern-match on this: a "CONSYS_*"
+	  value selects the SoC-integrated connectivity subsystem paths (as
+	  opposed to a discrete SDIO/UART combo chip), and everything except
+	  MT6630/CONSYS_6797 selects the gen2 WiFi driver rather than gen3.
+
+	  "CONSYS_8163" is what Amazon's own biscuit_defconfig sets for the
+	  MT6625L-on-MT8163 wiring this port targets; leave it alone unless
+	  you are building for different silicon.
+
 config MTK_COMBO_BT
 	tristate "MT66xx combo chip Bluetooth (/dev/stpbt)"
 	depends on MTK_COMBO

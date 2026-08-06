@@ -295,7 +295,7 @@ static int wmt_detect_driver_init(void)
 		goto err1;
 	}
 
-	pDetectClass = class_create(THIS_MODULE, WMT_DETECT_DEVICE_NAME);
+	pDetectClass = class_create(WMT_DETECT_DEVICE_NAME);
 	if (IS_ERR(pDetectClass)) {
 		WMT_DETECT_ERR_FUNC("class create fail, error code(%ld)\n", PTR_ERR(pDetectClass));
 		goto err1;

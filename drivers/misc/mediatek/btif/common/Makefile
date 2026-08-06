@@ -18,7 +18,11 @@ ifneq ($(KERNELRELEASE),)
 	ccflags-y += -I$(src)/inc
 	ccflags-y += -I$(src)/plat_inc
 
-	obj-y += btif.o
+	# was obj-y, which cannot work when the parent directory is reached
+	# through obj-m: a built-in composite object in a module-only subtree
+	# is silently dropped.  Gate it on the config symbol instead so it
+	# builds as btif.ko (or is linked in, for =y).
+	obj-$(CONFIG_MTK_BTIF) += btif.o
 	btif-y	:= mtk_btif.o mtk_btif_exp.o btif_dma_plat.o btif_plat.o
 
 # Otherwise we were called directly from the command
