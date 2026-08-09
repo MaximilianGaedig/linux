@@ -1,0 +1,82 @@
+menuconfig MTK_CONNECTIVITY
+	bool "MediaTek MT66xx combo connectivity support"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	help
+	  Support for MediaTek's MT66xx family combo connectivity chips
+	  (WiFi + Bluetooth + GPS + FM), as found glued to the CONSYS
+	  subsystem of MT81xx/MT76xx SoCs.  Say Y here to get the
+	  per-subsystem options below.
+
+	  If unsure, say N.
+
+if MTK_CONNECTIVITY
+
+config MTK_COMBO
+	tristate "MT66xx combo chip WMT/STP core"
+	depends on OF
+	select ZLIB_DEFLATE
+	help
+	  The Wireless Management Team (WMT) / Serial Transport Protocol
+	  (STP) core.  This is the shared transport that muxes the WiFi,
+	  Bluetooth, GPS and FM function chunks of the combo chip over a
+	  single logical link to the CONSYS co-processor, and which does
+	  the power-on sequencing and firmware/ROM-patch download.
+
+	  Every other option here depends on this one.
+
+	  To compile this as a module, choose M here: the modules will be
+	  called mtk_stp_wmt_soc, mtk_stp_bt_soc and mtk_wmt_wifi_soc.
+
+config MTK_COMBO_CHIP
+	string "Combo chip model"
+	depends on MTK_COMBO
+	default "CONSYS_8163"
+	help
+	  Which member of the combo chip family is fitted, in MediaTek's own
+	  naming.  The driver Makefiles pattern-match on this: a "CONSYS_*"
+	  value selects the SoC-integrated connectivity subsystem paths (as
+	  opposed to a discrete SDIO/UART combo chip), and everything except
+	  MT6630/CONSYS_6797 selects the gen2 WiFi driver rather than gen3.
+
+	  "CONSYS_8163" is what Amazon's own biscuit_defconfig sets for the
+	  MT6625L-on-MT8163 wiring this port targets; leave it alone unless
+	  you are building for different silicon.
+
+config MTK_COMBO_BT
+	tristate "MT66xx combo chip Bluetooth (/dev/stpbt)"
+	depends on MTK_COMBO
+	depends on BT
+	help
+	  Exposes the combo chip's Bluetooth function as a character
+	  device, /dev/stpbt.  Note that this is *not* an in-kernel
+	  struct hci_dev driver: a userspace helper is expected to open
+	  /dev/stpbt and attach it to the HCI stack as a UART line
+	  discipline.
+
+config MTK_COMBO_WIFI
+	tristate "MT66xx combo chip WiFi (gen2 MAC driver)"
+	depends on MTK_COMBO
+	depends on CFG80211
+	select WIRELESS_EXT
+	select WEXT_PRIV
+	select CFG80211_WEXT
+	help
+	  The gen2 WiFi MAC driver for the MT66xx combo chips.  This is a
+	  self-contained vendor stack -- it implements struct net_device
+	  and a struct cfg80211_ops table directly and does not use
+	  mac80211.  It also still exposes a pile of wireless-extensions
+	  private ioctls, hence the WEXT selects above.
+
+	  To compile this as a module, choose M here: the module will be
+	  called wlan_gen2.
+
+config MTK_WAPI_SUPPORT
+	bool "WAPI support in the MT66xx WiFi driver"
+	depends on MTK_COMBO_WIFI
+	help
+	  Build in support for WAPI, the Chinese national WLAN security
+	  standard.  Only useful on devices sold in that market.
+
+source "drivers/misc/mediatek/btif/Kconfig"
+
+endif # MTK_CONNECTIVITY
