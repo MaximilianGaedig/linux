@@ -10,6 +10,7 @@
 
 #include "mt8163-amazon-common.dtsi"
 #include "mt8163-headless.dtsi"
+#include "mt8163-amazon-biscuit-peripherals.dtsi"
 
 / {
 	model = "Amazon Echo Dot (2016)";
@@ -18,6 +19,7 @@
 
 	/* Needed by stock bootloader */
 	version = "evt";
+
 
 	gpio-keys {
 		compatible = "gpio-keys";
@@ -81,4 +83,181 @@
 			input-enable;
 		};
 	};
+};
+
+/*
+ * amazon-common.dtsi declares all 512MB (0x40000000 + 0x20000000), but the
+ * top of that range is not ours: LK reports mblock[0] as 0x1f800000, the ATF
+ * log buffer sits at 0x5f800000, and everything from 0x5fa00000 up is locked
+ * by the EMI MPU - the kernel faults if it actually touches it.
+ *
+ * Override rather than add a second node: the kernel walks every node with
+ * device_type = "memory" and adds them all to memblock, so a new one would
+ * declare the same RAM twice and reintroduce the range we are trying to
+ * exclude.
+ */
+&{/memory} {
+	reg = <0 0x40000000 0 0x1f800000>;
+};
+
+/*
+ * Keep the rails the stock kernel keeps.
+ *
+ * Nothing in this devicetree claims these as supplies yet, so
+ * regulator_init_complete() switches them off as "unused" - the log line
+ * "va: disabling / vgp2: disabling / vcamaf: disabling" is the kernel
+ * cutting power to peripherals we are trying to talk to. Once that happens
+ * the IS31FL3236 stops ACKing on i2c0 (write returns -ENXIO) and the
+ * TLV320 codecs report invalid supply voltages.
+ *
+ * biscuit.dtsi in the FireOS 3.18 source marks all of these always-on, so
+ * mirror it rather than guess which peripheral sits on which rail. These
+ * can be narrowed later by giving each consumer a proper *-supply phandle.
+ */
+&mt6323_va_reg        { regulator-always-on; };
+&mt6323_vgp1_reg      { regulator-always-on; };
+&mt6323_vgp2_reg      { regulator-always-on; };
+&mt6323_vcamaf_reg    { regulator-always-on; };
+&mt6323_vmch_reg      { regulator-always-on; };
+&mt6323_vemc3v3_reg   { regulator-always-on; };
+&mt6323_vio18_reg     { regulator-always-on; };
+&mt6323_vio28_reg     { regulator-always-on; };
+&mt6323_vm_reg        { regulator-always-on; };
+&mt6323_vmc_reg       { regulator-always-on; };
+
+/*
+ * MT6625L combo WiFi/BT/GPS. The CONSYS subsystem block is described in
+ * mt8163.dtsi but left disabled there, since only boards that actually
+ * populate the combo chip should probe it.
+ */
+&consys {
+	/*
+	 * Re-enabled: bisection showed the earlier hang persisted even with
+	 * this node disabled, so it was never actually the cause - the real
+	 * blocker was the missing btif/btif_tx/btif_rx nodes (see mt8163.dtsi).
+	 *
+	 * pinctrl-names/pinctrl-N are already set correctly by
+	 * mt8163-amazon-common.dtsi (default/wifi_reset_init/
+	 * consys_pins_default) - don't repeat them here, an override with a
+	 * shorter pinctrl-names list would drop the "consys_pins_default"
+	 * state mtk_wmt_probe() looks up by name.
+	 */
+	status = "okay";
+};
+
+/*
+ * AFE (audio front end). Disabled by default in mt8163.dtsi since only
+ * boards that actually populate audio codecs should probe it - biscuit has
+ * a full mic array + speaker codec, so turn it on here.
+ */
+&afe {
+	status = "okay";
+	#sound-dai-cells = <1>;
+};
+
+/*
+ * Sound card. MT8163 has no in-tree ASoC machine driver, so wire the AFE's
+ * I2S CPU DAIs to codecs with the generic simple-audio-card binding instead
+ * of writing one.
+ *
+ * Speaker: DL1 (front-end playback memif) -> AFE I2S0 backend -> aic32x4 on
+ * i2c2. Confirmed against Amazon's own stock machine driver: their
+ * "TI_DAC_Playback" dai_link uses cpu_dai_name = MT_SOC_DL1DAI_NAME, i.e.
+ * the same DL1 front-end.
+ *
+ * Mic array: NOT wired through the AFE at all. Reverse-engineering Amazon's
+ * stock dai_link table (mt_soc_machine.c) showed the real capture path is
+ * "AMZN_SPI_Capture": cpu_dai_name = platform_name = AMZN_MT_SPI_PCM, a
+ * fully custom driver (amzn-spi-pcm/) that bit-bangs a "dough" FPGA over
+ * SPI. The four aic3x mic codecs output I2S into that FPGA - not into the
+ * SoC - which mixes/packages all channels and hands finished frames back to
+ * the SoC over SPI0. See mt8163-amazon-biscuit-peripherals.dtsi for the
+ * FPGA node and drivers/spi mt8163-spi-fpga-pcm.c for the driver this
+ * links against. mic0_codec (i2c0@0x18) is kept as the codec side purely
+ * because Amazon's own link pairs it that way (codec_name =
+ * "tlv320aic3101.0-0018") - it is presumably used for control/gain only,
+ * since audio samples never actually cross I2C.
+ */
+/ {
+	sound: sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "biscuit-audio";
+
+		simple-audio-card,dai-link@0 {
+			format = "i2s";
+			cpu {
+				sound-dai = <&afe 0>;  /* DL1: front-end playback memif */
+			};
+			codec {
+				sound-dai = <&aic32x4_codec>;
+			};
+		};
+
+		simple-audio-card,dai-link@1 {
+			cpu {
+				sound-dai = <&spi_pcm_fpga>;
+			};
+			codec {
+				sound-dai = <&mic0_codec>;
+			};
+		};
+	};
+};
+
+/*
+ * Mic-array FPGA. SPI0 is otherwise unused on this board.
+ */
+&spi {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi_pins_default>;
+	status = "okay";
+
+	spi_pcm_fpga: audio-fpga@0 {
+		compatible = "amazon,biscuit-spi-pcm";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+		#sound-dai-cells = <0>;
+
+		reset-gpios = <&pio 43 GPIO_ACTIVE_LOW>;
+
+		pinctrl-names = "idle", "active", "mclk";
+		pinctrl-0 = <&aud_pins_i2s1_idle>;
+		pinctrl-1 = <&aud_pins_i2s1_active>;
+		pinctrl-2 = <&aud_pins_fpga_mclk>;
+
+		/*
+		 * "cmmclk" (the camera clock generator, repurposed here - this
+		 * board has no camera) feeding the FPGA's reference clock.
+		 * Amazon's downstream driver never calls clk_set_rate() on it,
+		 * only pinctrl_select_state(), which suggests it may already
+		 * free-run at whatever CAMTG's default parent rate is. Rate is
+		 * a guess (26MHz, matching clk26m used elsewhere) pending
+		 * on-device verification.
+		 */
+		clocks = <&topckgen CLK_TOP_CAMTG_SEL>;
+		clock-names = "mclk";
+	};
+};
+
+/*
+ * Firmware for the mic-array FPGA (bitstream/config, not a Linux driver
+ * module). Amazon's biscuit_defconfig: CONFIG_EXTRA_FIRMWARE =
+ * "i2s_to_spi_v34.bin". Not yet extracted from the stock Fire OS
+ * partitions - request_firmware() will fail until
+ * /lib/firmware/i2s_to_spi_v34.bin is populated on the target rootfs.
+ */
+
+/*
+ * BTIF (HCI transport for the MT6625L combo chip). See the comment on the
+ * node in mt8163.dtsi for why this specifically was blocking boot.
+ */
+&btif {
+	status = "okay";
+};
+
+&btif_tx {
+	status = "okay";
+};
+&btif_rx {
+	status = "okay";
 };

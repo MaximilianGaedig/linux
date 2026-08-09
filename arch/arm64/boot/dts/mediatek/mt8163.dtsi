@@ -22,6 +22,7 @@
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
 #include <dt-bindings/reset/mediatek,mt8163-mmsys.h>
 #include <dt-bindings/reset/mediatek,mt8163-wdt.h>
+#include <dt-bindings/thermal/thermal.h>
 
 / {
 	#address-cells = <2>;
@@ -382,6 +383,40 @@
 			clock-names = "system-clk", "rtc-clk";
 		};
 
+		consys: consys@18070000 {
+			compatible = "mediatek,mt8163-consys";
+			reg = <0 0x18070000 0 0x0200>,  /* CONN_MCU_CONFIG_BASE */
+			      <0 0x10007000 0 0x0100>,  /* AP_RGU_BASE */
+			      <0 0x10001000 0 0x1000>;  /* TOPCKGEN_BASE */
+			power-domains = <&spm MT8163_POWER_DOMAIN_CONN>;
+			interrupts = <GIC_SPI 237 IRQ_TYPE_LEVEL_LOW>,  /* BGF_EINT */
+				     <GIC_SPI 236 IRQ_TYPE_LEVEL_LOW>;  /* WDT_EINT */
+			memory-region = <&consys_reserved_memory>;
+			/*
+			 * The conn_soc WMT driver's mtk_wmt_probe() does
+			 * devm_reset_control_get(&pdev->dev, "connsys") and
+			 * calls reset_control_reset() on it during the
+			 * CONSYS CPU power-on sequence (asserts bit 12 of
+			 * TOPRGU's 0x10007018, per the driver's own comment
+			 * -- "[12]=1'b1 ... assert CONNSYS CPU SW reset").
+			 * That matches TOPRGU_CONN_MCU_RST (=12) exactly, so
+			 * this is a high-confidence (not yet hardware-tested)
+			 * match rather than a guess.
+			 */
+			resets = <&watchdog MT8163_TOPRGU_CONN_MCU_RST>;
+			reset-names = "connsys";
+			status = "disabled";
+		};
+
+		wifi: wifi@180f0000 {
+			compatible = "mediatek,wifi";
+			reg = <0 0x180f0000 0 0x005c>;
+			interrupts = <GIC_SPI 238 IRQ_TYPE_LEVEL_LOW>;
+			clocks = <&infracfg CLK_INFRA_AP_DMA>;
+			clock-names = "wifi-dma";
+			status = "disabled";
+		};
+
 		pio: pinctrl@1000b000 {
 			compatible = "mediatek,mt8163-pinctrl";
 			reg = <0 0x1000b000 0 0x1000>;
@@ -600,6 +635,47 @@
 			dma-names = "tx", "rx";
 			status = "disabled";
 		};
+
+		/*
+		 * BTIF - the HCI transport block Bluetooth rides over.
+		 * mtk_btif_probe() (drivers/misc/mediatek/btif/) blocks
+		 * waiting on this device during its unconditional init path;
+		 * without this node the probe callback can never fire and
+		 * that wait never completes, which is the actual cause of
+		 * the boot hang enabling MTK_BTIF/MTK_COMBO_BT ran into -
+		 * not the CONSYS block, which was already ruled out by
+		 * bisection (the hang persists with consys left disabled).
+		 * reg/irq/clock-names match Amazon's downstream biscuit.dtsi.
+		 */
+		/*
+		 * DMA channels the BTIF-DMA sub-driver looks up independently
+		 * via of_find_compatible_node(), not as children/phandles of
+		 * the btif node above. reg/irq match Amazon's biscuit.dtsi.
+		 */
+		btif_tx: btif_tx@11000700 {
+			compatible = "mediatek,btif_tx";
+			reg = <0 0x11000700 0 0x80>;
+			interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_LOW>;
+			status = "disabled";
+		};
+
+		btif_rx: btif_rx@11000780 {
+			compatible = "mediatek,btif_rx";
+			reg = <0 0x11000780 0 0x80>;
+			interrupts = <GIC_SPI 111 IRQ_TYPE_LEVEL_LOW>;
+			status = "disabled";
+		};
+
+
+		btif: btif@1100c000 {
+			compatible = "mediatek,btif";
+			reg = <0 0x1100c000 0 0x1000>;
+			interrupts = <GIC_SPI 112 IRQ_TYPE_LEVEL_LOW>;
+			clocks = <&infracfg CLK_INFRA_BTIF>, <&infracfg CLK_INFRA_AP_DMA>;
+			clock-names = "btifc", "apdmac";
+			status = "disabled";
+		};
+
 
 		i2c0: i2c@11007000 {
 			compatible = "mediatek,mt8163-i2c", "mediatek,mt8173-i2c";

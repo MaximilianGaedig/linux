@@ -47,6 +47,9 @@
 	status = "disabled";
 };
 
+/* No panel on headless boards, so no backlight to drive either. */
+/delete-node/ &disp_backlight;
+
 &larb2 {
 	status = "disabled";
 };

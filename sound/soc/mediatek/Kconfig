@@ -86,6 +86,19 @@ config SND_SOC_MT8163
 	  Select Y if you have such device.
 	  Ex: MT8163
 
+config SND_SOC_MT8163_SPI_FPGA
+	tristate "ASoC support for the Amazon Echo Dot 2 (biscuit) mic-array FPGA"
+	depends on SPI_MASTER
+	select GPIOLIB
+	help
+	  This adds a SPI-attached ASoC CPU DAI/platform driver for the
+	  microphone-array FPGA bridge found on the Amazon Echo Dot 2nd Gen
+	  (biscuit). The mic codecs talk I2S to the FPGA, not the SoC; the
+	  FPGA mixes and re-packages all channels and hands them to the SoC
+	  over SPI. Requires the proprietary i2s_to_spi_v34.bin firmware
+	  extracted from the stock Fire OS image.
+	  Select Y if you have such a device.
+
 config SND_SOC_MT8173
 	tristate "ASoC support for Mediatek MT8173 chip"
 	depends on ARCH_MEDIATEK
