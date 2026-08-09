@@ -473,10 +473,36 @@ static int is31fl32xx_parse_dt(struct device *dev,
 }
 static const struct is31fl32xx_chipdef is31fl3236_cdef = {
 	.channels				= 36,
-	.shutdown_reg				= 0x00,
+	.brightness_steps			= 256,
 	.pwm_update_reg				= 0x25,
-	.global_control_reg			= 0x4a,
-	.reset_reg				= 0x4f,
+	/*
+	 * Amazon's own downstream driver (leds-is31fl3236.c) only writes the
+	 * reset register (0x4F) AND the shutdown register (0x00) when a
+	 * board-specific "setup-device" DT flag is set - the one real
+	 * hardware DTS we have for it (biscuit.dtsi) does NOT set that flag,
+	 * meaning on real, working hardware NEITHER register is ever touched
+	 * by Linux. LK's own boot-time rainbow animation already brings the
+	 * chip out of shutdown before the kernel ever probes it. Amazon's
+	 * driver also never references the Global Control Register (0x4A)
+	 * anywhere at all - it isn't part of their real write sequence
+	 * either.
+	 *
+	 * This driver used to unconditionally write reset unconditionally
+	 * write shutdown, and global-control on every probe with no way to
+	 * opt out via DT. Every I2C write still ACKed cleanly (bus and chip
+	 * both fine), channel-enable and PWM registers all read back as
+	 * set, and the LEDs still never lit - and after fixing the reset
+	 * register alone previously, the chip later stopped responding to
+	 * plain i2c-tools reads entirely (writes kept ACKing) after this
+	 * probe ran, consistent with one of these extra unconditional writes
+	 * upsetting a chip variant/clone that doesn't handle them gracefully.
+	 * Matching Amazon's exact, proven-working register set (PWM +
+	 * enable + Update only) the same way is31fl3216_cdef already skips
+	 * its own reset register further down in this file.
+	 */
+	.reset_reg				= IS31FL32XX_REG_NONE,
+	.shutdown_reg				= IS31FL32XX_REG_NONE,
+	.global_control_reg			= IS31FL32XX_REG_NONE,
 	.output_frequency_setting_reg		= IS31FL32XX_REG_NONE,
 	.pwm_register_base			= 0x01,
 	.led_control_register_base		= 0x26,

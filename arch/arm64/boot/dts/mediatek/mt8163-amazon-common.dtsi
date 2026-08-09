@@ -45,6 +45,36 @@
 			reg = <0 0x43000000 0 0x30000>;
 			no-map;
 		};
+
+		/*
+		 * MediaTek ram_console region, repurposed as a mainline
+		 * pstore/ramoops backend. Address is fixed, not ours to
+		 * relocate - matches the stock 3.18 kernel's own
+		 * CONFIG_MTK_RAM_CONSOLE_DRAM_ADDR. Size matches
+		 * CONFIG_MTK_RAM_CONSOLE_DRAM_SIZE (64KiB) too - that's the
+		 * actual amount the stock driver ever reads or writes, so
+		 * its /proc/last_kmsg reader still finds the same region
+		 * without reserving RAM beyond what's really used.
+		 */
+		ramoops: ramoops@44400000 {
+			compatible = "ramoops";
+			reg = <0 0x44400000 0 0x10000>;
+			record-size = <0x8000>;
+			console-size = <0x8000>;
+			no-map;
+		};
+
+		/*
+		 * WIFI/BT/GPS (MT6625L combo, integrated CONSYS subsystem)
+		 * firmware/ROM-patch/coredump scratch region. Size matches
+		 * Amazon's downstream biscuit.dtsi.
+		 */
+		consys_reserved_memory: consys-reserve-memory {
+			compatible = "mediatek,consys-reserve-memory";
+			no-map;
+			size = <0 0x200000>;
+			alignment = <0 0x200000>;
+		};
 	};
 
 	vgpu_1v15: regulator-vgpu {
@@ -227,4 +257,50 @@
 				 <MT8163_PIN_80_UTXD0__FUNC_UTXD0>;
 		};
 	};
+
+	/*
+	 * MT6625L combo WIFI/BT/GPS reset/WMT handshake lines. These four
+	 * pins (WB_RSTB/WB_SCLK/WB_SDATA/WB_SEN) are the same on every
+	 * biscuit-family board per Amazon's downstream biscuit.dtsi.
+	 */
+	wifi_reset_init: wifireset-pins {
+		pins {
+			pinmux = <MT8163_PIN_60_WB_RSTB__FUNC_WB_RSTB>,
+				 <MT8163_PIN_63_WB_SCLK__FUNC_WB_SCLK>,
+				 <MT8163_PIN_64_WB_SDATA__FUNC_WB_SDATA>,
+				 <MT8163_PIN_65_WB_SEN__FUNC_WB_SEN>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
+
+	/*
+	 * Antenna-select pins for the MT6625L combo chip, matching Amazon's
+	 * own "consys_pins_default" group in biscuit.dtsi/mt8163.dtsi
+	 * exactly (same two pins, same ANT_SEL0/1 functions). mtk_wmt_probe()
+	 * in mtk_wcn_consys_hw.c looks up a pinctrl state by this literal
+	 * name - it is not just a label, the string has to match.
+	 */
+	consys_pins_default: consys-pins-default {
+		pins {
+			pinmux = <MT8163_PIN_85_MSDC2_CMD__FUNC_ANT_SEL0>,
+				 <MT8163_PIN_86_MSDC2_CLK__FUNC_ANT_SEL1>;
+		};
+	};
+};
+
+&consys {
+	pinctrl-names = "default", "wifi_reset_init", "consys_pins_default";
+	pinctrl-0 = <&wifi_reset_init>;
+	pinctrl-1 = <&wifi_reset_init>;
+	pinctrl-2 = <&consys_pins_default>;
+	vcn18-supply = <&mt6323_vcn18_reg>;
+	vcn28-supply = <&mt6323_vcn28_reg>;
+	vcn33_bt-supply = <&mt6323_vcn33_bt_reg>;
+	vcn33_wifi-supply = <&mt6323_vcn33_wifi_reg>;
+	status = "okay";
+};
+
+&wifi {
+	status = "okay";
 };

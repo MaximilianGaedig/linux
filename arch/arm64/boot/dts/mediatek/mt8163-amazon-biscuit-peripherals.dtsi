@@ -1,0 +1,432 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * LED ring, ambient light sensors, mic array, and audio codec for the
+ * Amazon Echo Dot 2nd Gen (biscuit).
+ *
+ * Addresses, pinmuxes and GPIO wiring cross-referenced from Amazon's own
+ * downstream 3.18.19 kernel devicetree (biscuit.dtsi) against the real
+ * hardware. tlv320aic3101 nodes use the generic "ti,tlv320aic3x" mainline
+ * compatible string (register-map compatible, no dedicated mainline driver
+ * needed).
+ */
+
+#include <dt-bindings/pinctrl/mt65xx.h>
+#include <dt-bindings/leds/common.h>
+
+/*
+ * A leds-group-multicolor grouping layer (one node per physical LED,
+ * referencing its 3 raw PWM channel children below via phandles) was
+ * tried here and removed - it never took effect at runtime (the DTB
+ * change never reached the kernel at all, root-caused to a bootloader-
+ * side IDME/FDT-injection size limit silently discarding oversized
+ * appended DTBs rather than anything wrong with the grouping itself),
+ * and its ~12 extra nodes were a meaningful chunk of that oversized
+ * DTB's bulk. The flat per-channel interface below remains the
+ * confirmed-working LED control path.
+ */
+
+&i2c0 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_default>;
+	status = "okay";
+
+	/*
+	 * The 12-LED RGB ring. Mainline's leds-is31fl32xx wants one child per
+	 * PWM channel (36 = 12 LEDs x RGB) with 'reg' as the 1-based channel
+	 * number; without children it probes with -EINVAL. The downstream
+	 * 'play-boot-animation' and 'channel-offset' properties are Amazon
+	 * extensions the mainline driver does not implement, so they are gone.
+	 *
+	 * Each channel is labeled/phandled here purely so the leds-group-
+	 * multicolor nodes above can reference them - leds-group-multicolor
+	 * disables their individual sysfs brightness files once grouped, so
+	 * userspace only ever sees the 12 clean ringN multicolor devices,
+	 * not 36 disconnected raw channels.
+	 */
+	led_ring: is31fl3236@3f {
+		compatible = "issi,is31fl3236";
+		reg = <0x3f>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		ring1_red: led@1 {
+			reg = <1>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring1:red";
+		};
+		ring1_green: led@2 {
+			reg = <2>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring1:green";
+		};
+		ring1_blue: led@3 {
+			reg = <3>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring1:blue";
+		};
+		ring2_red: led@4 {
+			reg = <4>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring2:red";
+		};
+		ring2_green: led@5 {
+			reg = <5>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring2:green";
+		};
+		ring2_blue: led@6 {
+			reg = <6>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring2:blue";
+		};
+		ring3_red: led@7 {
+			reg = <7>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring3:red";
+		};
+		ring3_green: led@8 {
+			reg = <8>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring3:green";
+		};
+		ring3_blue: led@9 {
+			reg = <9>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring3:blue";
+		};
+		ring4_red: led@a {
+			reg = <10>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring4:red";
+		};
+		ring4_green: led@b {
+			reg = <11>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring4:green";
+		};
+		ring4_blue: led@c {
+			reg = <12>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring4:blue";
+		};
+		ring5_red: led@d {
+			reg = <13>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring5:red";
+		};
+		ring5_green: led@e {
+			reg = <14>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring5:green";
+		};
+		ring5_blue: led@f {
+			reg = <15>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring5:blue";
+		};
+		ring6_red: led@10 {
+			reg = <16>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring6:red";
+		};
+		ring6_green: led@11 {
+			reg = <17>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring6:green";
+		};
+		ring6_blue: led@12 {
+			reg = <18>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring6:blue";
+		};
+		ring7_red: led@13 {
+			reg = <19>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring7:red";
+		};
+		ring7_green: led@14 {
+			reg = <20>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring7:green";
+		};
+		ring7_blue: led@15 {
+			reg = <21>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring7:blue";
+		};
+		ring8_red: led@16 {
+			reg = <22>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring8:red";
+		};
+		ring8_green: led@17 {
+			reg = <23>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring8:green";
+		};
+		ring8_blue: led@18 {
+			reg = <24>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring8:blue";
+		};
+		ring9_red: led@19 {
+			reg = <25>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring9:red";
+		};
+		ring9_green: led@1a {
+			reg = <26>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring9:green";
+		};
+		ring9_blue: led@1b {
+			reg = <27>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring9:blue";
+		};
+		ring10_red: led@1c {
+			reg = <28>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring10:red";
+		};
+		ring10_green: led@1d {
+			reg = <29>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring10:green";
+		};
+		ring10_blue: led@1e {
+			reg = <30>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring10:blue";
+		};
+		ring11_red: led@1f {
+			reg = <31>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring11:red";
+		};
+		ring11_green: led@20 {
+			reg = <32>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring11:green";
+		};
+		ring11_blue: led@21 {
+			reg = <33>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring11:blue";
+		};
+		ring12_red: led@22 {
+			reg = <34>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring12:red";
+		};
+		ring12_green: led@23 {
+			reg = <35>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring12:green";
+		};
+		ring12_blue: led@24 {
+			reg = <36>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring12:blue";
+		};
+	};
+
+	tsl2584tsv@29 {
+		compatible = "ams,tsl2584tsv";
+		reg = <0x29>;
+		autozero-period-ms = <300000>;
+	};
+
+	tsl2540@39 {
+		compatible = "amstaos,tsl2540";
+		reg = <0x39>;
+	};
+
+	mic0_codec: tlv320aic3x@18 {
+		compatible = "ti,tlv320aic3x";
+		reg = <0x18>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic0";
+		enable-gpio = <&pio 35 GPIO_ACTIVE_HIGH>;
+		clocks = <&clk26m>;
+		clock-names = "mclk";
+
+		/*
+		 * Mainline's tlv320aic3x driver requires all four supplies and
+		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
+		 * Amazon's downstream driver ignored them entirely - so their
+		 * DTS has none and probe fails here with "Invalid supply
+		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
+		 * The codecs sit on the always-on PMIC rails.
+		 */
+		IOVDD-supply = <&mt6323_vio18_reg>;
+		DVDD-supply  = <&mt6323_vio18_reg>;
+		AVDD-supply  = <&mt6323_vio28_reg>;
+		DRVDD-supply = <&mt6323_vio28_reg>;
+	};
+
+	tlv320aic3x@19 {
+		compatible = "ti,tlv320aic3x";
+		reg = <0x19>;
+
+		/*
+		 * Mainline's tlv320aic3x driver requires all four supplies and
+		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
+		 * Amazon's downstream driver ignored them entirely - so their
+		 * DTS has none and probe fails here with "Invalid supply
+		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
+		 * The codecs sit on the always-on PMIC rails.
+		 */
+		IOVDD-supply = <&mt6323_vio18_reg>;
+		DVDD-supply  = <&mt6323_vio18_reg>;
+		AVDD-supply  = <&mt6323_vio28_reg>;
+		DRVDD-supply = <&mt6323_vio28_reg>;
+	};
+
+	tlv320aic3x@1a {
+		compatible = "ti,tlv320aic3x";
+		reg = <0x1a>;
+
+		/*
+		 * Mainline's tlv320aic3x driver requires all four supplies and
+		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
+		 * Amazon's downstream driver ignored them entirely - so their
+		 * DTS has none and probe fails here with "Invalid supply
+		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
+		 * The codecs sit on the always-on PMIC rails.
+		 */
+		IOVDD-supply = <&mt6323_vio18_reg>;
+		DVDD-supply  = <&mt6323_vio18_reg>;
+		AVDD-supply  = <&mt6323_vio28_reg>;
+		DRVDD-supply = <&mt6323_vio28_reg>;
+	};
+
+	tlv320aic3x@1b {
+		compatible = "ti,tlv320aic3x";
+		reg = <0x1b>;
+
+		/*
+		 * Mainline's tlv320aic3x driver requires all four supplies and
+		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
+		 * Amazon's downstream driver ignored them entirely - so their
+		 * DTS has none and probe fails here with "Invalid supply
+		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
+		 * The codecs sit on the always-on PMIC rails.
+		 */
+		IOVDD-supply = <&mt6323_vio18_reg>;
+		DVDD-supply  = <&mt6323_vio18_reg>;
+		AVDD-supply  = <&mt6323_vio28_reg>;
+		DRVDD-supply = <&mt6323_vio28_reg>;
+	};
+};
+
+&i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2_pins_default>;
+	status = "okay";
+
+	aic32x4_codec: tlv320aic32x4@18 {
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Speaker";
+		/* 'iov' is mandatory for this driver; the rest are optional. */
+		iov-supply = <&mt6323_vio18_reg>;
+		av-supply  = <&mt6323_vio28_reg>;
+		dv-supply  = <&mt6323_vio18_reg>;
+
+		compatible = "ti,tlv320aic32x4";
+		reg = <0x18>;
+		reset-gpios = <&pio 51 GPIO_ACTIVE_LOW>;
+		clocks = <&clk26m>;
+		clock-names = "mclk";
+	};
+};
+
+/*
+ * Mute-button privacy LED / mic-mute latch. No mainline driver exists for
+ * amz_priv; needs porting from Amazon's drivers/misc/amz_priv.c. GPIO
+ * numbers cross-referenced from Amazon's DT (amz_privacy node).
+ */
+&pio {
+	amz_privacy: amz-privacy {
+		compatible = "amazon,privacy";
+		gpios = <&pio 87 GPIO_ACTIVE_HIGH>;
+		bright-state-gpio = <&pio 88 GPIO_ACTIVE_HIGH>;
+		hw_latch = <0>;
+	};
+
+	i2c0_pins_default: i2c0-pins {
+		pins {
+			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
+				 <MT8163_PIN_76_SCL0__FUNC_SCL0_0>;
+			bias-disable;
+		};
+	};
+
+	i2c2_pins_default: i2c2-pins {
+		pins {
+			pinmux = <MT8163_PIN_77_SDA2__FUNC_SDA2_0>,
+				 <MT8163_PIN_78_SCL2__FUNC_SCL2_0>;
+			bias-disable;
+		};
+	};
+
+	/*
+	 * SPI0 bus pins (CS/CLK/MISO/MOSI) to the mic-array FPGA. Missing
+	 * from mt8163.dtsi - unlike i2c0/i2c2 above, no board populates SPI
+	 * there yet, so there is no shared "spi_pads"-equivalent group to
+	 * reuse. Pin numbers/drive-strength cross-referenced from
+	 * biscuit.dtsi's spi_pads (which just tweaks drive-strength on a
+	 * group already defined in Amazon's mt8163.dtsi).
+	 */
+	spi_pins_default: spi-pins {
+		pins {
+			pinmux = <MT8163_PIN_53_SPI_CS__FUNC_SPI_CSB>,
+				 <MT8163_PIN_54_SPI_CK__FUNC_SPI_CLK>,
+				 <MT8163_PIN_55_SPI_MI__FUNC_SPI_MI>,
+				 <MT8163_PIN_56_SPI_MO__FUNC_SPI_MO>;
+			bias-disable;
+			drive-strength = <MTK_DRIVE_2mA>;
+		};
+	};
+
+	/*
+	 * Mic-array FPGA (Amazon calls it "dough": an Altera/Lattice part that
+	 * takes I2S from the four aic3x codecs above, mixes/packages all
+	 * channels, and hands the result to the SoC over SPI - the AFE's I2S1
+	 * pins here are NOT used for PCM data, they only carry BCK/LRCK/DO as
+	 * a timing reference the FPGA locks its own I2S capture to. Real
+	 * sample data comes back over &spi. Pin numbers and the two-state
+	 * (idle vs active) dance during firmware load are taken directly from
+	 * biscuit.dtsi's aud_pins_i2s1_mode0/1.
+	 */
+	aud_pins_i2s1_idle: audi2s1idle {
+		pins {
+			pinmux = <MT8163_PIN_72_I2S_DATA_IN__FUNC_GPIO72>,
+				 <MT8163_PIN_73_I2S_LRCK__FUNC_GPIO73>,
+				 <MT8163_PIN_74_I2S_BCK__FUNC_GPIO74>;
+		};
+	};
+
+	aud_pins_i2s1_active: audi2s1active {
+		pins {
+			pinmux = <MT8163_PIN_72_I2S_DATA_IN__FUNC_I2S1_DO>,
+				 <MT8163_PIN_73_I2S_LRCK__FUNC_I2S1_LRCK>,
+				 <MT8163_PIN_74_I2S_BCK__FUNC_I2S1_BCK>;
+			drive-strength = <MTK_DRIVE_4mA>;
+		};
+	};
+
+	/*
+	 * FPGA reference clock. biscuit.dtsi drives this off the camera
+	 * clock generator (CONFIG_SND_I2S_MCLK is unset on this board, so
+	 * the driver takes the "cmmclk-mclk" path, not the dedicated
+	 * i2s-mclk one) - there is no camera on this board, the pin is free.
+	 */
+	aud_pins_fpga_mclk: audfpgamclk {
+		pins {
+			pinmux = <MT8163_PIN_119_CMMCLK__FUNC_CMMCLK>;
+			drive-strength = <MTK_DRIVE_4mA>;
+		};
+	};
+};
