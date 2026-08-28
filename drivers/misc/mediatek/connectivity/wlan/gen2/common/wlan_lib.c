@@ -967,6 +967,14 @@
 #include "precomp.h"
 #include "mgmt/ais_fsm.h"
 
+/*
+ * Base of the DRAM region reserved by the "mediatek,consys-reserve-memory"
+ * device-tree node, exported by the CONNSYS platform driver.  Firmware
+ * sections destined for 0xf0000000 and above land here rather than inside
+ * the chip; see the verification loop in wlanAdapterStart().
+ */
+extern phys_addr_t gConEmiPhyBase;
+
 /*******************************************************************************
 *                              C O N S T A N T S
 ********************************************************************************
@@ -1409,6 +1417,136 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 			eFailReason = RAM_CODE_DOWNLOAD_FAIL;
 			break;
 		}
+
+		/*
+		 * biscuit: verify the firmware actually landed.
+		 *
+		 * WIFI_RAM_CODE_8163 has four sections.  Only section 0
+		 * (0x0006a000, 7KB) and section 1 (0x0209f800, 18KB) go to
+		 * memory inside the chip.  Sections 2 and 3 target 0xf0006000
+		 * and 0xf004e000 - 344KB, ~92% of the image - and those are
+		 * CONNSYS EMI addresses: the chip reaches them through the
+		 * remap aperture in topckgen, which points at the DRAM the
+		 * "mediatek,consys-reserve-memory" node reserved for us.
+		 *
+		 * So most of the firmware never enters the chip at all; it is
+		 * DMA'd into AP DRAM and fetched back over EMI.  If the
+		 * aperture is misprogrammed the download still reports success
+		 * for every section (the HIF handshake is driven by byte
+		 * counts, not by content), and the only symptom is that the
+		 * MCU never reaches the ready bit.  Compare what we sent
+		 * against what is sitting in DRAM so that failure is loud.
+		 */
+		if (fgValidHead == TRUE && gConEmiPhyBase) {
+			/*
+			 * Re-read the CONNSYS->AP EMI aperture here rather than
+			 * trusting the print in mtk_wcn_consys_hw_init(): that
+			 * one lands in the middle of the noisiest part of boot
+			 * and the UART capture drops it.
+			 *
+			 * Note the base: what this driver calls "topckgen_base"
+			 * is the THIRD reg range of the consys DT node,
+			 * 0x10001000 - not the SoC's real topckgen at
+			 * 0x10000000. So the aperture register is 0x10001320,
+			 * exactly as the driver's own comment has always said.
+			 * Bits 0..11 hold the target megabyte index relative to
+			 * the base of DRAM (0x40000000), bit 12 enables it, so
+			 * for our reserved region at 0x5f400000 the register
+			 * must read 0x11f4.
+			 */
+			void __iomem *pucTopck = ioremap(0x10001000 + 0x320, 4);
+			void __iomem *pucWipe;
+
+			if (pucTopck) {
+				UINT_32 u4Aperture = readl(pucTopck);
+
+				DBGLOG(INIT, WARN,
+				       "biscuit-emi: aperture reg=0x%08x (want 0x%08x) -> chip sees DRAM at 0x%08x, reserved base 0x%llx\n",
+				       u4Aperture, 0x11f4u,
+				       (UINT_32)(0x40000000u + ((u4Aperture & 0xfff) << 20)),
+				       (unsigned long long)gConEmiPhyBase);
+				iounmap(pucTopck);
+			}
+
+			/*
+			 * Clear the whole 512KB the WiFi firmware owns before
+			 * dropping the sections in. The sections do not cover
+			 * it: the lowest destination is 0xf0006000, so the
+			 * first 24KB is never written by anyone, and the gaps
+			 * between and after the sections are equally stale.
+			 * This DRAM survives warm reboots, so whatever the
+			 * previous boot left there stays visible to the chip -
+			 * we were reading 46 ff 00 63 ... out of it. Anything
+			 * the firmware expects to find zeroed (BSS, shared
+			 * structures) would instead come up full of garbage.
+			 */
+			pucWipe = ioremap(gConEmiPhyBase, 512 * 1024);
+			if (pucWipe) {
+				memset_io(pucWipe, 0, 512 * 1024);
+				iounmap(pucWipe);
+				DBGLOG(INIT, WARN, "biscuit-emi: zeroed 512KB of WiFi EMI region\n");
+			}
+
+			for (i = 0; i < prFwHead->u4NumOfEntries; i++) {
+				UINT_32 u4Dest = prFwHead->arSection[i].u4DestAddr;
+				UINT_32 u4Len = prFwHead->arSection[i].u4Length;
+				PUINT_8 pucSrc = (PUINT_8) pvFwImageMapFile +
+						 prFwHead->arSection[i].u4Offset;
+				void __iomem *pucEmi;
+				UINT_32 u4CmpLen = (u4Len < 256) ? u4Len : 256;
+				UINT_8 aucGot[256];
+
+				if (u4Dest < 0xf0000000) {
+					DBGLOG(INIT, WARN,
+					       "biscuit-fwsec[%u]: dest=0x%08x len=0x%x -> in-chip, not checked\n",
+					       i, u4Dest, u4Len);
+					continue;
+				}
+
+				/*
+				 * EXPERIMENT (biscuit): push the section into
+				 * the EMI window from the AP side as well.
+				 *
+				 * The HIF download reports success for these
+				 * sections, but reading the window back shows
+				 * they are not there. Two readings of that:
+				 * either the chip is meant to write them over
+				 * EMI and its write path is broken, or these
+				 * destinations are internal to the chip and
+				 * the window is the wrong place to look.
+				 *
+				 * Writing them here discriminates: if the
+				 * firmware comes ready afterwards, the image
+				 * really does need to be in this DRAM.
+				 */
+				pucEmi = ioremap(gConEmiPhyBase + (u4Dest - 0xf0000000), u4Len);
+				if (!pucEmi) {
+					DBGLOG(INIT, ERROR,
+					       "biscuit-fwsec[%u]: ioremap of EMI dest 0x%08x failed\n",
+					       i, u4Dest);
+					continue;
+				}
+				memcpy_toio(pucEmi, pucSrc, u4Len);
+				/* read back through the same mapping */
+				memcpy_fromio(aucGot, pucEmi, u4CmpLen);
+				iounmap(pucEmi);
+				DBGLOG(INIT, WARN,
+				       "biscuit-fwsec[%u]: host-wrote 0x%x bytes into EMI window\n",
+				       i, u4Len);
+
+				DBGLOG(INIT, WARN,
+				       "biscuit-fwsec[%u]: dest=0x%08x len=0x%x emi_phys=0x%llx %s\n",
+				       i, u4Dest, u4Len,
+				       (unsigned long long)(gConEmiPhyBase + (u4Dest - 0xf0000000)),
+				       memcmp(aucGot, pucSrc, u4CmpLen) ? "*** MISMATCH ***" : "match");
+				DBGLOG(INIT, WARN, "biscuit-fwsec[%u]: want %02x %02x %02x %02x %02x %02x %02x %02x\n",
+				       i, pucSrc[0], pucSrc[1], pucSrc[2], pucSrc[3],
+				       pucSrc[4], pucSrc[5], pucSrc[6], pucSrc[7]);
+				DBGLOG(INIT, WARN, "biscuit-fwsec[%u]: got  %02x %02x %02x %02x %02x %02x %02x %02x\n",
+				       i, aucGot[0], aucGot[1], aucGot[2], aucGot[3],
+				       aucGot[4], aucGot[5], aucGot[6], aucGot[7]);
+			}
+		}
 #if !CFG_ENABLE_FW_DOWNLOAD_ACK
 		/* Send INIT_CMD_ID_QUERY_PENDING_ERROR command and wait for response */
 		if (wlanImageQueryStatus(prAdapter) != WLAN_STATUS_SUCCESS) {
@@ -1441,11 +1579,26 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				eFailReason = WAIT_FIRMWARE_READY_FAIL;
 				break;
 			} else if (i >= CFG_RESPONSE_POLLING_TIMEOUT) {
-				UINT_32 u4MailBox0;
+				UINT_32 u4MailBox0, u4Mb, u4Idx;
 
 				nicGetMailbox(prAdapter, 0, &u4MailBox0);
 				DBGLOG(INIT, ERROR, "Waiting for Ready bit: Timeout, ID=%u\n",
 						     (u4MailBox0 & 0x0000FFFF));
+				/*
+				 * biscuit: the ID above is only the low half of
+				 * mailbox 0.  Dump the raw WCIR and every
+				 * mailbox - the firmware puts its own failure
+				 * code in one of them, and WCIR tells us
+				 * whether we are even reading a live register
+				 * (0x00000000 / 0xffffffff means the bus read
+				 * itself is broken, not the firmware).
+				 */
+				DBGLOG(INIT, ERROR, "biscuit-ready: WCIR=0x%08x (need READY bit 0x%08x), start=0x%08x\n",
+				       u4Value, (UINT_32) WCIR_WLAN_READY, prRegInfo->u4StartAddress);
+				for (u4Idx = 0; u4Idx < 4; u4Idx++) {
+					nicGetMailbox(prAdapter, u4Idx, &u4Mb);
+					DBGLOG(INIT, ERROR, "biscuit-ready: mailbox[%u]=0x%08x\n", u4Idx, u4Mb);
+				}
 				u4Status = WLAN_STATUS_FAILURE;
 				eFailReason = WAIT_FIRMWARE_READY_FAIL;
 				break;
