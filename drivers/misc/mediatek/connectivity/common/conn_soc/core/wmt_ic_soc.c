@@ -2089,19 +2089,42 @@ done:
  * drivers (drivers/bluetooth/btmtk.c) do - request_firmware() with a
  * bare name, no userspace round-trip, no launcher daemon needed.
  */
-#define BISCUIT_WMT_PATCH_NAME "mediatek/biscuit-connsys-patch.bin"
+/*
+ * The stock Fire OS firmware directory (recovered by dumping system_b and
+ * decoding its ext4 directory block) contains exactly four files for this
+ * chip: these two ROM patches, WIFI_RAM_CODE_8163 (the WiFi MAC firmware,
+ * loaded much later by wlan/gen2, not here), and WMT_SOC.cfg. So these two
+ * ARE the connsys ROM patch set, under their original names.
+ *
+ * Both must be downloaded, in order. wmt_ctrl_get_patch_info() indexes this
+ * array as "pWmtPatchInfo + dowloadSeq - 1", and mtk_wcn_soc_sw_init() loops
+ * patch_index over wmt_lib_set_patch_num(), so registering only one entry -
+ * as this did before - downloads half the patch set and leaves the chip
+ * running with an incomplete ROM patch.
+ */
+#define BISCUIT_WMT_PATCH_NAME_1 "mediatek/ROMv2_lm_patch_1_0_hdr.bin"
+#define BISCUIT_WMT_PATCH_NAME_2 "mediatek/ROMv2_lm_patch_1_1_hdr.bin"
+#define BISCUIT_WMT_PATCH_NUM 2
 
-static WMT_PATCH_INFO gBiscuitPatchInfo;
+static WMT_PATCH_INFO gBiscuitPatchInfo[BISCUIT_WMT_PATCH_NUM];
 
 static INT32 mtk_wcn_soc_patch_info_prepare(VOID)
 {
-	osal_memset(&gBiscuitPatchInfo, 0, osal_sizeof(gBiscuitPatchInfo));
-	gBiscuitPatchInfo.dowloadSeq = 1;
-	osal_strncpy(gBiscuitPatchInfo.patchName, BISCUIT_WMT_PATCH_NAME,
-		     osal_sizeof(gBiscuitPatchInfo.patchName) - 1);
+	static const char * const patch_names[BISCUIT_WMT_PATCH_NUM] = {
+		BISCUIT_WMT_PATCH_NAME_1,
+		BISCUIT_WMT_PATCH_NAME_2,
+	};
+	UINT32 i;
 
-	wmt_lib_set_patch_num(1);
-	wmt_lib_set_patch_info(&gBiscuitPatchInfo);
+	osal_memset(&gBiscuitPatchInfo, 0, osal_sizeof(gBiscuitPatchInfo));
+	for (i = 0; i < BISCUIT_WMT_PATCH_NUM; i++) {
+		gBiscuitPatchInfo[i].dowloadSeq = i + 1;
+		osal_strncpy(gBiscuitPatchInfo[i].patchName, patch_names[i],
+			     osal_sizeof(gBiscuitPatchInfo[i].patchName) - 1);
+	}
+
+	wmt_lib_set_patch_num(BISCUIT_WMT_PATCH_NUM);
+	wmt_lib_set_patch_info(&gBiscuitPatchInfo[0]);
 
 	return 0;
 }
