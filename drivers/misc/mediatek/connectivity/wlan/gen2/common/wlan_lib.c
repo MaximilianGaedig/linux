@@ -975,6 +975,105 @@
  */
 extern phys_addr_t gConEmiPhyBase;
 
+/*----------------------------------------------------------------------------*/
+/*!
+* \brief Read one 32-bit word out of the chip using the ROM's init-time
+*        register access command.
+*
+* The download path gives us no way to confirm that anything it sends is
+* actually stored - every section is acknowledged with status 0 regardless.
+* INIT_CMD_ID_ACCESS_REG is supported by the ROM before the firmware runs and
+* is otherwise unused by this driver, so it serves as a read-back primitive.
+*
+* \param[in]  prAdapter
+* \param[in]  u4Address  address in the chip's own address space
+* \param[out] pu4Data    value read
+*
+* \retval WLAN_STATUS_SUCCESS if the chip answered
+*/
+/*----------------------------------------------------------------------------*/
+static WLAN_STATUS __maybe_unused biscuitReadChipMem(IN P_ADAPTER_T prAdapter, IN UINT_32 u4Address,
+						     OUT PUINT_32 pu4Data)
+{
+	P_CMD_INFO_T prCmdInfo;
+	P_INIT_HIF_TX_HEADER_T prInitHifTxHeader;
+	P_INIT_CMD_ACCESS_REG prAccess;
+	P_INIT_HIF_RX_HEADER_T prRxHdr;
+	P_INIT_EVENT_ACCESS_REG prEvt;
+	UINT_8 ucCmdSeqNum;
+	UINT_32 u4RxPktLength;
+	UINT_8 aucBuffer[sizeof(INIT_HIF_RX_HEADER_T) + sizeof(INIT_EVENT_ACCESS_REG)];
+	WLAN_STATUS u4Status = WLAN_STATUS_SUCCESS;
+
+	prCmdInfo = cmdBufAllocateCmdInfo(prAdapter, sizeof(INIT_HIF_TX_HEADER_T) + sizeof(INIT_CMD_ACCESS_REG));
+	if (!prCmdInfo)
+		return WLAN_STATUS_FAILURE;
+
+	kalMemZero(prCmdInfo->pucInfoBuffer, sizeof(INIT_HIF_TX_HEADER_T) + sizeof(INIT_CMD_ACCESS_REG));
+	prCmdInfo->u2InfoBufLen = sizeof(INIT_HIF_TX_HEADER_T) + sizeof(INIT_CMD_ACCESS_REG);
+
+	ucCmdSeqNum = nicIncreaseCmdSeqNum(prAdapter);
+	prInitHifTxHeader = (P_INIT_HIF_TX_HEADER_T) (prCmdInfo->pucInfoBuffer);
+	prInitHifTxHeader->rInitWifiCmd.ucCID = INIT_CMD_ID_ACCESS_REG;
+	prInitHifTxHeader->rInitWifiCmd.ucSeqNum = ucCmdSeqNum;
+
+	prAccess = (P_INIT_CMD_ACCESS_REG) (prInitHifTxHeader->rInitWifiCmd.aucBuffer);
+	prAccess->ucSetQuery = 1;	/* query */
+	prAccess->u4Address = u4Address;
+	prAccess->u4Data = 0;
+
+	while (1) {
+		if (nicTxAcquireResource(prAdapter, TC0_INDEX, FALSE) == WLAN_STATUS_RESOURCES) {
+			if (nicTxPollingResource(prAdapter, TC0_INDEX) != WLAN_STATUS_SUCCESS) {
+				u4Status = WLAN_STATUS_FAILURE;
+				break;
+			}
+			continue;
+		}
+		if (nicTxInitCmd(prAdapter, prCmdInfo, TC0_INDEX) != WLAN_STATUS_SUCCESS)
+			u4Status = WLAN_STATUS_FAILURE;
+		break;
+	}
+	cmdBufFreeCmdInfo(prAdapter, prCmdInfo);
+
+	if (u4Status != WLAN_STATUS_SUCCESS)
+		return u4Status;
+
+	if (nicRxWaitResponse(prAdapter, 0, aucBuffer, sizeof(aucBuffer), &u4RxPktLength) != WLAN_STATUS_SUCCESS) {
+		DBGLOG(INIT, ERROR, "biscuit-peek: no response at all to ACCESS_REG\n");
+		return WLAN_STATUS_FAILURE;
+	}
+
+	prRxHdr = (P_INIT_HIF_RX_HEADER_T) aucBuffer;
+	if (prRxHdr->rInitWifiEvent.ucEID != INIT_EVENT_ID_ACCESS_REG) {
+		/*
+		 * Distinguish "the ROM does not implement this command" from a
+		 * transport problem. A CMD_RESULT carrying status 4
+		 * (INIT_CMD_STATUS_UNKNOWN) is the chip telling us the command
+		 * id is not supported, which is a completely different fact
+		 * from silence.
+		 */
+		/*
+		 * Print the sequence number alongside. If it does not match the
+		 * one we just sent, this is not the chip answering our query at
+		 * all - it is a leftover response sitting in the RX path, and
+		 * every "ACK" this driver has been trusting during firmware
+		 * download would be equally suspect.
+		 */
+		DBGLOG(INIT, ERROR,
+		       "biscuit-peek: answered EID=%u (wanted %u) status=%u len=%u seq=%u (we sent seq=%u) %s\n",
+		       prRxHdr->rInitWifiEvent.ucEID, (UINT_32) INIT_EVENT_ID_ACCESS_REG,
+		       ((P_INIT_EVENT_CMD_RESULT) (prRxHdr->rInitWifiEvent.aucBuffer))->ucStatus,
+		       u4RxPktLength, prRxHdr->rInitWifiEvent.ucSeqNum, ucCmdSeqNum,
+		       prRxHdr->rInitWifiEvent.ucSeqNum == ucCmdSeqNum ? "(fresh)" : "*** STALE ***");
+		return WLAN_STATUS_FAILURE;
+	}
+
+	prEvt = (P_INIT_EVENT_ACCESS_REG) (prRxHdr->rInitWifiEvent.aucBuffer);
+	*pu4Data = prEvt->u4Data;
+	return WLAN_STATUS_SUCCESS;
+}
+
 /*
  * Bring-up experiments, off by default. Define one to re-run it:
  *   BISCUIT_EMI_SCAN_TEST - zero the whole 2MB reserved region before the
@@ -1728,6 +1827,59 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 
 
 
+#ifdef BISCUIT_CHIP_PEEK_TEST
+		/*
+		 * Read memory back out of the chip before starting it.
+		 *
+		 * Everything about whether the download actually stores
+		 * anything has been inferred so far. INIT_CMD_ID_ACCESS_REG is
+		 * a read/write primitive the ROM supports at init time, and
+		 * nothing in this driver ever uses it - so use it to ask the
+		 * chip directly what is at the addresses we just downloaded to.
+		 *
+		 * Three questions at once:
+		 *   0x0006a000 - section 0, in-chip, and the entry point that
+		 *                WIFI_START is told to jump to.
+		 *   0x0209f800 - section 1, in-chip.
+		 *   0xf0006000 - section 2, the EMI window. If the chip reads
+		 *                the same bytes we placed in reserved DRAM, its
+		 *                view of EMI matches ours; if not, the aperture
+		 *                is not landing where we think it does.
+		 */
+		{
+			static const UINT_32 au4Probe[3] = { 0x0006a000, 0x0209f800, 0xf0006000 };
+			UINT_32 u4P;
+
+			for (u4P = 0; u4P < 3; u4P++) {
+				UINT_32 u4Val = 0;
+				WLAN_STATUS rProbe = biscuitReadChipMem(prAdapter, au4Probe[u4P], &u4Val);
+				PUINT_8 pucWant = NULL;
+				UINT_32 u4Want = 0;
+				UINT_32 u4S;
+
+				/* what the image says should be at that address */
+				for (u4S = 0; u4S < prFwHead->u4NumOfEntries; u4S++) {
+					if (prFwHead->arSection[u4S].u4DestAddr == au4Probe[u4P]) {
+						pucWant = (PUINT_8) pvFwImageMapFile +
+							  prFwHead->arSection[u4S].u4Offset;
+						u4Want = pucWant[0] | (pucWant[1] << 8) |
+							 (pucWant[2] << 16) | ((UINT_32) pucWant[3] << 24);
+						break;
+					}
+				}
+				if (rProbe != WLAN_STATUS_SUCCESS)
+					DBGLOG(INIT, ERROR,
+					       "biscuit-peek: 0x%08x -> READ FAILED (chip did not answer)\n",
+					       au4Probe[u4P]);
+				else
+					DBGLOG(INIT, ERROR,
+					       "biscuit-peek: 0x%08x -> 0x%08x (image has 0x%08x) %s\n",
+					       au4Probe[u4P], u4Val, u4Want,
+					       (pucWant && u4Val == u4Want) ? "MATCH" : "*** MISMATCH ***");
+			}
+		}
+
+#endif
 		/* 4. send Wi-Fi Start command */
 		DBGLOG(INIT, INFO, "<wifi> send Wi-Fi Start command\n");
 #if CFG_OVERRIDE_FW_START_ADDRESS
