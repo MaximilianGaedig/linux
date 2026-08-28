@@ -58,10 +58,13 @@
 ********************************************************************************
 */
 BOOLEAN fgIsResetting = FALSE;
-UINT_32 g_IsNeedDoChipReset = 0;
+/*
+ * Defined in wmt_chrdev_wifi.c, which is built-in, because that file uses it
+ * too and wlan/gen2 is a module now. A module cannot satisfy a vmlinux
+ * reference, so the definition has to live on the built-in side.
+ */
 /* consumed by conn_soc's WiFi chardev (wmt_chrdev_wifi.c) to decide whether a
  * chip reset is pending, so it has to cross the module boundary. */
-EXPORT_SYMBOL(g_IsNeedDoChipReset);
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A

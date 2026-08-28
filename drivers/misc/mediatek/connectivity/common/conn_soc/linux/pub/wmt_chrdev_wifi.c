@@ -70,6 +70,10 @@ enum {
 	WLAN_MODE_STA_P2P,
 	WLAN_MODE_MAX
 };
+/* see gl_rst.c - lives here so vmlinux can resolve it; wlan/gen2 is a module */
+UINT32 g_IsNeedDoChipReset;
+EXPORT_SYMBOL(g_IsNeedDoChipReset);
+
 static INT32 wlan_mode = WLAN_MODE_HALT;
 static INT32 powered;
 static INT8 *ifname = WLAN_IFACE_NAME;
