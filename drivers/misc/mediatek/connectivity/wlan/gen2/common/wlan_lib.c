@@ -983,7 +983,9 @@ extern phys_addr_t gConEmiPhyBase;
  * still never writes the two firmware sections at +0x6000 and +0x4e000.
  * Turning this off leaves section 3 reading back as zeroes, so it stays on.
  */
-#define BISCUIT_EMI_HOST_FILL 1
+/* #define BISCUIT_EMI_HOST_FILL 1 */  /* off: let the chip place them, so the sweep finds the chip's own copy */
+/* #define BISCUIT_CHIP_PEEK_TEST 1 */
+/* #define BISCUIT_CRC_TEST 1 */
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -1094,7 +1096,7 @@ static WLAN_STATUS __maybe_unused biscuitReadChipMem(IN P_ADAPTER_T prAdapter, I
  *     Thumb encoding of "b ." so the MCU freezes if it fetches from there.
  *     Inconclusive: the PC read back ROM addresses rather than freezing.
  */
-/* #define BISCUIT_EMI_SCAN_TEST 1 */
+#define BISCUIT_EMI_SCAN_TEST 1
 /* #define BISCUIT_START_TRAP_TEST 1 */
 
 /*******************************************************************************
@@ -1971,11 +1973,18 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 						UINT_8 aucChunk[256];
 
 						for (u4Off = 0; u4Off < 2 * 1024 * 1024; u4Off += sizeof(aucChunk)) {
-							/* skip what we wrote ourselves */
+#ifdef BISCUIT_EMI_HOST_FILL
+							/*
+							 * Only skip the section ranges when WE filled
+							 * them. With the host fill off they are exactly
+							 * where the chip's own copy lands, and skipping
+							 * them hid it.
+							 */
 							if (u4Off >= 0x6000 && u4Off < 0x6000 + 0x3f1c0)
 								continue;
 							if (u4Off >= 0x4e000 && u4Off < 0x4e000 + 0x15010)
 								continue;
+#endif
 
 							memcpy_fromio(aucChunk, pucChk + u4Off, sizeof(aucChunk));
 							for (u4B = 0; u4B < sizeof(aucChunk); u4B++) {
@@ -1984,6 +1993,39 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 										u4First = u4Off + u4B;
 									u4NonZero++;
 								}
+							}
+						}
+						{
+							/*
+							 * Report the two section windows explicitly.
+							 * The image is encrypted - every section has
+							 * near-maximum entropy - so the chip stores
+							 * PLAINTEXT and searching for the ciphertext
+							 * can never match. Occupancy is the only
+							 * meaningful measure here.
+							 */
+							UINT_32 u4R, u4NZ;
+							static const UINT_32 au4Rng[2][2] = {
+								{ 0x6000, 0x3f1c0 }, { 0x4e000, 0x15010 } };
+
+							for (u4R = 0; u4R < 2; u4R++) {
+								UINT_32 u4O;
+
+								u4NZ = 0;
+								for (u4O = 0; u4O < au4Rng[u4R][1]; u4O += sizeof(aucChunk)) {
+									UINT_32 u4B2;
+									UINT_32 u4N = (au4Rng[u4R][1] - u4O) < sizeof(aucChunk)
+										      ? (au4Rng[u4R][1] - u4O) : sizeof(aucChunk);
+
+									memcpy_fromio(aucChunk, pucChk + au4Rng[u4R][0] + u4O, u4N);
+									for (u4B2 = 0; u4B2 < u4N; u4B2++)
+										if (aucChunk[u4B2])
+											u4NZ++;
+								}
+								DBGLOG(INIT, ERROR,
+								       "biscuit-emisec: section window +0x%x len 0x%x -> %u non-zero bytes (%u%% filled)\n",
+								       au4Rng[u4R][0], au4Rng[u4R][1], u4NZ,
+								       (u4NZ * 100) / au4Rng[u4R][1]);
 							}
 						}
 						iounmap(pucChk);
@@ -3429,6 +3471,34 @@ wlanImageSectionDownload(IN P_ADAPTER_T prAdapter,
 	prInitCmdDownloadBuf->u4Address = u4DestAddr;
 	prInitCmdDownloadBuf->u4Length = u4ImgSecSize;
 	prInitCmdDownloadBuf->u4CRC32 = wlanCRC32(pucImgSecBuf, u4ImgSecSize);
+#ifdef BISCUIT_CRC_TEST
+	/*
+	 * Deliberately corrupt the CRC of the very first chunk.
+	 *
+	 * Every section download is acknowledged with status 0, but we now
+	 * know this chip answers unimplemented init commands with a canned
+	 * success (ACCESS_REG queries come back as CMD_RESULT/status 0 rather
+	 * than the data event they are defined to return). So a status 0 does
+	 * not by itself prove the chip did anything with the payload.
+	 *
+	 * The download command carries a CRC and the protocol defines
+	 * INIT_CMD_STATUS_REJECTED_CRC_ERROR (2) for a mismatch. Send one bad
+	 * CRC on purpose: if the chip comes back with 2, it really is reading
+	 * and checking the payload, and downloads are genuine. If it still
+	 * says 0, DOWNLOAD_BUF is being stubbed the same way ACCESS_REG is.
+	 */
+	{
+		static BOOLEAN fgOnce;
+
+		if (!fgOnce) {
+			fgOnce = TRUE;
+			prInitCmdDownloadBuf->u4CRC32 ^= 0xdeadbeef;
+			DBGLOG(INIT, ERROR,
+			       "biscuit-crctest: corrupting CRC of first chunk (dest 0x%08x len 0x%x) on purpose\n",
+			       u4DestAddr, u4ImgSecSize);
+		}
+	}
+#endif
 
 	prInitCmdDownloadBuf->u4DataMode = 0
 #if CFG_ENABLE_FW_DOWNLOAD_ACK
@@ -3634,7 +3704,7 @@ WLAN_STATUS wlanImageSectionDownloadStatus(IN P_ADAPTER_T prAdapter, IN UINT_8 u
 					   3: rejected by decryption failure
 					   4: unknown CMD
 					 */
-					DBGLOG(INIT, ERROR, "Read Response status error = %d\n",
+					DBGLOG(INIT, ERROR, "biscuit-crctest: Read Response status error = %d (2 == CRC rejected, i.e. the chip really checks payloads)\n",
 							     prEventCmdResult->ucStatus);
 					u4Status = WLAN_STATUS_FAILURE;
 				} else {
