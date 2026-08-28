@@ -1339,7 +1339,7 @@
  */
 #define CFG_ENABLE_FW_DOWNLOAD                  1
 
-#define CFG_ENABLE_FW_DOWNLOAD_ACK              1
+#define CFG_ENABLE_FW_DOWNLOAD_ACK             1
 #define CFG_ENABLE_FW_ENCRYPTION                1
 
 #if defined(MT6628)
