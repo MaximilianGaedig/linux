@@ -2052,6 +2052,38 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				eFailReason = WAIT_FIRMWARE_READY_FAIL;
 				break;
 			}
+			/*
+			 * Sample the firmware's own progress while we wait.
+			 *
+			 * It reports a state in mailbox 0 ("INIT" plus a code).
+			 * Seeing only the value at timeout says nothing about
+			 * whether it got anywhere; logging it as it goes shows
+			 * whether the code advances and then stops, or never
+			 * moves at all.
+			 */
+			if ((i % 50) == 0) {
+				UINT_32 u4Mb0 = 0, u4Mb1 = 0;
+
+				UINT_32 u4His = 0, u4Asr = 0, u4Lp = 0;
+
+				nicGetMailbox(prAdapter, 0, &u4Mb0);
+				nicGetMailbox(prAdapter, 1, &u4Mb1);
+				/*
+				 * Also sample the interrupt-status side. If the
+				 * firmware is raising a device-to-host software
+				 * interrupt (WHISR bits 8..31, or bit 31 for
+				 * assert info) and waiting for the host to take
+				 * it, we would never notice: interrupts are
+				 * disabled for the download and this loop only
+				 * polls WCIR.
+				 */
+				HAL_MCR_RD(prAdapter, MCR_WHISR, &u4His);
+				HAL_MCR_RD(prAdapter, MCR_WASR, &u4Asr);
+				HAL_MCR_RD(prAdapter, MCR_WHLPCR, &u4Lp);
+				DBGLOG(INIT, ERROR,
+				       "biscuit-progress: t=%ums WCIR=0x%08x mb0=0x%08x mb1=0x%08x WHISR=0x%08x WASR=0x%08x WHLPCR=0x%08x\n",
+				       i * 10, u4Value, u4Mb0, u4Mb1, u4His, u4Asr, u4Lp);
+			}
 			i++;
 			kalMsleep(10);
 		}
