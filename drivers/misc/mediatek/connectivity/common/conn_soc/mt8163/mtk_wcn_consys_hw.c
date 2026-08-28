@@ -97,7 +97,14 @@ static VOID mtk_wmt_remove(struct platform_device *pdev);
 */
 
 struct CONSYS_BASE_ADDRESS conn_reg;
-static phys_addr_t gConEmiPhyBase;
+/*
+ * Not static: the WiFi driver needs it to verify that the firmware
+ * sections whose destination lies in the CONNSYS EMI window
+ * (0xf0000000 and up) really landed in this reserved DRAM region.
+ * hif.h already declares it extern.
+ */
+phys_addr_t gConEmiPhyBase;
+EXPORT_SYMBOL(gConEmiPhyBase);
 static UINT8 __iomem *pEmibaseaddr;
 static struct clk *clk_infra_conn_main;	/*ctrl infra_connmcu_bus clk */
 static struct platform_device *my_pdev;
@@ -838,11 +845,16 @@ INT32 mtk_wcn_consys_hw_restore(struct device *device)
 		/*enable consys to ap emi remapping bit12 */
 		addrPhy = addrPhy | 0x1000;
 
+		/* Mask the field before writing - see the long comment on the
+		 * matching write in mtk_wcn_consys_hw_init().
+		 */
 		CONSYS_REG_WRITE(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET,
-				 CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET) | addrPhy);
+				 (CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET)
+				  & ~0x1FFF) | addrPhy);
 
-		WMT_PLAT_INFO_FUNC("CONSYS_EMI_MAPPING dump in restore cb(0x%08x)\n",
-				   CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET));
+		WMT_PLAT_INFO_FUNC("CONSYS_EMI_MAPPING dump in restore cb(0x%08x) want(0x%08x)\n",
+				   CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET),
+				   addrPhy);
 
 #if 1
 		pEmibaseaddr = ioremap(gConEmiPhyBase + CONSYS_EMI_AP_PHY_OFFSET, CONSYS_EMI_MEM_SIZE);
@@ -953,11 +965,39 @@ INT32 mtk_wcn_consys_hw_init(void)
 		/*enable consys to ap emi remapping bit12 */
 		addrPhy = addrPhy | 0x1000;
 
+		/*
+		 * Clear the address field before writing it.
+		 *
+		 * Upstream (and Amazon) do a bare read-modify-write with OR
+		 * here, which silently assumes the field is zero to begin
+		 * with. On this boot path it is not: something before us -
+		 * LK/u-boot, or the register's own reset value - leaves 0x5f4
+		 * in it, the un-offset megabyte index. OR-ing our 0x1f4 into
+		 * that cannot clear the stale 0x400 bit, so the register ended
+		 * up 0x15f4 instead of 0x11f4 and the aperture pointed at
+		 * (0x5f4 << 20) + 0x40000000 = 0x9f400000 - past the end of the
+		 * 1GB fitted here.
+		 *
+		 * Nothing fails loudly when that happens. Every firmware
+		 * section still "downloads" successfully, because the HIF
+		 * handshake is driven by byte counts rather than by content,
+		 * but the ~344KB of image destined for EMI (sections 2 and 3,
+		 * 0xf0006000 and 0xf004e000 - about 92% of WIFI_RAM_CODE_8163)
+		 * is written into nowhere. The MCU then sits in ROM spinning
+		 * around 0xe93c-0xe968 with "INIT" in its mailboxes, and the
+		 * only visible symptom is that the ready bit never asserts:
+		 *   wlanAdapterStart: Waiting for Ready bit: Timeout, ID=200
+		 *
+		 * Bits 0..11 are the megabyte index and bit 12 is the enable,
+		 * so mask off the whole 13-bit field rather than OR-ing.
+		 */
 		CONSYS_REG_WRITE(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET,
-				 CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET) | addrPhy);
+				 (CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET)
+				  & ~0x1FFF) | addrPhy);
 
-		WMT_PLAT_INFO_FUNC("CONSYS_EMI_MAPPING dump(0x%08x)\n",
-				   CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET));
+		WMT_PLAT_INFO_FUNC("CONSYS_EMI_MAPPING dump(0x%08x) want(0x%08x)\n",
+				   CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_EMI_MAPPING_OFFSET),
+				   addrPhy);
 
 #if 1
 		pEmibaseaddr = ioremap(gConEmiPhyBase + CONSYS_EMI_AP_PHY_OFFSET, CONSYS_EMI_MEM_SIZE);
