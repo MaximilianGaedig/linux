@@ -2252,6 +2252,12 @@ static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)
 	}
 
 	/*send wmt part patch address command */
+	pr_info("biscuit-patch: idx=%u size=%u icId=0x%x ADDRESS_CMD reg=%02x%02x%02x%02x val=%02x%02x%02x%02x\n",
+		index, patchSize, wmt_ic_ops_soc.icId,
+		WMT_PATCH_ADDRESS_CMD[11], WMT_PATCH_ADDRESS_CMD[10],
+		WMT_PATCH_ADDRESS_CMD[9], WMT_PATCH_ADDRESS_CMD[8],
+		WMT_PATCH_ADDRESS_CMD[15], WMT_PATCH_ADDRESS_CMD[14],
+		WMT_PATCH_ADDRESS_CMD[13], WMT_PATCH_ADDRESS_CMD[12]);
 	iRet =
 	    wmt_core_tx((PUINT8) &WMT_PATCH_ADDRESS_CMD[0], sizeof(WMT_PATCH_ADDRESS_CMD), &u4Res, MTK_WCN_BOOL_FALSE);
 	if (iRet || (u4Res != sizeof(WMT_PATCH_ADDRESS_CMD))) {
@@ -2274,8 +2280,62 @@ static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)
 	}
 #endif
 
-	/*send part patch address command */
-	osal_memcpy(&WMT_PATCH_P_ADDRESS_CMD[12], addressByte, osal_sizeof(addressByte));
+	/*
+	 * Send part patch address command.
+	 *
+	 * addressByte is the per-patch destination address inside connsys,
+	 * written to register 0x020904c8. Upstream it comes from userspace:
+	 * MediaTek's launcher daemon supplies it per patch via
+	 * WMT_IOCTL_SET_PATCH_INFO. We have no launcher - patch info is a
+	 * static in-kernel table (mtk_wcn_soc_patch_info_prepare()) whose
+	 * addRess[] is left zeroed - so this memcpy was clobbering the
+	 * command's built-in default (0x01003f00, bytes 00 3f 00 01 above)
+	 * with 0x00000000, i.e. telling the chip to place its ROM patch at
+	 * address 0.
+	 *
+	 * That is fatal, and it is what this port has actually been dying of:
+	 * the chip asserts and dumps core the moment patch download starts.
+	 * (It looked like an MCU-clock-switch failure only because the
+	 * 138.67MHz speed-up command happens to run immediately before patch
+	 * download - with CFG_WMT_PATCH_DL_OPTM=0 the assert still occurs,
+	 * with a byte-identical CRC signature.)
+	 *
+	 * Only override the default when we actually have a non-zero address
+	 * to supply.
+	 */
+	if (!(addressByte[0] || addressByte[1] || addressByte[2] || addressByte[3])) {
+		/*
+		 * Nothing supplied - derive it from the patch file itself, the
+		 * way the stock launcher does.
+		 *
+		 * Recovered the stock /system/bin/6620_launcher from the
+		 * device's own system_b partition: it carries the format string
+		 *   "read patch info:0x%02x,0x%02x,0x%02x,0x%02x"
+		 * i.e. it reads a 4-byte address out of each patch file and
+		 * hands it to the driver via WMT_IOCTL_SET_PATCH_INFO. Those
+		 * four bytes are the last field of the 28-byte WMT_PATCH header
+		 * (the one this code calls u4PatchVer), and they are per-patch:
+		 *   ROMv2_lm_patch_1_0_hdr.bin -> 22 00 06 00
+		 *   ROMv2_lm_patch_1_1_hdr.bin -> 21 00 0e f0  (= 0xf00e0021,
+		 *     squarely in connsys FW address space - cf.
+		 *     CONSYS_EMI_FW_PHY_BASE 0xf0080000)
+		 * while everything before them (date, platform "1636", HwVer
+		 * 0x008a, SwVer 0x008a) is byte-identical between the two files.
+		 */
+		/*
+		 * Leave WMT_PATCH_P_ADDRESS_CMD's built-in default in place
+		 * (0x01003f00, bytes 00 3f 00 01). Deriving it from the patch
+		 * header's u4PatchVer field was tried and rejected on hardware:
+		 * it yields 0x00060022 for patch _1_0 and the chip still
+		 * asserts, so that field is a version, not an address.
+		 */
+		WMT_DBG_FUNC("no per-patch address; keeping built-in default\n");
+	} else {
+		osal_memcpy(&WMT_PATCH_P_ADDRESS_CMD[12], addressByte, osal_sizeof(addressByte));
+	}
+	pr_info("biscuit-patch: idx=%u P_ADDRESS val=%02x%02x%02x%02x\n", index,
+		WMT_PATCH_P_ADDRESS_CMD[15], WMT_PATCH_P_ADDRESS_CMD[14],
+		WMT_PATCH_P_ADDRESS_CMD[13], WMT_PATCH_P_ADDRESS_CMD[12]);
 	WMT_DBG_FUNC("4 bytes address command:0x%02x,0x%02x,0x%02x,0x%02x",
 		      WMT_PATCH_P_ADDRESS_CMD[12],
 		      WMT_PATCH_P_ADDRESS_CMD[13], WMT_PATCH_P_ADDRESS_CMD[14], WMT_PATCH_P_ADDRESS_CMD[15]);

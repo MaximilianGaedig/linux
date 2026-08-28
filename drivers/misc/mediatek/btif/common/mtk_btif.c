@@ -1321,22 +1321,33 @@ int _btif_rx_dma_setup(p_mtk_btif p_btif)
 		_btif_irq_ctrl(p_btif_irq, true);
 #endif
 		/*
-		 * _btif_controller_setup() disables the *main* BTIF core IRQ
-		 * (p_btif_info->p_irq, IRQ 112 - distinct from this DMA
-		 * channel's own IRQ) right after registering it, expecting
-		 * the RX setup path to turn it back on before use. The PIO
-		 * path (_btif_rx_pio_setup(), above) does exactly that, but
-		 * this DMA path never did - it only manages the DMA
-		 * channel's own IRQ, which is a completely separate
-		 * interrupt line from the BTIF core's RX/TX event line.
-		 * Without it, DMA moves bytes fine (confirmed via
-		 * /proc/interrupts: the DMA IRQ fires normally) but the
-		 * core's own RX-ready/RX-timeout/error signalling never
-		 * reaches the driver, so the STP layer above never gets
-		 * notified a frame is ready to parse and loses sync
-		 * ("no sync pkt in BTIF buffer").
+		 * Do NOT enable the BTIF core IRQ here. Amazon's driver
+		 * deliberately leaves it masked in the DMA path, and the
+		 * earlier reasoning for unmasking it (that the DMA path was
+		 * otherwise "silent") was simply wrong:
+		 * btif_rx_dma_irq_handler() -> btif_dma_rx_data_receiver() ->
+		 * btif_bbs_write() -> _btif_rx_btm_sched() already notifies
+		 * STP, so the DMA channel's own IRQ is sufficient.
+		 *
+		 * Unmasking the core line is actively destructive, because
+		 * _btif_controller_setup() registers the *PIO* receiver as the
+		 * core rx callback and hal_btif_hw_init() leaves BTIF_IER_RXFEN
+		 * set. So with the core IRQ live, btif_rx_irq_handler() sits in
+		 * a PIO drain loop on the very RX FIFO the APDMA channel is
+		 * draining, and pushes what it steals into the same btif_buf
+		 * ring - two unsynchronised writers racing one wr_idx, on two
+		 * different interrupt lines. btif_bbs_write() explicitly
+		 * assumes a single writer ("in IRQ context, so read operation
+		 * won't interrupt this operation").
+		 *
+		 * The failure is rate-dependent: at the chip's 26MHz boot clock
+		 * the RX FIFO rarely reaches its trigger level, so the race
+		 * almost never fires. The instant the init script switches the
+		 * connsys MCU to 138.67MHz the chip's output rate jumps ~5x,
+		 * the core IRQ starts firing constantly, and the STP byte
+		 * stream gets shredded - which is exactly where this port has
+		 * been failing, every time, immediately after that command.
 		 */
-		_btif_irq_ctrl(p_btif_info->p_irq, true);
 		BTIF_DBG_FUNC("succeed\n");
 	}
 	return i_ret;
@@ -2660,7 +2671,12 @@ unsigned int btif_bbs_write(p_btif_buf_str p_bbs,
 		hal_btif_dump_reg(p_btif->p_btif_info, REG_BTIF_ALL);
 		hal_dma_dump_reg(p_btif->p_rx_dma->p_dma_info, REG_RX_DMA_ALL);
 		_btif_dump_memory("<DMA Rx vFIFO>", p_buf, buf_len);
-		BBS_INIT(p_bbs);
+		/*
+		 * Deliberately NOT BBS_INIT(p_bbs) here. Amazon warns and keeps
+		 * the data; discarding the whole 48KB backlog mid-frame
+		 * destroys STP framing outright, turning a transient consumer
+		 * stall into guaranteed CRC failures and lost sync.
+		 */
 	}
 
 	return wr_len;
