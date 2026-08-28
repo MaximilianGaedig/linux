@@ -50,11 +50,18 @@ int do_wlan_drv_init(int chip_id)
 		break;
 
 	default:
-#ifdef MTK_WCN_WLAN_GEN2
+#if defined(MTK_WCN_WLAN_GEN2) && !defined(BISCUIT_WLAN_GEN2_IS_MODULE)
 		/* WLAN driver init */
 		ret = mtk_wcn_wlan_gen2_init();
 		WMT_DETECT_INFO_FUNC("WLAN-GEN2 driver init, ret:%d\n", ret);
 		i_ret += ret;
+#elif defined(BISCUIT_WLAN_GEN2_IS_MODULE)
+		/*
+		 * wlan/gen2 is a loadable module: it runs its own module_init
+		 * and registers with WMT from there, so there is nothing to
+		 * call here and nothing to fail.
+		 */
+		WMT_DETECT_INFO_FUNC("WLAN-GEN2 is a module, it will register itself\n");
 #else
 		WMT_DETECT_ERR_FUNC("WLAN-GEN2 driver is not supported, please check CONFIG_MTK_COMBO_CHIP\n");
 		i_ret = -1;
