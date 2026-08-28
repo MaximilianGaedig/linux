@@ -976,6 +976,30 @@
 extern phys_addr_t gConEmiPhyBase;
 
 /*
+ * Bisection switches, all off. Each was used with Bluetooth as an oracle -
+ * BLE scanning works before a WiFi bring-up, so whether it still works after
+ * one tells you whether that step killed the chip.
+ *
+ *   BISCUIT_NO_WIFI_START      download everything, never start.
+ *                              BT SURVIVES - the downloads are harmless.
+ *   BISCUIT_SKIP_ALL_SECTIONS  start with nothing downloaded. BT dies, as it
+ *                              must: the chip honours the start and jumps.
+ *   BISCUIT_START_AT_EMI       start at 0xf0006000, where firmware provably
+ *                              is. BT SURVIVES, and the mailboxes stay 0 -
+ *                              nothing runs, because that is the middle of a
+ *                              section rather than an entry point.
+ *   BISCUIT_SKIP_SECTION n     skip one section. Skipping section 1
+ *                              (0x0209f800) does not save the chip.
+ *
+ * What that adds up to: section 0 lands correctly and the firmware really does
+ * start from 0x0006a000 - it writes "INIT" and 200 into its mailbox within
+ * 500ms - and then it asserts during its own initialisation, hard enough to
+ * take CONNSYS down with it. The EMI sections are fine: both windows read back
+ * 99% filled with chip-decrypted content.
+ */
+/* #define BISCUIT_SKIP_SECTION 1 */
+
+/*
  * Fill the EMI-resident firmware sections from the host.
  *
  * Since the ROM patch started being loaded at its real address the chip does
@@ -1482,6 +1506,28 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 
 			for (i = 0; i < prFwHead->u4NumOfEntries; i++) {
 
+#ifdef BISCUIT_SKIP_SECTION
+				if (i == BISCUIT_SKIP_SECTION) {
+					DBGLOG(INIT, ERROR,
+					       "biscuit-bisect: skipping ONLY section %u dest=0x%08x len=0x%x\n",
+					       i, prFwHead->arSection[i].u4DestAddr,
+					       prFwHead->arSection[i].u4Length);
+					continue;
+				}
+#endif
+#ifdef BISCUIT_SKIP_ALL_SECTIONS
+				/*
+				 * Downloads on their own are harmless: with every
+				 * section sent but WIFI_START withheld, BLE still
+				 * scans afterwards. So WIFI_START is what kills the
+				 * chip. Send it with nothing downloaded at all to
+				 * separate "the command itself is fatal" from "it
+				 * jumps into code that is not there".
+				 */
+				DBGLOG(INIT, ERROR, "biscuit-bisect: skipping section %u dest=0x%08x\n",
+				       i, prFwHead->arSection[i].u4DestAddr);
+				continue;
+#endif
 #ifdef BISCUIT_SKIP_EMI_SECTIONS
 				/*
 				 * Bisecting which part of the download kills the
@@ -1948,7 +1994,20 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		 * far longer than CFG_RESPONSE_POLLING_TIMEOUT's 5s in case it is
 		 * simply slow to finish initialising.
 		 */
-#if CFG_OVERRIDE_FW_START_ADDRESS
+#ifdef BISCUIT_START_AT_EMI
+		DBGLOG(INIT, ERROR, "biscuit-bisect: WIFI_START at EMI 0x%08x instead of 0x%08x\n",
+		       (UINT_32) BISCUIT_START_AT_EMI, prRegInfo->u4StartAddress);
+		wlanConfigWifiFunc(prAdapter, TRUE, BISCUIT_START_AT_EMI);
+#elif defined(BISCUIT_NO_WIFI_START)
+		/*
+		 * Bisecting where the chip dies. Bluetooth works before a WiFi
+		 * download and is gone afterwards; this skips the start command
+		 * so that only the section downloads have happened. If BT still
+		 * answers after this, the damage comes from WIFI_START; if it
+		 * does not, the writes themselves are what break the chip.
+		 */
+		DBGLOG(INIT, ERROR, "biscuit-bisect: downloads done, NOT sending WIFI_START\n");
+#elif CFG_OVERRIDE_FW_START_ADDRESS
 		wlanConfigWifiFunc(prAdapter, TRUE, prRegInfo->u4StartAddress);
 #else
 		wlanConfigWifiFunc(prAdapter, FALSE, 0);
