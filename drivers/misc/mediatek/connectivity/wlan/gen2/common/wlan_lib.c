@@ -1966,6 +1966,51 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				 * chip. That settles whether the MCU can write
 				 * this region at all, or is only reading from it.
 				 */
+				/*
+				 * Dump the firmware's own scratch area.
+				 *
+				 * The chip writes tens of KB into EMI starting
+				 * around +0x80000 - that is
+				 * CONSYS_EMI_FW_PHY_BASE (0xf0080000 in chip
+				 * addresses, gConEmiPhyBase + 0x80000 here).
+				 * If the firmware records anything about why it
+				 * stops in INIT, this is where it would be, and
+				 * printable strings will show up plainly.
+				 */
+				if (gConEmiPhyBase) {
+					void __iomem *pucLog = ioremap(gConEmiPhyBase + 0x80000, 0x400);
+
+					if (pucLog) {
+						UINT_8 aucL[0x400];
+						UINT_32 u4L, u4Run = 0;
+						char acTxt[97];
+						UINT_32 u4T = 0;
+
+						memcpy_fromio(aucL, pucLog, sizeof(aucL));
+						iounmap(pucLog);
+						DBGLOG(INIT, ERROR, "biscuit-fwlog: first 64 bytes at +0x80000: %*ph\n",
+						       64, aucL);
+						/* pull out printable runs of 4+ chars */
+						for (u4L = 0; u4L < sizeof(aucL); u4L++) {
+							UINT_8 c = aucL[u4L];
+
+							if (c >= 0x20 && c < 0x7f && u4T < sizeof(acTxt) - 1) {
+								acTxt[u4T++] = c;
+								u4Run++;
+							} else {
+								if (u4Run >= 4) {
+									acTxt[u4T] = 0;
+									DBGLOG(INIT, ERROR,
+									       "biscuit-fwlog: +0x%x \"%s\"\n",
+									       0x80000 + u4L - u4Run, acTxt);
+								}
+								u4T = 0;
+								u4Run = 0;
+							}
+						}
+					}
+				}
+
 				if (gConEmiPhyBase) {
 					/*
 					 * Scan the ENTIRE 2MB, not just the 24KB
