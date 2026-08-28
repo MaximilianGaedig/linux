@@ -2911,6 +2911,19 @@ static INT_32 wlanProbe(PVOID pvData)
 
 		bRet = glBusInit(pvData);
 		wlanDebugInit();
+		{
+			/*
+			 * BRING-UP: aucDebugModule[] lives in BSS and is
+			 * therefore all-zero, which disables every DBGLOG() in
+			 * the WiFi driver - including the diagnostics that
+			 * explain an adapter-start failure. Turn them all on so
+			 * bring-up failures are actually explicable.
+			 */
+			UINT_8 dbgi;
+
+			for (dbgi = 0; dbgi < DBG_MODULE_NUM; dbgi++)
+				aucDebugModule[dbgi] = DBG_CLASS_MASK;
+		}
 		/* Cannot get IO address from interface */
 		if (FALSE == bRet) {
 			DBGLOG(INIT, ERROR, KERN_ALERT "wlanProbe: glBusInit() fail\n");
@@ -3186,6 +3199,8 @@ bailout:
 	} while (FALSE);
 
 	if (i4Status != WLAN_STATUS_SUCCESS) {
+		pr_err("biscuit-wlanProbe: FAILED i4Status=%d eFailReason=%d\n",
+		       (int)i4Status, (int)eFailReason);
 		switch (eFailReason) {
 		case PROC_INIT_FAIL:
 			wlanNetUnregister(prWdev);
