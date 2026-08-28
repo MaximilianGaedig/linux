@@ -945,7 +945,14 @@ struct KAL_HALT_CTRL_T {
 
 #define kalGetTimeTick()                            jiffies_to_msecs(jiffies)
 
-#define kalPrint                                    pr_debug
+/*
+ * BRING-UP: was pr_debug, which compiles to nothing without DEBUG or dynamic
+ * debug - so every DBGLOG() in the WiFi driver was silently discarded,
+ * including the diagnostics that explain an adapter-start failure. Use
+ * pr_info so bring-up failures are actually explicable. Revert to pr_debug
+ * once WiFi works.
+ */
+#define kalPrint                                    pr_info
 
 #if !DBG
 #define AIS_ERROR_LOGFUNC(_Fmt...)
