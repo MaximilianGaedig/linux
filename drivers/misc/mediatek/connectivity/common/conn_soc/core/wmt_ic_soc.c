@@ -2323,11 +2323,48 @@ static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)
 		 * 0x008a, SwVer 0x008a) is byte-identical between the two files.
 		 */
 		/*
-		 * Leave WMT_PATCH_P_ADDRESS_CMD's built-in default in place
-		 * (0x01003f00, bytes 00 3f 00 01). Deriving it from the patch
-		 * header's u4PatchVer field was tried and rejected on hardware:
-		 * it yields 0x00060022 for patch _1_0 and the chip still
-		 * asserts, so that field is a version, not an address.
+		 * Supply the address the stock launcher would have supplied.
+		 *
+		 * Disassembling /system/bin/6620_launcher recovered from this
+		 * device settles where it comes from. Around the
+		 * "read patch info:0x%02x,0x%02x,0x%02x,0x%02x" call site it does:
+		 *
+		 *   open(patch)                  fd
+		 *   lseek(fd, 22, SEEK_SET)
+		 *   read(fd, buf+1, 1)           byte 22
+		 *   read(fd, buf+0, 1)           byte 23   (stored byte-swapped)
+		 *   ...compare against the expected SW version, and only if it
+		 *      matches:
+		 *   read(fd, buf, 4)             bytes 24..27
+		 *
+		 * so the four bytes it hands the driver via
+		 * WMT_IOCTL_SET_PATCH_INFO are file offsets 24..27 - which is
+		 * exactly the u4PatchVer field of the 28-byte WMT_PATCH header.
+		 * They are per-patch:
+		 *   ROMv2_lm_patch_1_0_hdr.bin -> 22 00 06 00  (0x00060022)
+		 *   ROMv2_lm_patch_1_1_hdr.bin -> 21 00 0e f0  (0xf00e0021)
+		 *
+		 * The name u4PatchVer is a red herring; the launcher treats the
+		 * field as the patch's destination address, and the two files
+		 * differ here while every field before them (date, platform
+		 * "1636", HwVer 0x008a, SwVer 0x008a) is byte-identical.
+		 *
+		 * This was tried once before and rejected because the chip still
+		 * asserted - but that was with the EMI aperture misprogrammed and
+		 * the ROM patch destination being clobbered to zero, i.e. a
+		 * completely different machine state, so the result said nothing
+		 * about this field.
+		 * VERDICT: tried on hardware in the current, healthy state and it
+		 * is WRONG. Feeding 0x00060022 through as the address makes the
+		 * chip assert immediately (asser_type=4), reproducing the original
+		 * failure. So the earlier rejection of this field stands, and now
+		 * for a good reason rather than a confounded one: whatever the
+		 * launcher does with those four bytes, handing them to
+		 * WMT_PATCH_P_ADDRESS_CMD verbatim is not it.
+		 *
+		 * Keep the command's built-in default (0x01003f00, bytes
+		 * 00 3f 00 01). With it both patches download and the full init
+		 * script completes.
 		 */
 		WMT_DBG_FUNC("no per-patch address; keeping built-in default\n");
 	} else {

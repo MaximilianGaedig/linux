@@ -649,34 +649,6 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		WMT_PLAT_DBG_FUNC("MCU_CFG ACR now 0x%08x\n",
 				  CONSYS_REG_READ(conn_reg.mcu_base + CONSYS_MCU_CFG_ACR_OFFSET));
 
-		/*
-		 * 15. Analog front end.
-		 *
-		 * These three were defined in the header when this was ported -
-		 * with exactly the vendor's values - but nothing ever wrote
-		 * them, the same way the AXI bus protection step went missing.
-		 * They configure the wireless baseband: the digital RC
-		 * calibration, the WBG PLL, and the TX path.
-		 *
-		 * This matters for the symptom we are left with. The firmware
-		 * downloads, the MCU runs it, and then the ready bit simply
-		 * never asserts - which is what you would expect if the MCU
-		 * comes up and waits on an RF/PLL block that was never brought
-		 * out of its default state.
-		 *
-		 * CONN_TOP_CR_BASE is the consys node's first reg range,
-		 * 0x18070000, mapped 0x20000 long as conn_reg.mcu_base - the
-		 * same base CONSYS_MCU_CFG_ACR_OFFSET is used against just
-		 * above - so the AFE block at +0x2000 is well inside it.
-		 */
-		CONSYS_REG_WRITE(conn_reg.mcu_base + 0x2010, CONSYS_AFE_REG_DIG_RCK_01_VALUE);
-		CONSYS_REG_WRITE(conn_reg.mcu_base + 0x2028, CONSYS_AFE_REG_WBG_PLL_02_VALUE);
-		CONSYS_REG_WRITE(conn_reg.mcu_base + 0x203c, CONSYS_AFE_REG_WBG_WB_TX_01_VALUE);
-		WMT_PLAT_INFO_FUNC("biscuit-afe: DIG_RCK_01=0x%08x WBG_PLL_02=0x%08x WBG_WB_TX_01=0x%08x\n",
-				   CONSYS_REG_READ(conn_reg.mcu_base + 0x2010),
-				   CONSYS_REG_READ(conn_reg.mcu_base + 0x2028),
-				   CONSYS_REG_READ(conn_reg.mcu_base + 0x203c));
-
 		/*16.deassert CONNSYS CPU SW reset - MCU starts running here */
 		reset_control_deassert(rstc);
 		msleep(20);
