@@ -3,6 +3,7 @@
  * Copyright (c) 2025-2026 Ben Grisdale <bengris32@protonmail.ch>
  */
 
+#include <dt-bindings/gpio/gpio.h>
 #include "mt8163.dtsi"
 #include "mt6323.dtsi"
 
@@ -302,6 +303,65 @@
 			pinmux = <MT8163_PIN_85_MSDC2_CMD__FUNC_ANT_SEL0>,
 				 <MT8163_PIN_86_MSDC2_CLK__FUNC_ANT_SEL1>;
 		};
+	};
+
+	/*
+	 * MSDC1 - the actual SDIO data bus to the MT6625L combo chip. Not to
+	 * be confused with the WB_* pins (wifi_reset_init above), which are
+	 * separate power/handshake control lines, not the SDIO bus itself.
+	 */
+	msdc1_pins_default: msdc1-pins-default {
+		pins-cmd-dat {
+			pinmux = <MT8163_PIN_121_MSDC1_CMD__FUNC_MSDC1_CMD>,
+				 <MT8163_PIN_123_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
+				 <MT8163_PIN_124_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
+				 <MT8163_PIN_125_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
+				 <MT8163_PIN_126_MSDC1_DAT3__FUNC_MSDC1_DAT3>;
+			input-enable;
+			bias-pull-up;
+		};
+		pins-clk {
+			pinmux = <MT8163_PIN_122_MSDC1_CLK__FUNC_MSDC1_CLK>;
+			bias-pull-down;
+		};
+	};
+};
+
+&mmc1 {
+	status = "okay";
+	/*
+	 * mtk-sd.c's msdc_drv_probe() hard-requires a "state_uhs" pinctrl
+	 * lookup to succeed (PTR_ERR aborts probe otherwise), even though we
+	 * don't actually run this bus in UHS mode - reuse the same physical
+	 * pin group for it rather than defining a distinct one.
+	 */
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&msdc1_pins_default>;
+	pinctrl-1 = <&msdc1_pins_default>;
+	bus-width = <4>;
+	max-frequency = <50000000>;
+	cap-sdio-irq;
+	/*
+	 * non-removable (not broken-cd): broken-cd without non-removable
+	 * makes mmc core re-poll for a card indefinitely on a timer, which
+	 * floods dmesg forever once the (unpowered-at-boot) chip predictably
+	 * doesn't answer and drowns out everything else. mmc-pwrseq-simple
+	 * below toggles WB_RSTB automatically as part of mmc core's own
+	 * probe - before card detection runs - which is the actual fix for
+	 * probing an unpowered chip, rather than reaching for endless
+	 * retries after the fact.
+	 */
+	non-removable;
+	keep-power-in-suspend;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	vmmc-supply = <&mt6323_vcn33_bt_reg>;
+};
+
+/ {
+	wifi_pwrseq: wifi-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&pio 60 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <10>;
 	};
 };
 

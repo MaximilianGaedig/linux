@@ -261,3 +261,28 @@
 &btif_rx {
 	status = "okay";
 };
+
+/*
+ * wmt_gpio_init() (drivers/misc/mediatek/connectivity/common/common_detect/
+ * wmt_gpio.c) looks this node up by of_find_compatible_node() - it is not a
+ * bound device, just a property container the legacy WMT combo-chip power
+ * sequencing code reads gpio_combo_*_pin properties from. Without it,
+ * wmt_gpio_init() bails immediately ("can't find device tree node!") and
+ * the MT6625L combo chip's power-on sequence never runs at all.
+ *
+ * Only rst/pmu_en are supplied: biscuit's WB_* pin group (wifi_reset_init
+ * in mt8163-amazon-common.dtsi) breaks out exactly four pins - RSTB, SCLK,
+ * SDATA, SEN - with SEN ("System ENable") mapping to PMU_EN and RSTB to
+ * RST. There's no fifth pin for a WIFI_EINT gpio; wmt_detect_pwr.c's
+ * precondition check was relaxed to not require one, consistent with this
+ * being an SDIO combo chip that signals in-band over DAT1 rather than a
+ * separate wake GPIO. SCLK/SDATA are unclaimed here - so far unidentified,
+ * possibly an unused debug/FM path on this board.
+ */
+/ {
+	connectivity-combo {
+		compatible = "mediatek,connectivity-combo";
+		gpio_combo_rst_pin = <&pio 60 0>;
+		gpio_combo_pmu_en_pin = <&pio 65 0>;
+	};
+};
