@@ -566,6 +566,34 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				UINT32 u4End =
 				    (UINT32) ((gConEmiPhyBase + 512 * 1024 - 1 - 0x40000000) >> 16);
 				/* d7..d0, 3 bits each; 0 = NO_PROTECTION, 5 = FORBIDDEN */
+				/*
+				 * Open this region to every domain.
+				 *
+				 * The bootloader already programs region 12
+				 * over exactly this range, granting domains 0,
+				 * 2 and 7 and forbidding the rest - and that
+				 * was assumed to be sufficient because the chip
+				 * demonstrably writes here: the download engine
+				 * places the whole firmware image.
+				 *
+				 * But the engine that writes the image and the
+				 * one that later executes it are different bus
+				 * masters. The CONNSYS MCU does the download;
+				 * the WiFi MAC is what runs the firmware, and
+				 * ~92% of that firmware lives in this DRAM
+				 * rather than inside the chip. If the MAC sits
+				 * in one of the forbidden domains it can place
+				 * its code and then be unable to fetch it,
+				 * which is what we see: the firmware starts,
+				 * writes "INIT" into its mailbox, and stops.
+				 *
+				 * Tried opening all eight domains (0 =
+				 * NO_PROTECTION everywhere) on hardware: the
+				 * registers read back 0 as asked and the
+				 * firmware still stops in the same place, so
+				 * the MPU is not what is holding it. Back to
+				 * the permissions Amazon programs.
+				 */
 				UINT32 u4Low = (5 << 9) | (0 << 6) | (5 << 3) | 0;	/* d3,d2,d1,d0 */
 				UINT32 u4High = (0 << 9) | (5 << 6) | (5 << 3) | 5;	/* d7,d6,d5,d4 */
 				UINT32 u4Tmp, u4Tmp2;

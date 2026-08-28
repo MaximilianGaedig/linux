@@ -643,6 +643,33 @@ INT32 wmt_func_wifi_on(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf)
 	unsigned long ctrlPa1;
 	unsigned long ctrlPa2;
 
+	/*
+	 * Tell the chip to enable its WiFi function before probing.
+	 *
+	 * BT does exactly this - PALDO on, then
+	 * wmt_core_func_ctrl_cmd(WMTDRV_TYPE_BT, TRUE) - and BT works: an
+	 * HCI_Reset written to /dev/stpbt comes back as Command Complete with
+	 * status 0. The WiFi path sends the chip nothing at all; it only calls
+	 * the driver's probe, and upstream's wmt_func_wifi_ctrl(FUNC_ON) is
+	 * behind an "#if 0". So the one radio that works is the one that asks
+	 * the chip to turn its function on, and the one that hangs is the one
+	 * that does not - which fits a firmware that downloads, starts, writes
+	 * "INIT" into its mailbox and then waits forever for a subsystem that
+	 * was never enabled.
+	 */
+	{
+		unsigned long paPa1 = WIFI_PALDO;
+		unsigned long paPa2 = PALDO_ON;
+		INT32 iPa;
+
+		iPa = wmt_core_ctrl(WMT_CTRL_SOC_PALDO_CTRL, &paPa1, &paPa2);
+		if (iPa)
+			WMT_ERR_FUNC("WMT-FUNC: wifi paldo on failed(%d)\n", iPa);
+
+		iPa = wmt_core_func_ctrl_cmd(WMTDRV_TYPE_WIFI, MTK_WCN_BOOL_TRUE);
+		WMT_ERR_FUNC("WMT-FUNC: biscuit wifi func_ctrl_cmd -> %d\n", iPa);
+	}
+
 	if (NULL != mtk_wcn_wlan_probe) {
 
 		WMT_WARN_FUNC("WMT-FUNC: wmt wlan func on before wlan probe\n");
