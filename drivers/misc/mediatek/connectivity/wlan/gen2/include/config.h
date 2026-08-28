@@ -964,7 +964,16 @@
 
 #define CFG_SUPPORT_TXR_ENC			0	/* enhanced tx rate switch */
 
-#define CFG_SUPPORT_PERSIST_NETDEV		1	/* create NETDEV when system bootup */
+/*
+ * MUST be 0, matching Amazon. With this set to 1, wlanNetCreate() takes the
+ * CFG_SUPPORT_PERSIST_NETDEV branch, in which prGlueInfo is never assigned -
+ * the only assignment (prGlueInfo = wiphy_priv(prWdev->wiphy)) lives inside
+ * the "#if !CFG_SUPPORT_PERSIST_NETDEV" arm - so it stays NULL from its
+ * initialiser and is then dereferenced a few lines later. GCC proves it NULL
+ * and emits a literal store to address 0, giving a NULL-deref oops in
+ * wlanProbe the instant the WiFi driver probes.
+ */
+#define CFG_SUPPORT_PERSIST_NETDEV		0	/* create NETDEV when system bootup */
 
 #define CFG_FORCE_USE_20BW			1
 /*------------------------------------------------------------------------------
