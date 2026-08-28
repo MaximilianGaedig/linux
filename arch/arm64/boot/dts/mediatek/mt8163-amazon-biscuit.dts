@@ -124,6 +124,17 @@
 &mt6323_vio28_reg     { regulator-always-on; };
 &mt6323_vm_reg        { regulator-always-on; };
 &mt6323_vmc_reg       { regulator-always-on; };
+/*
+ * MT6625L combo chip power rails - none of mt6323.dtsi's regulator nodes
+ * for these are always-on, and nothing enables them until the WMT
+ * userspace power-on ioctl runs, well after mmc1's own boot-time SDIO
+ * probe has already given up on an unpowered chip. Force them up from
+ * boot so the chip is actually alive by the time mmc core probes it.
+ */
+&mt6323_vcn18_reg     { regulator-always-on; };
+&mt6323_vcn28_reg     { regulator-always-on; };
+&mt6323_vcn33_bt_reg  { regulator-always-on; };
+&mt6323_vcn33_wifi_reg { regulator-always-on; };
 
 /*
  * MT6625L combo WiFi/BT/GPS. The CONSYS subsystem block is described in
