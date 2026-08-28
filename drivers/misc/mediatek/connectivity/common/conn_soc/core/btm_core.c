@@ -508,16 +508,21 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 		 * upstream Amazon kernel does not allocate it here at all). Keep only
 		 * the packet_num derivation, which the loop bound below still needs.
 		 */
+pr_err("btmtrace: entered PAGED_DUMP case, p_ecsi=%px p_ecso=%px\n",
+	p_ecsi, p_ecsi ? p_ecsi->p_ecso : NULL);
 		dump_num = wmt_plat_get_dump_info(p_ecsi->p_ecso->emi_apmem_ctrl_chip_page_dump_num);
+pr_err("btmtrace: read dump_num=%u\n", dump_num);
 		if (dump_num != 0) {
 				packet_num = dump_num;
 				STP_BTM_WARN_FUNC("get consys dump num packet_num(%d)\n", packet_num);
 		} else {
 			STP_BTM_ERR_FUNC("can not get consys dump num and default num is 35\n");
 		}
+pr_err("btmtrace: packet_num=%u about to enter dump loop\n", packet_num);
 		wmt_plat_set_host_dump_state(STP_HOST_DUMP_NOT_START);
 		page_counter = 0;
 		do {
+pr_err("btmtrace: loop top, page_counter=%u\n", page_counter);
 			UINT32 loop_cnt1 = 0;
 			UINT32 loop_cnt2 = 0;
 			ENUM_HOST_DUMP_STATE host_state;
@@ -527,16 +532,23 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 			UINT32 dump_len = 0;
 			UINT32 isEnd = 0;
 
+pr_err("btmtrace: about to read host_state, offset=%u pEmibaseaddr valid=%d\n",
+	p_ecsi->p_ecso->emi_apmem_ctrl_host_sync_state, wmt_plat_get_emi_virt_add(0) != NULL);
 			host_state = (ENUM_HOST_DUMP_STATE)wmt_plat_get_dump_info(
 				p_ecsi->p_ecso->emi_apmem_ctrl_host_sync_state);
+pr_err("btmtrace: host_state=%d\n", host_state);
 			if (STP_HOST_DUMP_NOT_START == host_state) {
 				counter++;
 				STP_BTM_INFO_FUNC("counter(%d)\n", counter);
 				osal_sleep_ms(100);
+pr_err("btmtrace: woke from sleep, counter=%u\n", counter);
 			} else {
 				counter = 0;
 			}
+pr_err("btmtrace: entering chip_state poll loop\n");
 			while (1) {
+pr_err("btmtrace: chip_state poll iter, offset=%u\n",
+	p_ecsi->p_ecso->emi_apmem_ctrl_chip_sync_state);
 				chip_state = (ENUM_CHIP_DUMP_STATE)wmt_plat_get_dump_info(
 					p_ecsi->p_ecso->emi_apmem_ctrl_chip_sync_state);
 				if (STP_CHIP_DUMP_PUT_DONE == chip_state) {
