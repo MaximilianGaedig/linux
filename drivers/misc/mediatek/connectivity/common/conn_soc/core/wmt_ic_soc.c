@@ -1086,22 +1086,14 @@ static INT32 mtk_wcn_soc_sw_init(P_WMT_HIF_CONF pWmtHifConf)
 	}
 
 	/*
-	 * Activate the patches once, after all of them are in place.
+	 * Activate both patches with a single reset, after both are in place.
 	 *
-	 * init_table_3 is a single WMT_RESET, and the reset is what makes the
-	 * chip restart running the patched ROM. Upstream issues it inside the
-	 * loop, once per patch, which only makes sense if each patch is
-	 * independently activatable. These two are not: ROMv2_lm_patch_1_0 and
-	 * _1_1 are parts of one set, loaded to 0x00060000 and 0xf00e0000, and
-	 * resetting between them leaves the chip unable to accept the second -
-	 * the address command for patch 1 times out, and STP then reports a TX
-	 * timeout with its sequence numbers restarted.
-	 *
-	 * Do NOT flush the host STP context here. The chip keeps its sequence
-	 * numbering across this reset rather than restarting it - flushing the
-	 * host side makes the host expect rxseq 0 while the chip sends 1, and
-	 * STP then rejects every frame ("expected_rxseq = 0, parser.seq = 1").
-	 * Just give the restart time to finish.
+	 * Upstream resets after each patch. Tried that here with settle waits
+	 * of 100ms and 500ms: the second patch's download then fails outright
+	 * (mtk_wcn_soc_patch_dwn errors out of wmt_core_stp_init), which is
+	 * worse than batching them. Neither ordering makes the chip survive a
+	 * WiFi firmware download, so the ordering is not the fault - but this
+	 * one at least gets the whole init script through.
 	 */
 	iRet = wmt_core_init_script(init_table_3, osal_array_size(init_table_3));
 	if (iRet) {
@@ -1109,6 +1101,7 @@ static INT32 mtk_wcn_soc_sw_init(P_WMT_HIF_CONF pWmtHifConf)
 		return -8;
 	}
 	osal_sleep_ms(100);
+
 
 #if CFG_WMT_PATCH_DL_OPTM
 	if (0x0279 == wmt_ic_ops_soc.icId) {
@@ -2375,6 +2368,13 @@ static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)
 		 * was tried before and wrongly written off as "u4PatchVer is a
 		 * version, not an address". It is an address; the low byte just
 		 * is not part of it.
+		 */
+		/*
+		 * Both addresses were tried across a WiFi download and the chip
+		 * dies either way, so the collision between this patch and the
+		 * firmware's first section is not what kills it. Keep the
+		 * header-derived address, which is the one that makes the patch
+		 * actually take effect.
 		 */
 		{
 			UINT32 u4PatchAddr = patchHdr->u4PatchVer & 0xFFFFFF00;

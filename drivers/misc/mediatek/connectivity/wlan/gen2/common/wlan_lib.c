@@ -1482,6 +1482,29 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 
 			for (i = 0; i < prFwHead->u4NumOfEntries; i++) {
 
+#ifdef BISCUIT_SKIP_EMI_SECTIONS
+				/*
+				 * Bisecting which part of the download kills the
+				 * chip: BLE scans fine before a WiFi download and
+				 * the chip is unreachable afterwards (STP Tx
+				 * timeout, "WMT turn on BT fail"). Skip the two
+				 * EMI-destined sections to see whether the damage
+				 * comes from them or from the in-chip ones.
+				 */
+				if (prFwHead->arSection[i].u4DestAddr >= 0xf0000000) {
+					DBGLOG(INIT, ERROR, "biscuit-bisect: SKIPPING EMI section %u dest=0x%08x\n",
+					       i, prFwHead->arSection[i].u4DestAddr);
+					continue;
+				}
+#endif
+#ifdef BISCUIT_SKIP_INCHIP_SECTIONS
+				if (prFwHead->arSection[i].u4DestAddr < 0xf0000000) {
+					DBGLOG(INIT, ERROR, "biscuit-bisect: SKIPPING in-chip section %u dest=0x%08x\n",
+					       i, prFwHead->arSection[i].u4DestAddr);
+					continue;
+				}
+#endif
+
 #if CFG_START_ADDRESS_IS_1ST_SECTION_ADDR
 				if (i == 0) {
 					prRegInfo->u4StartAddress = prFwHead->arSection[i].u4DestAddr;
@@ -1897,6 +1920,18 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		}
 
 #endif
+		/*
+		 * Let the last of the image settle before starting it.
+		 *
+		 * The acknowledgement for a section download says the chip took
+		 * the payload, not that it has finished putting it where it
+		 * belongs - and for this image "where it belongs" is mostly
+		 * host DRAM reached over EMI, written by the chip rather than
+		 * by us. Starting the firmware while the tail of that is still
+		 * in flight would have it running on an incomplete image.
+		 */
+		kalMsleep(200);
+
 		/* 4. send Wi-Fi Start command */
 		DBGLOG(INIT, INFO, "<wifi> send Wi-Fi Start command\n");
 		/*
