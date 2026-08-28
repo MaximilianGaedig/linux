@@ -1899,6 +1899,20 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 #endif
 		/* 4. send Wi-Fi Start command */
 		DBGLOG(INIT, INFO, "<wifi> send Wi-Fi Start command\n");
+		/*
+		 * One start command, then wait properly.
+		 *
+		 * All four candidate entry points (first-section address, no
+		 * override, CFG_FW_START_ADDRESS, and the Thumb-flagged variant)
+		 * were tried in a single boot and none brought the ready bit up,
+		 * so the entry point is not the variable. Re-sending WIFI_START
+		 * several times is its own risk, so go back to sending it once.
+		 *
+		 * The firmware is demonstrably alive at this point - it reports
+		 * its own state in the mailboxes ("INIT", code 200) - so give it
+		 * far longer than CFG_RESPONSE_POLLING_TIMEOUT's 5s in case it is
+		 * simply slow to finish initialising.
+		 */
 #if CFG_OVERRIDE_FW_START_ADDRESS
 		wlanConfigWifiFunc(prAdapter, TRUE, prRegInfo->u4StartAddress);
 #else
