@@ -369,8 +369,24 @@ INT32 mtk_wcn_consys_hw_reg_ctrl(UINT32 on, UINT32 co_clock_type)
 		WMT_PLAT_DBG_FUNC("++\n");
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		/*need PMIC driver provide new API protocol */
-		/*1.AP power on VCN_1V8 LDO (with PMIC_WRAP API) VCN_1V8  */
-		regulator_set_mode(reg_VCN18, REGULATOR_MODE_STANDBY);
+		/*
+		 * 1.AP power on VCN_1V8 LDO (with PMIC_WRAP API) VCN_1V8
+		 *
+		 * MUST be NORMAL, not STANDBY. Amazon's own 3.18 driver calls
+		 * upmu_set_vcn_1v8_lp_mode_set(0) here, i.e. it *disables* the
+		 * rail's low-power mode on the way up (that helper writes its
+		 * argument straight into VCN_1V8_LP_MODE_SET, so 0 = LP off).
+		 * The port translated that to REGULATOR_MODE_STANDBY, which is
+		 * the *lowest*-drive mode in the Linux regulator API - exactly
+		 * inverted.
+		 *
+		 * VCN18 is the connsys 1.8V rail, and the largest current step
+		 * in the whole bring-up is the MCU ramp from 26MHz to
+		 * 138.67MHz - which is precisely where this chip has been
+		 * asserting. A rail pinned in low-power drive across that ramp
+		 * is a textbook cause of a droop-triggered firmware assert.
+		 */
+		regulator_set_mode(reg_VCN18, REGULATOR_MODE_NORMAL);
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		/* VOL_DEFAULT, VOL_1200, VOL_1300, VOL_1500, VOL_1800... */
 		if (reg_VCN18) {
@@ -412,37 +428,21 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		}
 
 		/*
-		 * Enable the AP->CONNSYS 26MHz oscillator path before taking
-		 * the CONNSYS CPU out of reset.
+		 * 3. Assert CONNSYS CPU SW reset and HOLD it across the whole
+		 * power-up, deasserting only at the very end (step 16 below).
 		 *
-		 * CONSYS_AP2CONN_OSC_EN_BIT was defined in mtk_wcn_consys_hw.h
-		 * but never actually set anywhere in this port - only the
-		 * WAKEUP bit was, and only from the force-assert debug path.
-		 * Without it the chip still answers STP over BTIF on whatever
-		 * clock it comes up with (the whole init handshake -
-		 * query stp / set stp / power-on DLM - completes with valid
-		 * CRCs), but it has no stable 26M reference for its own PLL,
-		 * so the moment the init script tells it to switch its MCU
-		 * clock to 138.67MHz it asserts and starts dumping core -
-		 * which is exactly the failure this port has been hitting,
-		 * every time, immediately after "set mcu clk to 138.67MH"
-		 * and before patch download is ever reached.
-		 *
-		 * Note the step-11 comment just below already assumed "26M is
-		 * ready now" - that assumption simply had nothing making it
-		 * true.
+		 * This used to be reset_control_reset(), which on the TOPRGU
+		 * controller is assert-immediately-followed-by-deassert with no
+		 * delay (see toprgu_reset() in drivers/watchdog/mtk_wdt.c) - so
+		 * the CONNSYS MCU was released from reset *before* its power
+		 * domain came up, before the 26M settle delay, before the
+		 * chip-id poll, and was never deasserted at the end at all.
+		 * Amazon's driver brackets the entire sequence with the reset
+		 * held, which is what the numbered step comments here always
+		 * described.
 		 */
-		CONSYS_REG_WRITE(conn_reg.topckgen_base + CONSYS_AP2CONN_OSC_EN_OFFSET,
-				 CONSYS_REG_READ(conn_reg.topckgen_base +
-						 CONSYS_AP2CONN_OSC_EN_OFFSET) |
-				 CONSYS_AP2CONN_OSC_EN_BIT);
-		WMT_PLAT_DBG_FUNC("AP2CONN OSC_EN set, reg now 0x%08x\n",
-				  CONSYS_REG_READ(conn_reg.topckgen_base +
-						  CONSYS_AP2CONN_OSC_EN_OFFSET));
-
-		/*3.assert CONNSYS CPU SW reset  0x10007018 "[12]=1'b1  [31:24]=8'h88 (key)" */
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-		reset_control_reset(rstc);
+		reset_control_assert(rstc);
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		mtk_wcn_consys_power_on();
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
@@ -481,6 +481,29 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 		if ((0 == retry) || (0 == consysHwChipId))
 			WMT_PLAT_ERR_FUNC("Maybe has a consys power on issue,(0x%08x)\n", consysHwChipId);
+
+		/*
+		 * 14. Write 1 to conn_mcu_cfg ACR[18] (0x18070110) before the
+		 * MCU is released from reset.
+		 *
+		 * Per Amazon's own comment on this register: with this bit
+		 * clear the hardware only runs its memory auto-test at the low
+		 * (26MHz) CPU frequency; set, it covers the high (138.67MHz)
+		 * frequency too. This is the one register in the whole
+		 * sequence whose documented purpose is conditioning the CONNSYS
+		 * MCU's memories for high-frequency operation - and this port
+		 * never wrote it (the macros existed in the header with zero
+		 * call sites), while failing precisely at the 138.67MHz switch.
+		 */
+		CONSYS_REG_WRITE(conn_reg.mcu_base + CONSYS_MCU_CFG_ACR_OFFSET,
+				 CONSYS_REG_READ(conn_reg.mcu_base + CONSYS_MCU_CFG_ACR_OFFSET) |
+				 CONSYS_MCU_CFG_ACR_MBIST_BIT);
+		WMT_PLAT_DBG_FUNC("MCU_CFG ACR now 0x%08x\n",
+				  CONSYS_REG_READ(conn_reg.mcu_base + CONSYS_MCU_CFG_ACR_OFFSET));
+
+		/*16.deassert CONNSYS CPU SW reset - MCU starts running here */
+		reset_control_deassert(rstc);
+		msleep(20);
 
 		msleep(40);
 
@@ -750,8 +773,26 @@ INT32 mtk_wcn_consys_hw_restore(struct device *device)
 #endif
 
 #endif
-		/*consys to ap emi remapping register:10001310, cal remapping address */
+		/*consys to ap emi remapping register:10001320, cal remapping address */
 		addrPhy = (gConEmiPhyBase & 0xFFF00000) >> 20;
+
+		/*
+		 * The "-0x400" is present in Amazon's own driver and was
+		 * missing here. This register is the aperture through which
+		 * the CONNSYS firmware reaches AP DRAM, so a wrong value does
+		 * not fail loudly - it silently points the chip's DMA at the
+		 * WRONG physical address. That matches the corruption seen on
+		 * this port exactly: a few seconds after any chip-side assert,
+		 * kernel heap metadata is wrecked and something unrelated dies
+		 * (slab alloc/free, irq_desc, __fput). The corruption survived
+		 * disabling every driver-side assert-handling path in turn -
+		 * paged dump, paged trace, and the whole ctx-save block - which
+		 * is what you'd expect if the writer is the chip, not us.
+		 *
+		 * The register offset was wrong too (0x310, an MT7623-lineage
+		 * value, vs 0x320 for this SoC) - fixed in the header.
+		 */
+		addrPhy -= 0x400;
 
 		/*enable consys to ap emi remapping bit12 */
 		addrPhy = addrPhy | 0x1000;
@@ -847,8 +888,26 @@ INT32 mtk_wcn_consys_hw_init(void)
 #endif
 		WMT_PLAT_DBG_FUNC("get consys start phy address(0x%zx)\n", (SIZE_T) gConEmiPhyBase);
 
-		/*consys to ap emi remapping register:10001310, cal remapping address */
+		/*consys to ap emi remapping register:10001320, cal remapping address */
 		addrPhy = (gConEmiPhyBase & 0xFFF00000) >> 20;
+
+		/*
+		 * The "-0x400" is present in Amazon's own driver and was
+		 * missing here. This register is the aperture through which
+		 * the CONNSYS firmware reaches AP DRAM, so a wrong value does
+		 * not fail loudly - it silently points the chip's DMA at the
+		 * WRONG physical address. That matches the corruption seen on
+		 * this port exactly: a few seconds after any chip-side assert,
+		 * kernel heap metadata is wrecked and something unrelated dies
+		 * (slab alloc/free, irq_desc, __fput). The corruption survived
+		 * disabling every driver-side assert-handling path in turn -
+		 * paged dump, paged trace, and the whole ctx-save block - which
+		 * is what you'd expect if the writer is the chip, not us.
+		 *
+		 * The register offset was wrong too (0x310, an MT7623-lineage
+		 * value, vs 0x320 for this SoC) - fixed in the header.
+		 */
+		addrPhy -= 0x400;
 
 		/*enable consys to ap emi remapping bit12 */
 		addrPhy = addrPhy | 0x1000;
