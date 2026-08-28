@@ -69,6 +69,17 @@
 
 static bool nowayout = WATCHDOG_NOWAYOUT;
 static unsigned int timeout;
+/*
+ * Same idiom as early_enable in starfive-wdt.c/omap_wdt.c: with no
+ * bootloader-armed watchdog and no userspace watchdog daemon, the
+ * hardware never gets started at all (mtk_wdt_init() only continues an
+ * already-running watchdog) and a panic or hard hang just sits there
+ * forever instead of resetting the board. Defaulting this on gives
+ * boards without such a daemon (this one included) a working reset
+ * path out of the box; module_param leaves it overridable for boards
+ * that do run one and want userspace in control of arming instead.
+ */
+static bool early_enable = true;
 
 struct mtk_wdt_dev {
 	struct watchdog_device wdt_dev;
@@ -447,6 +458,11 @@ static int mtk_wdt_probe(struct platform_device *pdev)
 
 	mtk_wdt_init(&mtk_wdt->wdt_dev);
 
+	if (early_enable) {
+		set_bit(WDOG_HW_RUNNING, &mtk_wdt->wdt_dev.status);
+		mtk_wdt_start(&mtk_wdt->wdt_dev);
+	}
+
 	watchdog_stop_on_reboot(&mtk_wdt->wdt_dev);
 	err = devm_watchdog_register_device(dev, &mtk_wdt->wdt_dev);
 	if (unlikely(err))
@@ -533,6 +549,10 @@ MODULE_PARM_DESC(timeout, "Watchdog heartbeat in seconds");
 module_param(nowayout, bool, 0);
 MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default="
 			__MODULE_STRING(WATCHDOG_NOWAYOUT) ")");
+
+module_param(early_enable, bool, 0);
+MODULE_PARM_DESC(early_enable,
+		 "Watchdog is started at boot time if set to 1, default=1");
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Matthias Brugger <matthias.bgg@gmail.com>");

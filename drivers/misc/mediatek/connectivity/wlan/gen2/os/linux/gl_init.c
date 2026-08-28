@@ -1745,6 +1745,23 @@ static void destroyWirelessDevice(void)
 
 static void wlanSetMulticastList(struct net_device *prDev)
 {
+	/*
+	 * workq is a static struct delayed_work, only ever passed through
+	 * INIT_DELAYED_WORK() once inside wlanInit() (guarded by
+	 * fgIsWorkMcEverInit). This is the netdev's .ndo_set_rx_mode
+	 * callback, which the kernel can invoke at any time - confirmed on
+	 * real hardware to fire during register_netdev() itself, before our
+	 * own wlanInit() has run. schedule_delayed_work() on a work item
+	 * that was never INIT_DELAYED_WORK()'d operates on a zeroed (BSS)
+	 * struct - its embedded workqueue pointer is NULL - and crashes
+	 * inside __queue_work() when the timer eventually fires, well after
+	 * this call site has returned. Just drop the request if we're not
+	 * initialized yet; there's nothing to update before wlanInit() runs
+	 * anyway.
+	 */
+	if (!fgIsWorkMcEverInit)
+		return;
+
 	gPrDev = prDev;
 	schedule_delayed_work(&workq, 0);
 }
@@ -2092,6 +2109,17 @@ struct net_device_stats *wlanGetStats(IN struct net_device *prDev)
 * \retval -ENXIO    No such device.
 */
 /*----------------------------------------------------------------------------*/
+/*
+ * Lets gl_cfg80211.c/gl_kal.c check before scheduling sched_workq, which is
+ * only INIT_DELAYED_WORK()'d here in wlanInit() - see wlanSetMulticastList()
+ * above for why scheduling an un-INIT'd delayed_work is a real bug, not
+ * just a missed event.
+ */
+BOOLEAN wlanIsMcWorkInited(VOID)
+{
+	return fgIsWorkMcEverInit;
+}
+
 static int wlanInit(struct net_device *prDev)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;

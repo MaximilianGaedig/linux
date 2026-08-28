@@ -1766,7 +1766,12 @@ int mtk_cfg80211_sched_scan_stop(IN struct wiphy *wiphy, IN struct net_device *n
 	/* GLUE_RELEASE_SPIN_LOCK(prGlueInfo, SPIN_LOCK_NET_DEV); */
 
 	DBGLOG(SCN, TRACE, "start work queue to send event\n");
-	schedule_delayed_work(&sched_workq, 0);
+	/* sched_workq is only INIT_DELAYED_WORK()'d in wlanInit() - see
+	 * wlanSetMulticastList() in gl_init.c for why scheduling it before
+	 * that has run is a real crash, not just a missed event.
+	 */
+	if (wlanIsMcWorkInited())
+		schedule_delayed_work(&sched_workq, 0);
 	DBGLOG(SCN, TRACE, "tx_thread return from kalSchedScanStoppped\n");
 
 	return 0;

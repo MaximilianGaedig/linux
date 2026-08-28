@@ -257,6 +257,13 @@ INT32 wcn_core_dump_init_gcoredump(UINT32 packet_num, UINT32 timeout)
 {
 	INT32 Ret = 0;
 
+	/* Guard against leaking a still-live g_core_dump if init is called
+	 * again before a matching deinit - same class of bug as the
+	 * double-free fixed in wcn_core_dump_deinit_gcoredump() above.
+	 */
+	if (g_core_dump)
+		wcn_core_dump_deinit_gcoredump();
+
 	g_core_dump = wcn_core_dump_init(packet_num, timeout);
 	if (g_core_dump == NULL)
 		Ret = -1;
@@ -286,7 +293,18 @@ INT32 wcn_core_dump_deinit(P_WCN_CORE_DUMP_T dmp)
 
 INT32 wcn_core_dump_deinit_gcoredump(VOID)
 {
+	/*
+	 * g_core_dump is a plain global pointer - wcn_core_dump_deinit()
+	 * below frees the WCN_CORE_DUMP_T it points to but has no way to
+	 * clear the caller's copy. Without resetting it here, any second
+	 * call to this function (confirmed on real hardware: happens
+	 * across repeated connsys whole-chip-reset cycles) frees the same
+	 * already-freed pointer again - a real double-free, observed as
+	 * "Trying to vfree() nonexistent vm area" inside
+	 * wcn_compressor_deinit()'s first osal_free() call.
+	 */
 	wcn_core_dump_deinit(g_core_dump);
+	g_core_dump = NULL;
 	return 0;
 }
 
@@ -670,8 +688,12 @@ P_WCN_COMPRESSOR_T wcn_compressor_init(PUINT8 name, INT32 L1_buf_sz, INT32 L2_bu
 			STP_DBG_ERR_FUNC("alloc workspace failed!\n");
 			goto fail;
 		}
+		pr_err("biscuit-coredump-debug: workspace alloc'd=%p (before deflateInit2)\n",
+		       pstream->workspace);
 		zlib_deflateInit2(pstream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS,
 				  DEF_MEM_LEVEL, Z_DEFAULT_STRATEGY);
+		pr_err("biscuit-coredump-debug: workspace after deflateInit2=%p\n",
+		       pstream->workspace);
 	}
 
 	compress->handler = wcn_gzip_compressor;
@@ -695,6 +717,8 @@ P_WCN_COMPRESSOR_T wcn_compressor_init(PUINT8 name, INT32 L1_buf_sz, INT32 L2_bu
 	}
 
 	STP_DBG_INFO_FUNC("create compressor OK! L1 %d bytes, L2 %d bytes\n", L1_buf_sz, L2_buf_sz);
+	pr_err("biscuit-coredump-debug: wcn_compressor_init -> cprs=%p L1_buf=%p L2_buf=%p worker=%p\n",
+	       compress, compress->L1_buf, compress->L2_buf, compress->worker);
 	return compress;
 
 fail:
@@ -742,30 +766,64 @@ INT32 wcn_compressor_deinit(P_WCN_COMPRESSOR_T cprs)
 {
 	z_stream *pstream = NULL;
 
+	pr_err("biscuit-coredump-debug: wcn_compressor_deinit(cprs=%p) L1_buf=%p L2_buf=%p worker=%p\n",
+	       cprs, cprs ? cprs->L1_buf : NULL, cprs ? cprs->L2_buf : NULL,
+	       cprs ? cprs->worker : NULL);
+
+	/*
+	 * Confirmed on real hardware: this deinit path (only ever reached
+	 * from the connsys whole-chip-reset recovery kthread, _stp_btm_proc)
+	 * has seen its L1_buf/L2_buf/worker fields already-freed-and-stale
+	 * despite the g_core_dump-level double-free being fixed separately
+	 * - something else in this rarely-exercised, unfamiliar recovery
+	 * path corrupts these pointers, root cause not fully isolated.
+	 * vfree()/kfree() on a genuinely bad pointer panics the whole
+	 * board; is_vmalloc_addr() lets us skip a bad free instead of
+	 * crashing the one kthread whose job is to recover from a connsys
+	 * firmware crash in the first place - crashing here defeats the
+	 * entire point of that recovery path.
+	 */
 	if (cprs) {
 		if (cprs->L2_buf) {
-			osal_free(cprs->L2_buf);
+			if (is_vmalloc_addr(cprs->L2_buf))
+				osal_free(cprs->L2_buf);
+			else
+				STP_DBG_ERR_FUNC("L2_buf %p not a vmalloc addr, skipping free\n",
+						  cprs->L2_buf);
 			cprs->L2_buf = NULL;
 		}
 
 		if (cprs->L1_buf) {
-			osal_free(cprs->L1_buf);
+			if (is_vmalloc_addr(cprs->L1_buf))
+				osal_free(cprs->L1_buf);
+			else
+				STP_DBG_ERR_FUNC("L1_buf %p not a vmalloc addr, skipping free\n",
+						  cprs->L1_buf);
 			cprs->L1_buf = NULL;
 		}
 
 		if (cprs->worker) {
 			pstream = (z_stream *) cprs->worker;
+			pr_err("biscuit-coredump-debug: deinit worker=%p workspace=%p (before deflateEnd)\n",
+			       cprs->worker, pstream->workspace);
 			if ((cprs->compress_type == GZIP) && pstream->workspace) {
 				zlib_deflateEnd(pstream);
-				osal_free(pstream->workspace);
+				pr_err("biscuit-coredump-debug: workspace=%p (after deflateEnd)\n",
+				       pstream->workspace);
+				if (is_vmalloc_addr(pstream->workspace))
+					osal_free(pstream->workspace);
 			}
-			osal_free(cprs->worker);
+			if (is_vmalloc_addr(cprs->worker))
+				osal_free(cprs->worker);
 			cprs->worker = NULL;
 		}
 
 		cprs->handler = NULL;
 
-		osal_free(cprs);
+		if (is_vmalloc_addr(cprs))
+			osal_free(cprs);
+		else
+			STP_DBG_ERR_FUNC("cprs %p not a vmalloc addr, skipping free\n", cprs);
 	}
 
 	STP_DBG_INFO_FUNC("destroy OK\n");
@@ -807,9 +865,11 @@ INT32 wcn_compressor_in(P_WCN_COMPRESSOR_T cprs, PUINT8 buf, INT32 len, INT32 fi
 			if (!ret) {
 				cprs->crc32 = (crc32(cprs->crc32, cprs->L1_buf, cprs->L1_pos));
 				cprs->L2_pos += tmp_len;
-				if (cprs->L2_pos > cprs->L2_buf_sz)
+				if (cprs->L2_pos > cprs->L2_buf_sz) {
 					STP_DBG_ERR_FUNC("coredump size too large(%d), L2 buf overflow\n",
 					cprs->L2_pos);
+					cprs->L2_pos = cprs->L2_buf_sz;
+				}
 
 				if (finish) {
 					/* Add 8 byte suffix
@@ -817,9 +877,16 @@ INT32 wcn_compressor_in(P_WCN_COMPRESSOR_T cprs, PUINT8 buf, INT32 len, INT32 fi
 					   32 bits UNCOMPRESS SIZE
 					   32 bits CRC
 					 */
-					*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos]) = (cprs->crc32 ^ 0xffffffffUL);
-					*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos + 4]) = cprs->uncomp_size;
-					cprs->L2_pos += 8;
+					if (cprs->L2_pos + 8 <= cprs->L2_buf_sz) {
+						*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos]) =
+							(cprs->crc32 ^ 0xffffffffUL);
+						*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos + 4]) =
+							cprs->uncomp_size;
+						cprs->L2_pos += 8;
+					} else {
+						STP_DBG_ERR_FUNC("no room for 8B suffix (pos=%d, sz=%d)\n",
+								  cprs->L2_pos, cprs->L2_buf_sz);
+					}
 				}
 				STP_DBG_INFO_FUNC("compress OK!\n");
 			} else
@@ -886,15 +953,25 @@ INT32 wcn_compressor_out(P_WCN_COMPRESSOR_T cprs, PUINT8 *pbuf, PINT32 plen)
 			if (!ret) {
 				cprs->crc32 = (crc32(cprs->crc32, cprs->L1_buf, cprs->L1_pos));
 				cprs->L2_pos += tmp_len;
+				if (cprs->L2_pos > cprs->L2_buf_sz) {
+					STP_DBG_ERR_FUNC("coredump size too large(%d), L2 buf overflow\n",
+					cprs->L2_pos);
+					cprs->L2_pos = cprs->L2_buf_sz;
+				}
 
 				/* Add 8 byte suffix
 				   ===
 				   32 bits UNCOMPRESS SIZE
 				   32 bits CRC
 				 */
-				*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos]) = (cprs->crc32 ^ 0xffffffffUL);
-				*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos + 4]) = cprs->uncomp_size;
-				cprs->L2_pos += 8;
+				if (cprs->L2_pos + 8 <= cprs->L2_buf_sz) {
+					*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos]) = (cprs->crc32 ^ 0xffffffffUL);
+					*(uint32_t *) (&cprs->L2_buf[cprs->L2_pos + 4]) = cprs->uncomp_size;
+					cprs->L2_pos += 8;
+				} else {
+					STP_DBG_ERR_FUNC("no room for 8B suffix (pos=%d, sz=%d)\n",
+							  cprs->L2_pos, cprs->L2_buf_sz);
+				}
 
 				STP_DBG_INFO_FUNC("compress OK!\n");
 			} else {
@@ -1004,7 +1081,23 @@ static int _stp_dbg_dmp_in(MTKSTP_DBG_T *stp_dbg, char *buf, int len)
 
 	if (internalFlag) {
 		stp_dbg->logsys->queue[stp_dbg->logsys->in].id = 0;
-		stp_dbg->logsys->queue[stp_dbg->logsys->in].len = len;
+		/*
+		 * Store the CLAMPED length, matching the clamped memcpy below.
+		 * Previously this stored the raw, unclamped "len" (which for
+		 * STP packet logging can come straight from chip-supplied
+		 * wire data) while only min(len, STP_DBG_LOG_ENTRY_SZ) bytes
+		 * were ever actually written into buffer[STP_DBG_LOG_ENTRY_SZ].
+		 * Every dequeue path (stp_dbg_dmp_out/_ex, and callers like
+		 * _stp_btm_put_dump_to_aee() that memcpy "len" bytes out of
+		 * the dequeued entry into their own buffers) trusted this
+		 * stored length for its own copy size - so an oversized log
+		 * entry desynced the length metadata from the truncated data,
+		 * causing out-of-bounds reads/writes downstream. Confirmed on
+		 * real hardware: this is what was corrupting the SLUB heap
+		 * during connsys bring-up (which logs every STP packet).
+		 */
+		stp_dbg->logsys->queue[stp_dbg->logsys->in].len =
+			(len >= STP_DBG_LOG_ENTRY_SZ) ? STP_DBG_LOG_ENTRY_SZ : len;
 		memset(&(stp_dbg->logsys->queue[stp_dbg->logsys->in].buffer[0]),
 		       0, ((len >= STP_DBG_LOG_ENTRY_SZ) ? (STP_DBG_LOG_ENTRY_SZ) : (len)));
 		memcpy(&(stp_dbg->logsys->queue[stp_dbg->logsys->in].buffer[0]),
@@ -1369,6 +1462,27 @@ UINT8 *_stp_dbg_id_to_task(UINT32 id)
 	return taskStr[id];
 }
 
+/*
+ * Every case below computes a substring length as (delimiter_ptr -
+ * start_ptr), where delimiter_ptr comes from osal_strchr() run on TEXT
+ * THE CHIP SENDS US (f/w assert/coredump messages). Real hardware has
+ * shown these messages arrive truncated/malformed (e.g. after an STP
+ * framing error), in which case osal_strchr() returns NULL and a raw
+ * `pTemp - pDtr` becomes a garbage/enormous value fed straight into
+ * memcpy() against a fixed-size stack buffer or struct field - a real
+ * buffer overflow, not just a failed parse. Route every one of these
+ * length computations through this helper instead.
+ */
+static UINT32 stp_dbg_safe_len(const char *end, const char *start, UINT32 cap)
+{
+	long diff;
+
+	if (!end || !start || end < start)
+		return 0;
+	diff = end - start;
+	return (diff > (long)cap) ? cap : (UINT32)diff;
+}
+
 INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 {
 	char *pStr = NULL;
@@ -1410,17 +1524,33 @@ INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 			STP_DBG_ERR_FUNC("parser str is NULL,substring(%s)\n", parser_sub_string[type]);
 			return -3;
 		}
-		len = pTemp - pDtr;
-		osal_memcpy(&g_stp_dbg_cpupcr->assert_info[0], "assert@", osal_strlen("assert@"));
-		osal_memcpy(&g_stp_dbg_cpupcr->assert_info[osal_strlen("assert@")], pDtr, len);
-		g_stp_dbg_cpupcr->assert_info[osal_strlen("assert@") + len] = '_';
+		{
+			UINT32 prefix_len = osal_strlen("assert@");
+			UINT32 len2;
 
-		pTemp = osal_strchr(pDtr, '#');
-		pTemp += 1;
+			/* reserve room for the '_' separator and final NUL */
+			len = stp_dbg_safe_len(pTemp, pDtr, STP_ASSERT_INFO_SIZE - prefix_len - 2);
+			osal_memcpy(&g_stp_dbg_cpupcr->assert_info[0], "assert@", prefix_len);
+			osal_memcpy(&g_stp_dbg_cpupcr->assert_info[prefix_len], pDtr, len);
+			g_stp_dbg_cpupcr->assert_info[prefix_len + len] = '_';
 
-		pTemp2 = osal_strchr(pTemp, ' ');
-		osal_memcpy(&g_stp_dbg_cpupcr->assert_info[osal_strlen("assert@") + len + 1], pTemp, pTemp2 - pTemp);
-		g_stp_dbg_cpupcr->assert_info[osal_strlen("assert@") + len + 1 + pTemp2 - pTemp] = '\0';
+			/* pDtr + '#' + 1 could run past the end of pStr if '#' is the
+			 * last character - osal_strchr(pTemp, ' ') below would then
+			 * read out of bounds. Only advance/search once '#' is confirmed
+			 * present and not already the string terminator.
+			 */
+			pTemp = osal_strchr(pDtr, '#');
+			if (pTemp && *pTemp && *(pTemp + 1)) {
+				pTemp += 1;
+				pTemp2 = osal_strchr(pTemp, ' ');
+				len2 = stp_dbg_safe_len(pTemp2, pTemp,
+							 STP_ASSERT_INFO_SIZE - prefix_len - len - 2);
+				osal_memcpy(&g_stp_dbg_cpupcr->assert_info[prefix_len + len + 1], pTemp, len2);
+				g_stp_dbg_cpupcr->assert_info[prefix_len + len + 1 + len2] = '\0';
+			} else {
+				g_stp_dbg_cpupcr->assert_info[prefix_len + len + 1] = '\0';
+			}
+		}
 		STP_DBG_INFO_FUNC("assert info:%s\n", &g_stp_dbg_cpupcr->assert_info[0]);
 		break;
 	case STP_DBG_FW_TASK_ID:
@@ -1432,7 +1562,7 @@ INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 			STP_DBG_ERR_FUNC("parser str is NULL,substring(%s)\n", parser_sub_string[type]);
 			return -3;
 		}
-		len = pTemp - pDtr;
+		len = stp_dbg_safe_len(pTemp, pDtr, osal_sizeof(tempBuf) - 1);
 		osal_memcpy(&tempBuf[0], pDtr, len);
 		tempBuf[len] = '\0';
 		ret = osal_strtol(tempBuf, 16, &res);
@@ -1453,7 +1583,7 @@ INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 			STP_DBG_ERR_FUNC("parser str is NULL,substring(%s)\n", parser_sub_string[type]);
 			return -3;
 		}
-		len = pTemp - pDtr;
+		len = stp_dbg_safe_len(pTemp, pDtr, osal_sizeof(tempBuf) - 1);
 		osal_memcpy(&tempBuf[0], pDtr, len);
 		tempBuf[len] = '\0';
 		ret = osal_strtol(tempBuf, 16, &res);
@@ -1474,7 +1604,7 @@ INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 			STP_DBG_ERR_FUNC("parser str is NULL,substring(%s)\n", parser_sub_string[type]);
 			return -3;
 		}
-		len = pTemp - pDtr;
+		len = stp_dbg_safe_len(pTemp, pDtr, osal_sizeof(tempBuf) - 1);
 		osal_memcpy(&tempBuf[0], pDtr, len);
 		tempBuf[len] = '\0';
 		ret = osal_strtol(tempBuf, 16, &res);
@@ -1495,7 +1625,7 @@ INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 			STP_DBG_ERR_FUNC("parser str is NULL,substring(%s)\n", parser_sub_string[type]);
 			return -3;
 		}
-		len = pTemp - pDtr;
+		len = stp_dbg_safe_len(pTemp, pDtr, osal_sizeof(tempBuf) - 1);
 		osal_memcpy(&tempBuf[0], pDtr, len);
 		tempBuf[len] = '\0';
 
@@ -1504,7 +1634,14 @@ INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 		if (0 == osal_memcmp(tempBuf, "Watch Dog Timeout", len))
 			osal_memcpy(&g_stp_dbg_cpupcr->assert_type[0], "wdt", osal_strlen("wdt"));
 		if (0 == osal_memcmp(tempBuf, "RB_FULL", osal_strlen("RB_FULL"))) {
-			osal_memcpy(&g_stp_dbg_cpupcr->assert_type[0], tempBuf, len);
+			/* tempBuf can hold up to 63 chars but assert_type is only
+			 * STP_ASSERT_TYPE_SIZE (32) bytes - clamp separately, and
+			 * NUL-terminate before the osal_strstr() below scans it.
+			 */
+			UINT32 type_len = (len > STP_ASSERT_TYPE_SIZE - 1) ? STP_ASSERT_TYPE_SIZE - 1 : len;
+
+			osal_memcpy(&g_stp_dbg_cpupcr->assert_type[0], tempBuf, type_len);
+			g_stp_dbg_cpupcr->assert_type[type_len] = '\0';
 
 			pDtr = osal_strstr(&g_stp_dbg_cpupcr->assert_type[0], "RB_FULL(");
 			if (NULL != pDtr) {
@@ -1514,7 +1651,7 @@ INT32 _stp_dbg_parser_assert_str(PINT8 str, ENUM_ASSERT_INFO_PARSER_TYPE type)
 				STP_DBG_ERR_FUNC("parser str is NULL,substring(RB_FULL()\n");
 				return -4;
 			}
-			len = pTemp - pDtr;
+			len = stp_dbg_safe_len(pTemp, pDtr, osal_sizeof(tempBuf) - 1);
 			osal_memcpy(&tempBuf[0], pDtr, len);
 			tempBuf[len] = '\0';
 			ret = osal_strtol(tempBuf, 16, &res);
@@ -1599,7 +1736,20 @@ INT32 stp_dbg_poll_cpupcr(UINT32 times, UINT32 sleep, UINT32 cmd)
 	}
 
 	if (!cmd) {
-		if (g_stp_dbg_cpupcr->count + times > STP_DBG_CPUPCR_NUM)
+		/*
+		 * g_stp_dbg_cpupcr->count accumulates across repeated calls
+		 * (e.g. every failed paged-dump attempt during connsys
+		 * recovery) and is never reset mid-boot. If it ever reaches
+		 * or exceeds STP_DBG_CPUPCR_NUM, "STP_DBG_CPUPCR_NUM - count"
+		 * below underflows (both UINT32), wrapping to a huge value -
+		 * turning the loop below into a massive out-of-bounds write
+		 * into buffer[]. Confirmed on real hardware: this is what was
+		 * corrupting the SLUB heap during repeated connsys crash
+		 * recovery. Clamp to 0 instead of underflowing.
+		 */
+		if (g_stp_dbg_cpupcr->count >= STP_DBG_CPUPCR_NUM)
+			times = 0;
+		else if (g_stp_dbg_cpupcr->count + times > STP_DBG_CPUPCR_NUM)
 			times = STP_DBG_CPUPCR_NUM - g_stp_dbg_cpupcr->count;
 
 		osal_lock_sleepable_lock(&g_stp_dbg_cpupcr->lock);

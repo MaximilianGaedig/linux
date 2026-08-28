@@ -407,7 +407,17 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		WMT_PLAT_DBG_FUNC("[CCF]enable clk_infra_conn_main\n");
 		/*12.poll CONNSYS CHIP ID until chipid is returned  0x18070008 */
 		while (retry-- > 0) {
-			consysHwChipId = CONSYS_REG_READ(conn_reg.mcu_base + CONSYS_CHIP_ID_OFFSET) - 0xf6d;
+			/*
+			 * No "-0xf6d" offset here, unlike the vendor original:
+			 * on this board's silicon, this register already reads
+			 * back the plain SoC ID (0x8163, matched below) - that
+			 * offset was tuned for a different chip stepping and
+			 * was turning a valid 0x8163 readback into a bogus
+			 * 0x71f6 that never matched any accepted chip ID,
+			 * confirmed by reversing the math on the resulting
+			 * "Read CONSYS chipId(0x71f6)" failure log.
+			 */
+			consysHwChipId = CONSYS_REG_READ(conn_reg.mcu_base + CONSYS_CHIP_ID_OFFSET);
 
 			if ((consysHwChipId == 0x0321) || (consysHwChipId == 0x0335) || (consysHwChipId == 0x0337)) {
 				WMT_PLAT_INFO_FUNC("retry(%d)consys chipId(0x%08x)\n", retry, consysHwChipId);
@@ -848,6 +858,22 @@ UINT8 *mtk_wcn_consys_emi_virt_addr_get(UINT32 ctrl_state_offset)
 
 	if (!pEmibaseaddr) {
 		WMT_PLAT_ERR_FUNC("EMI base address is NULL\n");
+		return NULL;
+	}
+	/*
+	 * ctrl_state_offset can come from chip-supplied register content
+	 * (e.g. btm_core.c computing "chip_sync_addr - emi_phy_addr" from
+	 * a hardware register read on a connsys chip that just crashed,
+	 * which can hold garbage). pEmibaseaddr is an ioremap() of exactly
+	 * CONSYS_EMI_MEM_SIZE bytes - with no bounds check here, a garbage
+	 * offset produces a wild pointer into unmapped MMIO space (an
+	 * immediate external abort) or, if it wraps into another mapped
+	 * region, a write to the wrong hardware register. Reject anything
+	 * outside the actual ioremap'd window instead.
+	 */
+	if (ctrl_state_offset >= CONSYS_EMI_MEM_SIZE) {
+		WMT_PLAT_ERR_FUNC("ctrl_state_offset(%08x) exceeds EMI window(%08x)\n",
+				  ctrl_state_offset, (UINT32)CONSYS_EMI_MEM_SIZE);
 		return NULL;
 	}
 	WMT_PLAT_DBG_FUNC("ctrl_state_offset(%08x)\n", ctrl_state_offset);

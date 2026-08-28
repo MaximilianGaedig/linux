@@ -27,7 +27,7 @@
 #define STP_BTM_LOG_WARN                 1
 #define STP_BTM_LOG_ERR                  0
 
-INT32 gBtmDbgLevel = STP_BTM_LOG_INFO;
+INT32 gBtmDbgLevel = STP_BTM_LOG_LOUD;
 
 #define STP_BTM_LOUD_FUNC(fmt, arg...) \
 do { \
@@ -140,6 +140,18 @@ static INT32 _stp_btm_put_dump_to_nl(void)
 			osal_memcpy(&tmp[index], &len, 2);
 			index += 2;
 			if (hdr->dbg_type == STP_DBG_FW_DMP) {
+					/*
+					 * pkt->hdr.len is a length field embedded in
+					 * dequeued STP packet-log data - ultimately
+					 * sourced from chip-supplied wire data - and
+					 * was never validated against tmp[]'s actual
+					 * remaining room (tmp is a fixed 2048-byte
+					 * static buffer, index is already 5). Clamp
+					 * before copying to prevent an out-of-bounds
+					 * write into tmp[].
+					 */
+					if (len > (INT32)(sizeof(tmp) - index))
+						len = sizeof(tmp) - index;
 					osal_memcpy(&tmp[index], pkt->raw, len);
 
 				if (len <= 1500) {
@@ -254,7 +266,17 @@ static INT32 _stp_btm_put_dump_to_aee(void)
 			pkt = (STP_PACKET_T *) buf;
 			hdr = &pkt->hdr;
 			if (hdr->dbg_type == STP_DBG_FW_DMP) {
-				memcpy(&tmp[0], pkt->raw, pkt->hdr.len);
+				/*
+				 * pkt->hdr.len is chip-sourced and was never
+				 * validated against tmp[]'s size before this
+				 * unconditional memcpy (the "<= 1500" check
+				 * below only gates the +2-byte NUL-terminator
+				 * write, not this copy) - clamp to prevent an
+				 * out-of-bounds write into the fixed 2048-byte
+				 * tmp[] buffer.
+				 */
+				memcpy(&tmp[0], pkt->raw,
+				       (pkt->hdr.len > sizeof(tmp)) ? sizeof(tmp) : pkt->hdr.len);
 
 				if (pkt->hdr.len <= 1500) {
 					tmp[pkt->hdr.len] = '\n';
@@ -394,7 +416,6 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 {
 	INT32 ret = -1;
 	INT32 dump_sink = 1;	/* core dump target, 0: aee; 1: netlink */
-	INT32 Ret = 0;
 	static UINT32 counter;
 	UINT32 full_dump_left = STP_FULL_DUMP_TIME;
 	UINT32 page_counter = 0;
@@ -473,19 +494,26 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 	case STP_OPID_BTM_PAGED_DUMP:
 		g_paged_dump_len = 0;
 		issue_type = STP_FW_ASSERT_ISSUE;
-		/*packet number depend on dump_num get from register:0xf0080044 ,support jade*/
-		wcn_core_dump_deinit_gcoredump();
+		/*
+		 * packet number depend on dump_num get from register:0xf0080044,
+		 * support jade. NOTE: this path never actually feeds data through
+		 * wcn_core_dump_in()/wcn_compressor_in() below (dump data goes out
+		 * directly via stp_dbg_aee_send()/_stp_btm_put_emi_dump_to_nl()),
+		 * so the gcoredump compressor object this used to allocate here was
+		 * pure dead weight - and on real hardware, deinit-ing it at the next
+		 * STP_OPID_BTM_PAGED_DUMP call crashed with "Trying to vfree()
+		 * nonexistent vm area" (confirmed via instrumentation: the compressor
+		 * was never written to between init and that first deinit, so the
+		 * vm_area itself was already invalid by the time deinit ran - the
+		 * upstream Amazon kernel does not allocate it here at all). Keep only
+		 * the packet_num derivation, which the loop bound below still needs.
+		 */
 		dump_num = wmt_plat_get_dump_info(p_ecsi->p_ecso->emi_apmem_ctrl_chip_page_dump_num);
 		if (dump_num != 0) {
 				packet_num = dump_num;
 				STP_BTM_WARN_FUNC("get consys dump num packet_num(%d)\n", packet_num);
 		} else {
 			STP_BTM_ERR_FUNC("can not get consys dump num and default num is 35\n");
-		}
-		Ret = wcn_core_dump_init_gcoredump(packet_num, STP_CORE_DUMP_TIMEOUT);
-		if (Ret) {
-			STP_BTM_ERR_FUNC("core dump init fail\n");
-			break;
 		}
 		wmt_plat_set_host_dump_state(STP_HOST_DUMP_NOT_START);
 		page_counter = 0;
@@ -547,6 +575,26 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 			STP_BTM_INFO_FUNC("dump_phy_ddr(%08x),dump_vir_add(0x%p),dump_len(%d)\n",
 				dump_phy_addr, dump_vir_addr, dump_len);
 
+			/*
+			 * dump_len comes straight from a connsys hw register
+			 * (emi_apmem_ctrl_chip_sync_len) - on a chip that just
+			 * crashed/reset that register can hold garbage, and the
+			 * "dump_len <= 32K" check below runs AFTER this memcpy,
+			 * so it never protected g_paged_dump_buffer[] (a fixed
+			 * STP_DBG_PAGED_DUMP_BUFFER_SIZE=32K buffer) from an
+			 * oversized/garbage length. Confirmed on real hardware:
+			 * this is what was corrupting the SLUB heap and causing
+			 * unrelated crashes (e.g. init's clone()) later on.
+			 * Clamp here so the copy itself can never overflow.
+			 */
+			if (dump_len > STP_DBG_PAGED_DUMP_BUFFER_SIZE) {
+				STP_BTM_ERR_FUNC("dump_len(%d) exceeds g_paged_dump_buffer, clamping\n",
+						  dump_len);
+				dump_len = STP_DBG_PAGED_DUMP_BUFFER_SIZE;
+			}
+
+			pr_err("biscuit-debug: paged_dump memcpy reached: dump_vir_addr=%px dump_len=%u\n",
+			       dump_vir_addr, dump_len);
 			/*move dump info according to dump_addr & dump_len */
 #if 1
 			osal_memcpy(&g_paged_dump_buffer[0], dump_vir_addr, dump_len);

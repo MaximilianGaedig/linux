@@ -2281,6 +2281,25 @@ retry:
 			cpu = raw_smp_processor_id();
 	}
 
+	/*
+	 * Confirmed on real hardware (Amazon Echo Dot 2016, mt8163): this
+	 * fires from a delayed_work timer at task swapper/0 (PID 0), very
+	 * early in boot, with a live, readable wq whose ->cpu_pwq percpu
+	 * array pointer is itself NULL and ->name is empty - i.e. @wq is
+	 * still a zeroed workqueue_struct, because workqueue_init() hasn't
+	 * populated it yet. Something is arming a delayed_work with a very
+	 * short delay before the workqueue subsystem is ready. Rather than
+	 * dereference a NULL percpu base and panic the whole kernel, drop
+	 * this queue attempt - the work item stays PENDING and picks up
+	 * cleanly whenever it (or an equivalent) is next queued for real.
+	 */
+	if (unlikely(!wq->cpu_pwq)) {
+		pr_err("biscuit-debug: __queue_work: wq=%px name=\"%s\" not yet initialized (cpu_pwq NULL), dropping work.func=%pS\n",
+		       wq, wq->name, work->func);
+		rcu_read_unlock();
+		return;
+	}
+
 	pwq = rcu_dereference(*per_cpu_ptr(wq->cpu_pwq, cpu));
 	pool = pwq->pool;
 
@@ -2495,6 +2514,10 @@ EXPORT_SYMBOL_GPL(queue_work_node);
 void delayed_work_timer_fn(struct timer_list *t)
 {
 	struct delayed_work *dwork = timer_container_of(dwork, t, timer);
+
+	if (!dwork->wq)
+		pr_err("biscuit-debug: delayed_work_timer_fn fired with NULL wq! dwork=%px work.func=%pS work.data=%lx cpu=%d\n",
+		       dwork, dwork->work.func, atomic_long_read(&dwork->work.data), dwork->cpu);
 
 	/* should have been called from irqsafe timer with irq already off */
 	__queue_work(dwork->cpu, dwork->wq, &dwork->work);
