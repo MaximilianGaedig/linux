@@ -975,6 +975,16 @@
  */
 extern phys_addr_t gConEmiPhyBase;
 
+/*
+ * Fill the EMI-resident firmware sections from the host.
+ *
+ * Since the ROM patch started being loaded at its real address the chip does
+ * write EMI on its own - it puts ~55KB into the region above +0x80000 - but it
+ * still never writes the two firmware sections at +0x6000 and +0x4e000.
+ * Turning this off leaves section 3 reading back as zeroes, so it stays on.
+ */
+#define BISCUIT_EMI_HOST_FILL 1
+
 /*----------------------------------------------------------------------------*/
 /*!
 * \brief Read one 32-bit word out of the chip using the ROM's init-time
@@ -1714,8 +1724,10 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 					       "biscuit-emi: filled 24KB scratch with 'b .' trap pattern\n");
 				}
 #else
+#ifdef BISCUIT_EMI_HOST_FILL
 				memset_io(pucWipe, 0, 512 * 1024);
 				DBGLOG(INIT, WARN, "biscuit-emi: zeroed 512KB of WiFi EMI region\n");
+#endif
 #endif
 				iounmap(pucWipe);
 			}
@@ -1759,7 +1771,10 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 					       i, u4Dest);
 					continue;
 				}
+#ifdef BISCUIT_EMI_HOST_FILL
 				memcpy_toio(pucEmi, pucSrc, u4Len);
+				DBGLOG(INIT, WARN, "biscuit-fwsec[%u]: host filled it\n", i);
+#endif
 				/* read back through the same mapping */
 				memcpy_fromio(aucGot, pucEmi, u4CmpLen);
 				iounmap(pucEmi);
