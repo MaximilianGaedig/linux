@@ -864,6 +864,7 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 	GL_HIF_INFO_T *HifInfo;
 	UINT_32 u4HSTCRValue = 0;
 	UINT_32 RegWHLPCR = 0;
+	PUINT_8 RxBounce = NULL;
 
 	/* sanity check */
 	if ((WlanDmaFatalErr == 1) || (fgIsResetting == TRUE) || (HifIsFwOwn(GlueInfo->prAdapter) == TRUE)) {
@@ -937,7 +938,26 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 		 */
 		/* DMA_FROM_DEVICE invalidated (without writeback) the cache */
 		/* TODO: if dst_off was not cacheline aligned */
-		DmaConf.Dst = dma_map_single(HifInfo->Dev, Buf, Size, DMA_FROM_DEVICE);
+		/*
+		 * Callers legitimately pass stack buffers here (e.g.
+		 * wlanImageSectionDownloadStatus()'s aucBuffer[]). On arm64 with
+		 * VMAP_STACK - the default - the stack is NOT in the linear map,
+		 * so dma_map_single() on it yields a bogus handle and the
+		 * matching unmap faults in dcache_inval_poc(). Amazon's kernel
+		 * is 32-bit ARM, where stacks are linear-mapped, so this worked
+		 * there by luck. Bounce anything that isn't linear-mapped.
+		 */
+		RxBounce = NULL;
+		if (!virt_addr_valid(Buf)) {
+			RxBounce = kmalloc(Size, GFP_KERNEL);
+			if (!RxBounce) {
+				DBGLOG(INIT, ERROR, "RX bounce alloc failed (%u)\n", Size);
+				return FALSE;
+			}
+			DmaConf.Dst = dma_map_single(HifInfo->Dev, RxBounce, Size, DMA_FROM_DEVICE);
+		} else {
+			DmaConf.Dst = dma_map_single(HifInfo->Dev, Buf, Size, DMA_FROM_DEVICE);
+		}
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		/* start to read data */
@@ -991,6 +1011,11 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 			kalMemCopy(Buf, DmaVBuf, Size);
 #else
 		dma_unmap_single(HifInfo->Dev, DmaConf.Dst, Size, DMA_FROM_DEVICE);
+		if (RxBounce) {
+			memcpy(Buf, RxBounce, Size);
+			kfree(RxBounce);
+			RxBounce = NULL;
+		}
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		if ((RegWHLPCR & WHLPCR_INT_EN_SET) == 1)
@@ -1048,6 +1073,7 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 	GL_HIF_INFO_T *HifInfo;
 	UINT_32 u4HSTCRValue = 0;
 	UINT_32 RegWHLPCR = 0;
+	PUINT_8 TxBounce = NULL;
 
 	/* sanity check */
 	if ((WlanDmaFatalErr == 1) || (fgIsResetting == TRUE) || (HifIsFwOwn(GlueInfo->prAdapter) == TRUE)) {
@@ -1114,7 +1140,19 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 #else
 
 		/* DMA_TO_DEVICE writeback the cache */
-		DmaConf.Src = dma_map_single(HifInfo->Dev, Buf, Size, DMA_TO_DEVICE);
+		/* Same VMAP_STACK caveat as the RX path above. */
+		TxBounce = NULL;
+		if (!virt_addr_valid(Buf)) {
+			TxBounce = kmalloc(Size, GFP_KERNEL);
+			if (!TxBounce) {
+				DBGLOG(INIT, ERROR, "TX bounce alloc failed (%u)\n", Size);
+				return FALSE;
+			}
+			memcpy(TxBounce, Buf, Size);
+			DmaConf.Src = dma_map_single(HifInfo->Dev, TxBounce, Size, DMA_TO_DEVICE);
+		} else {
+			DmaConf.Src = dma_map_single(HifInfo->Dev, Buf, Size, DMA_TO_DEVICE);
+		}
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		/* start to write */
@@ -1164,6 +1202,10 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 
 #ifndef MTK_DMA_BUF_MEMCPY_SUP
 		dma_unmap_single(HifInfo->Dev, DmaConf.Src, Size, DMA_TO_DEVICE);
+		if (TxBounce) {
+			kfree(TxBounce);
+			TxBounce = NULL;
+		}
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		if ((RegWHLPCR & WHLPCR_INT_EN_SET) == 1)
