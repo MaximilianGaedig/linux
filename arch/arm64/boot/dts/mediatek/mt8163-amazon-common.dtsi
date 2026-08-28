@@ -47,6 +47,22 @@
 		};
 
 		/*
+		 * Secondary-CPU (CPU1-3) spin-table holding pen: a tiny
+		 * AArch64 stub the amonet trampoline writes here before
+		 * jumping to u-boot, plus per-CPU mailbox and diagnostic-
+		 * canary words the kernel's spin-table cpu_ops and debug
+		 * code read/write. Must stay out of the normal memory pool -
+		 * without a reservation the allocator reuses it well before
+		 * boot finishes (confirmed on real hardware: diagnostic
+		 * canary reads came back as unrelated garbage, not zero, once
+		 * this region got silently repurposed).
+		 */
+		mt8163_spin_table_reserved: spin-table@43100000 {
+			reg = <0 0x43100000 0 0x10000>;
+			no-map;
+		};
+
+		/*
 		 * MediaTek ram_console region, repurposed as a mainline
 		 * pstore/ramoops backend. Address is fixed, not ours to
 		 * relocate - matches the stock 3.18 kernel's own

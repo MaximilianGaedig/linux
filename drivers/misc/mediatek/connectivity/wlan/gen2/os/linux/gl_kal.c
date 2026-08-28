@@ -4350,7 +4350,12 @@ VOID kalSchedScanStopped(IN P_GLUE_INFO_T prGlueInfo)
     /* 20150205 change cfg80211_sched_scan_stopped to work queue to use K thread to send event instead of Tx thread
 		due to sched_scan_mtx dead lock issue by Tx thread serves oid cmds and send event in the same time  */
 	DBGLOG(SCN, TRACE, "start work queue to send event\n");
-	schedule_delayed_work(&sched_workq, 0);
+	/* sched_workq is only INIT_DELAYED_WORK()'d in wlanInit() - see
+	 * wlanSetMulticastList() in gl_init.c for why scheduling it before
+	 * that has run is a real crash, not just a missed event.
+	 */
+	if (wlanIsMcWorkInited())
+		schedule_delayed_work(&sched_workq, 0);
 	DBGLOG(SCN, TRACE, "tx_thread return from kalSchedScanStoppped\n");
 
 }
