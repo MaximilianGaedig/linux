@@ -302,6 +302,10 @@ set_pmic_wrap_exit:
 
 static VOID mtk_wmt_remove(struct platform_device *pdev)
 {
+printk(KERN_ALERT "PMRT: mtk_wmt_remove() called! usage_count=%d disable_depth=%d runtime_status=%d\n",
+	atomic_read(&pdev->dev.power.usage_count),
+	pdev->dev.power.disable_depth,
+	pdev->dev.power.runtime_status);
 	pm_runtime_disable(&pdev->dev);
 }
 
@@ -309,7 +313,14 @@ VOID mtk_wcn_consys_power_on(VOID)
 {
 	INT32 iRet = -1;
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+printk(KERN_ALERT "PMRT: pre get_sync usage_count=%d disable_depth=%d runtime_status=%d\n",
+	atomic_read(&my_pdev->dev.power.usage_count),
+	my_pdev->dev.power.disable_depth,
+	my_pdev->dev.power.runtime_status);
 	iRet = pm_runtime_get_sync(&my_pdev->dev);
+printk(KERN_ALERT "PMRT: post get_sync ret=%d usage_count=%d runtime_status=%d\n",
+	iRet, atomic_read(&my_pdev->dev.power.usage_count),
+	my_pdev->dev.power.runtime_status);
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 	if (iRet)
 		WMT_PLAT_ERR_FUNC("pm_runtime_get_sync() fail(%d)\n", iRet);
@@ -328,7 +339,14 @@ VOID mtk_wcn_consys_power_off(VOID)
 {
 	INT32 iRet = -1;
 
+printk(KERN_ALERT "PMRT: pre put_sync usage_count=%d disable_depth=%d runtime_status=%d\n",
+	atomic_read(&my_pdev->dev.power.usage_count),
+	my_pdev->dev.power.disable_depth,
+	my_pdev->dev.power.runtime_status);
 	iRet = pm_runtime_put_sync(&my_pdev->dev);
+printk(KERN_ALERT "PMRT: post put_sync ret=%d usage_count=%d runtime_status=%d\n",
+	iRet, atomic_read(&my_pdev->dev.power.usage_count),
+	my_pdev->dev.power.runtime_status);
 	if (iRet)
 		WMT_PLAT_ERR_FUNC("pm_runtime_put_sync() fail.\n");
 	else
