@@ -28,7 +28,7 @@
 
 #define STP_DEL_SIZE   2	/* STP delimiter length */
 
-UINT32 gStpDbgLvl = STP_LOG_DBG;
+UINT32 gStpDbgLvl = STP_LOG_WARN;
 /*
  * mtk_wcn_stp_parser_data() is the single entry point for all incoming STP
  * bytes and mutates shared, unlocked state in stp_core_ctx (parser.length,
@@ -2066,13 +2066,6 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 				STP_DBG_FUNC("wmt sub type is (0x%x)\n", stp_core_ctx.parser.wmtsubtype);
 			}
 #endif
-			pr_info("biscuit-stp-debug: assembled frame len=%u type=%u crc_rx=0x%04x\n",
-				stp_core_ctx.rx_counter, stp_core_ctx.parser.type,
-				stp_core_ctx.parser.crc);
-			print_hex_dump(KERN_INFO, "biscuit-stp-asm: ", DUMP_PREFIX_OFFSET,
-					16, 1, stp_core_ctx.rx_buf,
-					stp_core_ctx.rx_counter > 96 ? 96 : stp_core_ctx.rx_counter,
-					false);
 			if (stp_check_crc(stp_core_ctx.rx_buf, stp_core_ctx.rx_counter, stp_core_ctx.parser.crc)
 			    == MTK_WCN_BOOL_TRUE) {
 				if (stp_core_ctx.inband_rst_set == 0)
@@ -2338,9 +2331,12 @@ int mtk_wcn_stp_parser_data(UINT8 *buffer, UINT32 length)
 	i = length;
 	p_data = (UINT8 *) buffer;
 
-	pr_info("biscuit-stp-debug: rx chunk from btif, len=%u\n", length);
-	print_hex_dump(KERN_INFO, "biscuit-stp-raw: ", DUMP_PREFIX_OFFSET,
-			16, 1, buffer, length > 96 ? 96 : length, false);
+	/*
+	 * Per-chunk console dumps removed: at the chip's post-switch data rate
+	 * a synchronous printk per RX chunk (under g_stp_parser_lock) adds
+	 * enough latency to the RX path to cause the very backlog/overrun this
+	 * was added to debug. Re-enable temporarily if needed.
+	 */
 
 /* stp_dump_data(buffer, "rx queue", length); */
 

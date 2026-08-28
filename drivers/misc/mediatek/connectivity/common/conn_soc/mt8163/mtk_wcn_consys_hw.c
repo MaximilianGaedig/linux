@@ -29,6 +29,7 @@
 #include <linux/pinctrl/consumer.h>
 #include <linux/mfd/syscon.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/regmap.h>
 #include "osal_typedef.h"
 #include "mtk_wcn_consys_hw.h"
@@ -226,21 +227,42 @@ static INT32 mtk_wmt_probe(struct platform_device *pdev)
 	pinctrl_select_state(mt6625_spi_pinctrl, mt6625_spi_default);
 set_pin_exit:
 
-	node = of_parse_phandle(pdev->dev.of_node, "mediatek,pwrap-regmap", 0);
+	/*
+	 * Get a regmap for the MT6323 PMIC.
+	 *
+	 * The vendor original used pwrap_node_to_regmap(), a
+	 * MediaTek-downstream-only helper that does not exist upstream. The
+	 * mainline equivalent: the PMIC wrapper driver
+	 * (drivers/soc/mediatek/mtk-pmic-wrap.c) registers a regmap on its
+	 * own device, and mt6397-core fetches it with dev_get_regmap() on the
+	 * parent - so we can do exactly the same by looking the pwrap device
+	 * up from its DT node.
+	 *
+	 * This matters: Amazon's driver calls upmu_set_vcn_1v8_lp_mode_set(0)
+	 * to take the connsys 1.8V rail out of low-power mode before the MCU
+	 * clock ramp. There is no mainline regulator API for that -
+	 * regulator_set_mode() on this rail is rejected outright by the
+	 * MT6323 regulator driver ("vcn18: mode operation not allowed" in
+	 * dmesg), because MT6323 LDOs implement no .set_mode op. A direct
+	 * register write through this regmap is the only way to reproduce it.
+	 */
+	node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-pwrap");
 	if (node) {
-		/* pwrap_node_to_regmap() doesn't exist on mainline -- see the
-		 * comment on pmic_regmap's declaration. Nothing provides the
-		 * "mediatek,pwrap-regmap" phandle in this tree's DT yet
-		 * either, so this branch is currently dead in practice.
-		 */
-		pmic_regmap = NULL;
-		if (IS_ERR(pmic_regmap))
-			goto set_pmic_wrap_exit;
+		struct platform_device *pwrap_pdev = of_find_device_by_node(node);
+
+		if (pwrap_pdev) {
+			pmic_regmap = dev_get_regmap(&pwrap_pdev->dev, NULL);
+			if (!pmic_regmap)
+				WMT_PLAT_ERR_FUNC("pwrap has no regmap yet\n");
+			else
+				WMT_PLAT_INFO_FUNC("got PMIC regmap via pwrap\n");
+		} else {
+			WMT_PLAT_ERR_FUNC("pwrap device not found for node\n");
+		}
+		of_node_put(node);
 	} else {
-		WMT_PLAT_ERR_FUNC("Pwrap node has not register regmap.\n");
-		goto set_pmic_wrap_exit;
+		WMT_PLAT_ERR_FUNC("no mediatek,mt8163-pwrap node\n");
 	}
-set_pmic_wrap_exit:
 
 	/*
 	 * Amazon's own 3.18 consys node has no "clocks"/"clock-names"
@@ -386,7 +408,26 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		 * asserting. A rail pinned in low-power drive across that ramp
 		 * is a textbook cause of a droop-triggered firmware assert.
 		 */
-		regulator_set_mode(reg_VCN18, REGULATOR_MODE_NORMAL);
+		/*
+		 * Equivalent of Amazon's upmu_set_vcn_1v8_lp_mode_set(0):
+		 * clear VCN_1V8_LP_MODE_SET (DIGLDO_CON11 bit 1) so the rail is
+		 * NOT in low-power mode while the connsys MCU ramps to
+		 * 138.67MHz - the largest current step in the whole bring-up.
+		 *
+		 * regulator_set_mode() cannot express this: MT6323's regulator
+		 * driver implements no .set_mode, so the call was rejected with
+		 * "vcn18: mode operation not allowed" and silently did nothing.
+		 */
+		if (pmic_regmap) {
+			int lpret = regmap_update_bits(pmic_regmap, MT6323_DIGLDO_CON11,
+						       0x1 << 1, 0);
+			if (lpret)
+				WMT_PLAT_ERR_FUNC("VCN18 LP-mode clear failed (%d)\n", lpret);
+			else
+				WMT_PLAT_INFO_FUNC("VCN18 low-power mode disabled\n");
+		} else {
+			WMT_PLAT_ERR_FUNC("no PMIC regmap - VCN18 stays in whatever mode it booted in\n");
+		}
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		/* VOL_DEFAULT, VOL_1200, VOL_1300, VOL_1500, VOL_1800... */
 		if (reg_VCN18) {

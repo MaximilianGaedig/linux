@@ -24,6 +24,15 @@
 *                         C O M P I L E R   F L A G S
 ********************************************************************************
 */
+/*
+ * Amazon has this as 1, but enabling it pulls in the legacy MediaTek PMIC
+ * API (hwPowerOn/hwPowerDown/upmu_set_vcn33_on_ctrl_bt, MT6323_POWER_LDO_VCN33,
+ * VOL_3300) which has no mainline equivalent and is not ported here - the
+ * build fails outright. This only controls whether VCN33 is refcounted as
+ * shared between the BT and WiFi blocks rather than switched independently,
+ * so it is not the bring-up blocker; revisit if/when the raw PMIC path is
+ * ported.
+ */
 #define CONSYS_BT_WIFI_SHARE_V33        0
 #define CONSYS_PMIC_CTRL_ENABLE         1
 #define CONSYS_PMIC_CTRL_UPMU           1
@@ -42,7 +51,7 @@
 */
 
 /*tag start:new platform need to make sure these define */
-#define PLATFORM_SOC_CHIP 0x7623
+#define PLATFORM_SOC_CHIP 0x8163
 /*tag end*/
 
 #ifdef CONFIG_OF
@@ -58,7 +67,7 @@ struct CONSYS_BASE_ADDRESS {
 #define CONSYS_TOP_CLKCG_CLR_OFFSET	0x00000084
 #define CONSYS_TOP_CLKCG_SET_OFFSET	0x00000054
 #define CONSYS_WD_SYS_RST_OFFSET		0x00000018
-#define CONSYS_AP2CONN_OSC_EN_OFFSET	0x00000800
+#define CONSYS_AP2CONN_OSC_EN_OFFSET	0x00000f00
 #define CONSYS_EMI_MAPPING_OFFSET		0x00000320
 /*AP_RGU_BASE*/
 #define CONSYS_CPU_SW_RST_OFFSET		0x00000018
@@ -177,8 +186,8 @@ struct CONSYS_BASE_ADDRESS {
 
 /*control app2cnn_osc_en*/
 #define CONSYS_AP2CONN_OSC_EN_REG			(TOPCKGEN_BASE + 0x00001800)
-#define CONSYS_AP2CONN_OSC_EN_BIT			(0x1 << 16)
-#define CONSYS_AP2CONN_WAKEUP_BIT			(0x1 << 17)
+#define CONSYS_AP2CONN_OSC_EN_BIT			(0x1 << 10)
+#define CONSYS_AP2CONN_WAKEUP_BIT			(0x1 << 9)
 
 /*paged dump address start*/
 #define CONSYS_PAGED_DUMP_START_ADDR		(0xf0088400)
