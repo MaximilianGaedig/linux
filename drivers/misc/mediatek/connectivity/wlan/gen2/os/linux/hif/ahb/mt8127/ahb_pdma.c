@@ -177,11 +177,18 @@ GL_HIF_DMA_OPS_T HifPdmaOps = {
 /*----------------------------------------------------------------------------*/
 VOID HifPdmaInit(GL_HIF_INFO_T *HifInfo)
 {
-	/* IO remap PDMA register memory */
-#ifdef AP_DMA_HIF_BASE
-#undef AP_DMA_HIF_BASE
-#define AP_DMA_HIF_BASE		0x11000180
-#endif
+	/*
+	 * IO remap PDMA register memory.
+	 *
+	 * Do NOT override AP_DMA_HIF_BASE here. hif_pdma.h already selects the
+	 * right channel: 0x11000080 when CONFIG_OF is defined (which it always
+	 * is on mainline) and 0x11000180 only for the older non-DT MT6572/82/92
+	 * parts. This file used to #undef that and force 0x11000180
+	 * unconditionally, pointing the WiFi PDMA at the wrong AP DMA channel -
+	 * so firmware-download TX went nowhere and the chip never produced a
+	 * response, giving RX_RESPONSE_TIMEOUT in nicRxWaitResponse().
+	 * Amazon's mt8163 backend has no such override.
+	 */
 	HifInfo->DmaRegBaseAddr = ioremap(AP_DMA_HIF_BASE, AP_DMA_HIF_0_LENGTH);
 
 	/* assign PDMA operators */
