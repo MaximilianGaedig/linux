@@ -492,6 +492,28 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 		break;
 
 	case STP_OPID_BTM_PAGED_DUMP:
+		/*
+		 * BRING-UP: skip the paged coredump entirely.
+		 *
+		 * CFG_WMT_COREDUMP_ENABLE is 0 (same as Amazon's tree), so
+		 * nothing here can actually deliver a dump anywhere - the send
+		 * below bails with "coredump is disabled!". What it does do is
+		 * spin this loop polling connsys EMI shared memory while the
+		 * chip is mid-assert, and that reliably ends in a kernel panic:
+		 * KASAN/slab/irq_desc corruption from DMA the chip performs
+		 * outside its reserved window (CONSYS_EMI_MPU_SETTING is 0, so
+		 * the EMI MPU that would fence it is not programmed).
+		 *
+		 * Net effect of returning early: a chip-side firmware assert
+		 * becomes a recoverable driver error instead of taking the
+		 * whole kernel down and forcing a reboot. Revert this once the
+		 * assert itself is fixed and the EMI MPU is programmed, if the
+		 * dump contents are ever actually wanted.
+		 */
+		STP_BTM_ERR_FUNC("paged dump skipped (bring-up): coredump disabled and the dump path corrupts memory\n");
+		ret = 0;
+		break;
+
 		g_paged_dump_len = 0;
 		issue_type = STP_FW_ASSERT_ISSUE;
 		/*
