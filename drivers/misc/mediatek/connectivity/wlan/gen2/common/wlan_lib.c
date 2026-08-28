@@ -975,6 +975,18 @@
  */
 extern phys_addr_t gConEmiPhyBase;
 
+/*
+ * Bring-up experiments, off by default. Define one to re-run it:
+ *   BISCUIT_EMI_SCAN_TEST - zero the whole 2MB reserved region before the
+ *     download, then sweep it afterwards looking for each EMI section's first
+ *     16 bytes. Answers "where does the chip actually put these?". Last run:
+ *     NOT FOUND for either section, i.e. the chip writes them nowhere at all.
+ *   BISCUIT_EMI_TRAP_TEST - fill the 24KB scratch below the image with the
+ *     Thumb encoding of "b ." so the MCU freezes if it fetches from there.
+ *     Inconclusive: the PC read back ROM addresses rather than freezing.
+ */
+/* #define BISCUIT_EMI_SCAN_TEST 1 */
+
 /*******************************************************************************
 *                              C O N S T A N T S
 ********************************************************************************
@@ -1318,6 +1330,25 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		/* 2. Initialize Tx Resource to fw download state */
 		nicTxInitResetResource(prAdapter);
 
+#ifdef BISCUIT_EMI_SCAN_TEST
+		/*
+		 * Zero the reserved region BEFORE the download, so the sweep
+		 * afterwards can only find bytes the chip itself put there.
+		 * This DRAM survives warm reboots, so without this the copy a
+		 * previous boot wrote by hand is still sitting at +0x6000 and
+		 * the scan would happily "find" it.
+		 */
+		if (gConEmiPhyBase) {
+			void __iomem *pucPre = ioremap(gConEmiPhyBase, 2 * 1024 * 1024);
+
+			if (pucPre) {
+				memset_io(pucPre, 0, 2 * 1024 * 1024);
+				iounmap(pucPre);
+				DBGLOG(INIT, WARN, "biscuit-scan: zeroed 2MB reserved region before download\n");
+			}
+		}
+#endif
+
 		/* 3. FW download here */
 		u4FwLoadAddr = prRegInfo->u4LoadAddress;
 
@@ -1480,11 +1511,113 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 			 * the firmware expects to find zeroed (BSS, shared
 			 * structures) would instead come up full of garbage.
 			 */
+#ifdef BISCUIT_EMI_SCAN_TEST
+			/*
+			 * Where does the chip actually put the EMI sections?
+			 *
+			 * Amazon's driver downloads these over HIF exactly as
+			 * we do, with no special casing, so the chip is meant
+			 * to write them into DRAM itself - and we know it can
+			 * write DRAM, because back when the aperture was
+			 * misprogrammed its writes were landing in kernel heap.
+			 * Yet gConEmiPhyBase + (dest - 0xf0000000) stays
+			 * untouched. The obvious remaining possibility is that
+			 * the chip translates these addresses differently than
+			 * we assume.
+			 *
+			 * So stop assuming: sweep the whole 2MB reserved region
+			 * for the first 16 bytes of each EMI section and report
+			 * where they turn up. Do not zero and do not host-write
+			 * while this is running, or we would only find our own
+			 * copy.
+			 */
+			{
+				void __iomem *pucScan = ioremap(gConEmiPhyBase, 2 * 1024 * 1024);
+
+				if (pucScan) {
+					UINT_32 u4S;
+
+					for (u4S = 2; u4S < prFwHead->u4NumOfEntries; u4S++) {
+						PUINT_8 pucNeedle = (PUINT_8) pvFwImageMapFile +
+								    prFwHead->arSection[u4S].u4Offset;
+						UINT_32 u4Off, u4Hit = 0xffffffff;
+						UINT_8 aucWin[16];
+
+						for (u4Off = 0; u4Off + 16 <= 2 * 1024 * 1024; u4Off += 4) {
+							memcpy_fromio(aucWin, pucScan + u4Off, 16);
+							if (!memcmp(aucWin, pucNeedle, 16)) {
+								u4Hit = u4Off;
+								break;
+							}
+						}
+						if (u4Hit == 0xffffffff)
+							DBGLOG(INIT, ERROR,
+							       "biscuit-scan: sec%u (dest 0x%08x) NOT FOUND anywhere in the 2MB reserved region\n",
+							       u4S, prFwHead->arSection[u4S].u4DestAddr);
+						else
+							DBGLOG(INIT, ERROR,
+							       "biscuit-scan: sec%u (dest 0x%08x) found at reserved+0x%x (phys 0x%llx); we expected +0x%x\n",
+							       u4S, prFwHead->arSection[u4S].u4DestAddr, u4Hit,
+							       (unsigned long long)(gConEmiPhyBase + u4Hit),
+							       prFwHead->arSection[u4S].u4DestAddr - 0xf0000000);
+					}
+					iounmap(pucScan);
+				}
+			}
+#endif
 			pucWipe = ioremap(gConEmiPhyBase, 512 * 1024);
 			if (pucWipe) {
+#ifdef BISCUIT_EMI_TRAP_TEST /* disabled */
+				/*
+				 * EXPERIMENT: fill the window with the Thumb
+				 * encoding of "b ." (0xe7fe), a two-byte
+				 * branch to itself.
+				 *
+				 * The MCU's program counter sits in
+				 * 0xf0005fbe-0xf0006002 and moves backwards
+				 * within that range, so it is running code with
+				 * a backward branch - but that range is memory
+				 * we zeroed and the MCU never wrote (the
+				 * scratch scan below finds 0 non-zero bytes).
+				 * Zeros contain no backward branch, so either
+				 * the MCU is not fetching from this DRAM at
+				 * all, or the aperture does not land where we
+				 * think.
+				 *
+				 * If the MCU is fetching from here, every
+				 * instruction is now an infinite self-loop and
+				 * the PC must freeze at a single address. If it
+				 * keeps moving, it is reading something else.
+				 */
+				PUINT_8 pucPat = kmalloc(0x6000, GFP_KERNEL);
+
 				memset_io(pucWipe, 0, 512 * 1024);
-				iounmap(pucWipe);
+				if (pucPat) {
+					UINT_32 u4Fill;
+
+					for (u4Fill = 0; u4Fill < 0x6000; u4Fill += 2) {
+						pucPat[u4Fill] = 0xfe;
+						pucPat[u4Fill + 1] = 0xe7;
+					}
+					/*
+					 * Only the 24KB scratch below the image -
+					 * that is where the PC actually sits, and
+					 * a byte-at-a-time loop over the whole
+					 * 512KB of uncached window was slow enough
+					 * to stall the bring-up. Build the pattern
+					 * in normal memory and push it across in
+					 * one go.
+					 */
+					memcpy_toio(pucWipe, pucPat, 0x6000);
+					kfree(pucPat);
+					DBGLOG(INIT, WARN,
+					       "biscuit-emi: filled 24KB scratch with 'b .' trap pattern\n");
+				}
+#else
+				memset_io(pucWipe, 0, 512 * 1024);
 				DBGLOG(INIT, WARN, "biscuit-emi: zeroed 512KB of WiFi EMI region\n");
+#endif
+				iounmap(pucWipe);
 			}
 
 			for (i = 0; i < prFwHead->u4NumOfEntries; i++) {
@@ -1598,6 +1731,43 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				for (u4Idx = 0; u4Idx < 4; u4Idx++) {
 					nicGetMailbox(prAdapter, u4Idx, &u4Mb);
 					DBGLOG(INIT, ERROR, "biscuit-ready: mailbox[%u]=0x%08x\n", u4Idx, u4Mb);
+				}
+				/*
+				 * Did the firmware write anything back into EMI?
+				 *
+				 * We zeroed the whole 512KB and then filled only
+				 * the two section ranges, so every byte outside
+				 * them was 0 when the MCU started. Any non-zero
+				 * byte in the first 24KB (0xf0000000-0xf0006000,
+				 * below the lowest section, covered by no part of
+				 * the image) can only have been put there by the
+				 * chip. That settles whether the MCU can write
+				 * this region at all, or is only reading from it.
+				 */
+				if (gConEmiPhyBase) {
+					void __iomem *pucChk = ioremap(gConEmiPhyBase, 0x6000);
+
+					if (pucChk) {
+						UINT_32 u4Off, u4NonZero = 0, u4First = 0xffffffff;
+						UINT_8 aucChunk[256];
+
+						for (u4Off = 0; u4Off < 0x6000; u4Off += sizeof(aucChunk)) {
+							UINT_32 u4B;
+
+							memcpy_fromio(aucChunk, pucChk + u4Off, sizeof(aucChunk));
+							for (u4B = 0; u4B < sizeof(aucChunk); u4B++) {
+								if (aucChunk[u4B]) {
+									if (u4First == 0xffffffff)
+										u4First = u4Off + u4B;
+									u4NonZero++;
+								}
+							}
+						}
+						iounmap(pucChk);
+						DBGLOG(INIT, ERROR,
+						       "biscuit-emiwr: %u non-zero bytes in the 24KB scratch below the image, first at +0x%x (0 => MCU never wrote EMI)\n",
+						       u4NonZero, u4First);
+					}
 				}
 				u4Status = WLAN_STATUS_FAILURE;
 				eFailReason = WAIT_FIRMWARE_READY_FAIL;
