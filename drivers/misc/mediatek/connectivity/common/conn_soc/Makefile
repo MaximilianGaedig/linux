@@ -1,3 +1,4 @@
+subdir-ccflags-y += -DDEBUG
 subdir-ccflags-y += \
 	-I$(src)/linux/include \
 	-I$(src)/linux/pri/include \

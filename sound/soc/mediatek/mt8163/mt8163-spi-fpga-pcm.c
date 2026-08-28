@@ -397,35 +397,16 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to select idle pinctrl state\n");
 
-	ret = dough_spi_txrx(spi, off_cmd, NULL, sizeof(off_cmd));
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to send FPGA off command\n");
-
-	/* Reset pulse: assert (physical low, since reset-gpios is ACTIVE_LOW), then release. */
-	gpiod_set_value_cansleep(priv->reset_gpio, 1);
-	msleep(FPGA_RESET_MS);
-	gpiod_set_value_cansleep(priv->reset_gpio, 0);
-	msleep(FPGA_RESET_MS);
-
-	ret = biscuit_spi_pcm_load_firmware(priv);
-	if (ret < 0)
-		return ret;
-
-	msleep(FPGA_RESET_MS);
-
-	ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to read FPGA revision\n");
-
-	print_hex_dump(KERN_INFO, "biscuit-spi-pcm: rev-read raw: ", DUMP_PREFIX_NONE,
-		       16, 1, rx_df, 32, false);
-
-	if (!dough_rev_ok(rx_df->dsf.fpga_rev))
-		return dev_err_probe(dev, -EINVAL, "unrecognized FPGA revision %u\n",
-				      rx_df->dsf.fpga_rev);
-
-	dev_info(dev, "FPGA revision %u\n", rx_df->dsf.fpga_rev);
-
+	/*
+	 * The FPGA needs its master clock running before it can do anything
+	 * at all over SPI - confirmed on real hardware: with mclk enabled
+	 * only after the off/reset/firmware-load/revision-read sequence (as
+	 * this originally did), every one of those SPI transactions reaches
+	 * an unclocked, inert FPGA, and the revision read back is all
+	 * zeroes ("unrecognized FPGA revision 0"). Enable the clock and mux
+	 * it out to the pin first; state_idle above only concerns the I2S1
+	 * data pins; mclk is a separate pin/function.
+	 */
 	ret = clk_prepare_enable(priv->mclk);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to enable mclk\n");
@@ -435,6 +416,43 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 		clk_disable_unprepare(priv->mclk);
 		return dev_err_probe(dev, ret, "failed to select mclk pinctrl state\n");
 	}
+
+	ret = dough_spi_txrx(spi, off_cmd, NULL, sizeof(off_cmd));
+	if (ret < 0) {
+		clk_disable_unprepare(priv->mclk);
+		return dev_err_probe(dev, ret, "failed to send FPGA off command\n");
+	}
+
+	/* Reset pulse: assert (physical low, since reset-gpios is ACTIVE_LOW), then release. */
+	gpiod_set_value_cansleep(priv->reset_gpio, 1);
+	msleep(FPGA_RESET_MS);
+	gpiod_set_value_cansleep(priv->reset_gpio, 0);
+	msleep(FPGA_RESET_MS);
+
+	ret = biscuit_spi_pcm_load_firmware(priv);
+	if (ret < 0) {
+		clk_disable_unprepare(priv->mclk);
+		return ret;
+	}
+
+	msleep(FPGA_RESET_MS);
+
+	ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
+	if (ret < 0) {
+		clk_disable_unprepare(priv->mclk);
+		return dev_err_probe(dev, ret, "failed to read FPGA revision\n");
+	}
+
+	print_hex_dump(KERN_INFO, "biscuit-spi-pcm: rev-read raw: ", DUMP_PREFIX_NONE,
+		       16, 1, rx_df, 32, false);
+
+	if (!dough_rev_ok(rx_df->dsf.fpga_rev)) {
+		clk_disable_unprepare(priv->mclk);
+		return dev_err_probe(dev, -EINVAL, "unrecognized FPGA revision %u\n",
+				      rx_df->dsf.fpga_rev);
+	}
+
+	dev_info(dev, "FPGA revision %u\n", rx_df->dsf.fpga_rev);
 
 	/* Restore I2S1 to its FPGA-facing function now the codecs can drive it. */
 	ret = pinctrl_select_state(priv->pinctrl, priv->state_active);

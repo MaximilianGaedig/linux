@@ -341,7 +341,13 @@ static INT32 wmt_conf_parse(P_DEV_WMT pWmtDev, const PINT8 pInBuf, UINT32 size)
 	INT32 i = 0;
 	PINT8 pa = NULL;
 
-	pBuf = osal_malloc(size);
+	/*
+	 * +1 for the NUL terminator written below - pBuf[size] is one byte
+	 * past a bare size-byte allocation, a real out-of-bounds write
+	 * caught by KASAN (vmalloc-out-of-bounds in wmt_conf_read_file,
+	 * landing exactly at offset `size` for our 119-byte WMT_SOC.cfg).
+	 */
+	pBuf = osal_malloc(size + 1);
 	if (!pBuf)
 		return -1;
 

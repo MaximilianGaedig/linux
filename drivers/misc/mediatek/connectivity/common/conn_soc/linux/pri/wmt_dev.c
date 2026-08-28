@@ -38,6 +38,8 @@
 ********************************************************************************
 */
 
+#include <linux/firmware.h>
+
 #include "osal_typedef.h"
 #include "osal.h"
 #include "wmt_dev.h"
@@ -1415,17 +1417,27 @@ INT32 wmt_dev_rx_timeout(P_OSAL_EVENT pEvent)
 	return lRet;
 }
 
+/*
+ * Both callers - wmt_conf_read_file() for WMT_SOC.cfg and
+ * wmt_dev_patch_get() for the connsys patch - now hand this a bare
+ * firmware name (see CUST_CFG_WMT_PREFIX in wmt_conf.h and
+ * BISCUIT_WMT_PATCH_NAME in wmt_ic_soc.c), not a filesystem path. Load
+ * it the same way mainline's own MediaTek Bluetooth drivers do
+ * (drivers/bluetooth/btmtk.c): the standard kernel firmware API.
+ * request_firmware() searches /lib/firmware (and CONFIG_EXTRA_FIRMWARE_DIR
+ * at build time) on its own - no userspace launcher daemon resolving a
+ * path for us needed, which is what the stock Amazon kernel relied on
+ * and we don't have.
+ *
+ * The offset parameter is unused: every caller passes 0, and this only
+ * ever supported partial/offset reads of the *firmware* file itself
+ * (not of the decoded patch buffer, which callers handle separately).
+ */
 INT32 wmt_dev_read_file(PUINT8 pName, const PPUINT8 ppBufPtr, INT32 offset, INT32 padSzBuf)
 {
-	INT32 iRet = -1;
-	struct file *fd;
-	/* ssize_t iRet; */
-	INT32 file_len;
-	INT32 read_len;
+	const struct firmware *fw;
 	PVOID pBuf;
-
-	/* struct cred *cred = get_task_cred(current); */
-	//const struct cred *cred = get_current_cred();
+	INT32 iRet;
 
 	if (!ppBufPtr) {
 		WMT_ERR_FUNC("invalid ppBufptr!\n");
@@ -1433,72 +1445,25 @@ INT32 wmt_dev_read_file(PUINT8 pName, const PPUINT8 ppBufPtr, INT32 offset, INT3
 	}
 	*ppBufPtr = NULL;
 
-	fd = filp_open(pName, O_RDONLY, 0);
-        if (IS_ERR(fd)) {
-            WMT_ERR_FUNC("error code:%d\n", PTR_ERR(fd));
-            return -2;
-        }
-
-        if(fd->f_op == NULL) {
-            printk(KERN_ERR "invalid file op \r\n");
-            return -3;
-        }
-
-#if 0
-	if (!fd || IS_ERR(fd) || !fd->f_op || !fd->f_op->read) {
-		WMT_ERR_FUNC("failed to open or read!(0x%p, %d, %d, %d)\n", fd, PTR_ERR(fd), cred->fsuid, cred->fsgid);
-		if (IS_ERR(fd))
-			WMT_ERR_FUNC("error code:%d\n", PTR_ERR(fd));
-		return -1;
-	}
-#endif
-	file_len = fd->f_path.dentry->d_inode->i_size;
-	file_len = fd->f_op->llseek(fd, 0, 2);
-	fd->f_op->llseek(fd, 0, 0);
-	pBuf = vmalloc((file_len + BCNT_PATCH_BUF_HEADROOM + 3) & ~0x3UL);
-	if (!pBuf) {
-		WMT_ERR_FUNC("failed to vmalloc(%d)\n", (INT32) ((file_len + 3) & ~0x3UL));
-		goto read_file_done;
-	}
-
-	do {
-		if (fd->f_pos != offset) {
-			if (fd->f_op->llseek) {
-				if (fd->f_op->llseek(fd, offset, 0) != offset) {
-					WMT_ERR_FUNC("failed to seek!!\n");
-					goto read_file_done;
-				}
-			} else {
-				fd->f_pos = offset;
-			}
-		}
-
-		/*
-		 * get_fs()/set_fs() (KERNEL_DS override) were removed from
-		 * mainline; kernel_read() already handles reading into a
-		 * kernel-space buffer without needing an address-space
-		 * override, so vfs_read() + set_fs(KERNEL_DS) is no longer
-		 * required (or possible) here.
-		 */
-		read_len = kernel_read(fd, pBuf + padSzBuf, file_len, &fd->f_pos);
-		if (read_len != file_len)
-			WMT_WARN_FUNC("read abnormal: read_len(%d), file_len(%d)\n", read_len, file_len);
-
-	} while (false);
-
-	iRet = 0;
-	*ppBufPtr = pBuf;
-
-read_file_done:
+	iRet = request_firmware(&fw, pName, NULL);
 	if (iRet) {
-		if (pBuf)
-			vfree(pBuf);
-
+		WMT_ERR_FUNC("request_firmware(%s) fail(%d)\n", pName, iRet);
+		return -2;
 	}
 
-	filp_close(fd, NULL);
+	pBuf = vmalloc((fw->size + padSzBuf + 3) & ~0x3UL);
+	if (!pBuf) {
+		WMT_ERR_FUNC("failed to vmalloc(%d)\n", (INT32) ((fw->size + padSzBuf + 3) & ~0x3UL));
+		release_firmware(fw);
+		return -3;
+	}
 
-	return (iRet) ? iRet : read_len;
+	osal_memcpy((PUINT8) pBuf + padSzBuf, fw->data, fw->size);
+	iRet = fw->size;
+	release_firmware(fw);
+
+	*ppBufPtr = pBuf;
+	return iRet;
 }
 
 /* TODO: [ChangeFeature][George] refine this function name for general filesystem read operation, not patch only. */

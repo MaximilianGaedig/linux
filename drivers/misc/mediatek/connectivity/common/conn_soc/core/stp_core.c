@@ -28,7 +28,27 @@
 
 #define STP_DEL_SIZE   2	/* STP delimiter length */
 
-UINT32 gStpDbgLvl = STP_LOG_INFO;
+UINT32 gStpDbgLvl = STP_LOG_DBG;
+/*
+ * mtk_wcn_stp_parser_data() is the single entry point for all incoming STP
+ * bytes and mutates shared, unlocked state in stp_core_ctx (parser.length,
+ * rx_counter, rx_buf, parser.state, ...). The original vendor code had a
+ * lock around this ("George FIXME: WHY or HOW can we reduct the locked
+ * region?") but it - and its init call - are commented out everywhere in
+ * this file, including at stp_core_ctx init, so the old stp_core_ctx.stp_mutex
+ * is never actually initialized.
+ *
+ * Confirmed on real hardware: RX delivery actually runs from a single
+ * dedicated kernel thread ("btif_rxd", btif_rx_thread() -> parser_data() in
+ * process/sleepable context - NOT irq/tasklet context as first assumed. A
+ * raw spinlock here was wrong: code reached from this dispatch (STP debug
+ * packet logging) itself takes a sleepable mutex (osal_lock_sleepable_lock),
+ * and holding a spinlock across that hit "BUG: sleeping function called
+ * from invalid context". Use a mutex instead - still serializes this
+ * dispatch (in case some other, less-common path also calls in) without
+ * forcing atomic context on code that isn't atomic-safe.
+ */
+static DEFINE_MUTEX(g_stp_parser_lock);
 unsigned int g_coredump_mode = 0;
 #define REMOVE_USELESS_LOG 1
 
@@ -2061,14 +2081,28 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					STP_WARN_FUNC("Now it's inband reset process and drop packet.\n");
 			} else {
 				STP_ERR_FUNC("The CRC of packet is error !!!\n");
-				/* George FIXME: error handling mechanism shall be refined */
-				stp_change_rx_state(MTKSTP_RESYNC1);
+				/*
+				 * George FIXME (original vendor comment, kept - this
+				 * really was a known weak point): RESYNC1 waits for 4
+				 * continuous 0x7f bytes, which this chip's BTIF
+				 * firmware never sends. Confirmed on real hardware:
+				 * a CRC failure here consistently coincides with the
+				 * chip interrupting a routine heartbeat mid-frame to
+				 * start emitting a real STP_TASK_INDX/INFO_TASK_INDX
+				 * coredump message (its own header decodes cleanly as
+				 * such) - RESYNC1 would just discard that message
+				 * forever waiting for a pattern that's never coming,
+				 * silently losing our only chance to see why the chip
+				 * crashed and to trigger the existing whole-chip-reset
+				 * recovery path below (case MTKSTP_FW_MSG). Go back to
+				 * plain MTKSTP_SYNC instead so the very next byte
+				 * (start of that real frame) gets a fair chance to
+				 * resync immediately, rather than after a fabricated
+				 * mandatory delay.
+				 */
+				stp_change_rx_state(MTKSTP_SYNC);
 				stp_core_ctx.rx_counter = 0;
 
-				/* since checksum error is usually related to interface
-				 * buffer overflow, so we just let timeout mechanism to
-				 * handle such error.
-				 */
 				STP_TRACE_FUNC("--\n");
 				/* return and purge COMM port */
 				return -1;
@@ -2111,6 +2145,28 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 				osal_assert(0);
 			}
 
+			/*
+			 * Found on real hardware: an MTKSTP_FW_MSG message (f/w
+			 * assert/coredump text) spans many STP frames, and
+			 * parser.length accumulates across all of them with
+			 * nothing here capping it against MTKSTP_BUFFER_SIZE. A
+			 * coredump long enough eventually pushes rx_counter to
+			 * exactly MTKSTP_BUFFER_SIZE, at which point the NUL
+			 * terminator write below (rx_buf[rx_counter] = '\0')
+			 * lands one byte past the end of rx_buf[] - a real
+			 * off-by-one overflow that silently corrupts whatever
+			 * kernel memory follows it, only crashing later in a
+			 * totally unrelated code path. Clamp so neither the
+			 * memcpy nor the NUL write below can go past the buffer,
+			 * reserving one byte for the terminator; a coredump this
+			 * long just gets truncated instead of overflowing.
+			 */
+			if (stp_core_ctx.parser.length > MTKSTP_BUFFER_SIZE - 1) {
+				STP_ERR_FUNC("FW_MSG length 0x%x exceeds rx_buf, truncating\n",
+					     stp_core_ctx.parser.length);
+				stp_core_ctx.parser.length = MTKSTP_BUFFER_SIZE - 1;
+			}
+
 			remain_length = stp_core_ctx.parser.length - stp_core_ctx.rx_counter;
 			if (i >= remain_length) {
 				osal_memcpy(stp_core_ctx.rx_buf + stp_core_ctx.rx_counter, p_data,
@@ -2121,6 +2177,18 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 				stp_change_rx_state(MTKSTP_SYNC);
 				*(stp_core_ctx.rx_buf + stp_core_ctx.rx_counter) = '\0';
 				/* STP_ERR_FUNC("%s [%d]\n", stp_core_ctx.rx_buf, stp_core_ctx.rx_counter); */
+				/*
+				 * osal_dbg_assert_aee() below formats this same text through
+				 * a fixed 256-byte buffer (DBG_LOG_STR_SIZE), with rx_buf
+				 * passed in TWICE (module + detail_description) - the actual
+				 * connsys f/w assert/coredump text is len<=2048 and gets
+				 * silently truncated away there. Print it here, full and
+				 * unconditionally, so we can actually read why the chip
+				 * firmware crashed.
+				 */
+				pr_err("biscuit-connsys-msg: type=%d len=%u full text follows:\n%s\n",
+				       stp_core_ctx.parser.type, stp_core_ctx.rx_counter,
+				       stp_core_ctx.rx_buf);
 #if 0
 				if ((stp_core_ctx.rx_counter == 1) && (stp_core_ctx.rx_buf[0] == 0xFF)) {
 					/* For MT6620, enable/disable coredump function is controlled by
@@ -2164,8 +2232,10 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					osal_dbg_assert_aee(stp_core_ctx.rx_buf, stp_core_ctx.rx_buf);
 					/*Whole Chip Reset Procedure Invoke */
 					if (STP_IS_ENABLE_RST(stp_core_ctx)) {
+						pr_err("biscuit-connsys-msg: f_autorst_en set, queuing whole-chip reset now\n");
 						STP_SET_READY(stp_core_ctx, 0);
 						stp_btm_notify_wmt_rst_wq(STP_BTM_CORE(stp_core_ctx));
+						pr_err("biscuit-connsys-msg: stp_btm_notify_wmt_rst_wq() returned\n");
 					} else {
 						STP_INFO_FUNC
 						    ("No to launch whole chip reset! for debugging purpose\n");
@@ -2252,6 +2322,7 @@ int mtk_wcn_stp_parser_data(UINT8 *buffer, UINT32 length)
     /*----------------------------------------------------------------*/
 	/* George FIXME: WHY or HOW can we reduct the locked region? */
 	/*flags = (*sys_mutex_lock)(stp_core_ctx.stp_mutex); */
+	mutex_lock(&g_stp_parser_lock);
 	i = length;
 	p_data = (UINT8 *) buffer;
 
@@ -2284,6 +2355,7 @@ int mtk_wcn_stp_parser_data(UINT8 *buffer, UINT32 length)
 
 	/* George FIXME: WHY or HOW can we reduct the locked region? */
 	/*(*sys_mutex_unlock)(stp_core_ctx.stp_mutex, flags); */
+	mutex_unlock(&g_stp_parser_lock);
 	STP_TRACE_FUNC("--\n");
 	return ret;
 }

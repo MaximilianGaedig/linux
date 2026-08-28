@@ -83,6 +83,16 @@
 	 *  x21        primary_entry() .. start_kernel()        FDT pointer passed at boot in x0
 	 */
 SYM_CODE_START(primary_entry)
+	/* DEBUG: literally the first instructions the kernel executes,
+	 * before SP is set up or anything else runs. Raw MMIO UART write,
+	 * no dependency on any kernel state at all - the most direct
+	 * possible proof that primary_entry is reached. Only x0 (FDT
+	 * pointer) is live per the boot protocol at this point, so x2/x3
+	 * are used as scratch without saving. */
+	ldr	x2, =0x11002000
+	mov	w3, #'K'
+	strb	w3, [x2]
+
 	bl	record_mmu_state
 	bl	preserve_boot_args
 

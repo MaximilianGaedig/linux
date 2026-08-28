@@ -567,6 +567,7 @@ extern UINT_32 u4MemAllocCnt, u4MemFreeCnt;
 
 
 extern struct delayed_work sched_workq;
+extern BOOLEAN wlanIsMcWorkInited(VOID);
 
 #if defined(MT6620) && CFG_MULTI_ECOVER_SUPPORT
 extern ENUM_WMTHWVER_TYPE_T mtk_wcn_wmt_hwver_get(VOID);

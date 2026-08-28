@@ -30,8 +30,15 @@
 *                                 M A C R O S
 ********************************************************************************
 */
+/*
+ * Was an absolute Android rootfs path ("/system/etc/firmware/WMT_SOC.cfg")
+ * we don't have. This file already sits right next to the connsys patch
+ * in the vendor firmware bundle - loaded the same way now, as a bare
+ * name via request_firmware() (wmt_dev_read_file() in wmt_dev.c), same
+ * namespace as BISCUIT_WMT_PATCH_NAME in wmt_ic_soc.c.
+ */
 #define CUST_CFG_WMT "WMT_SOC.cfg"
-#define CUST_CFG_WMT_PREFIX "/system/etc/firmware/"
+#define CUST_CFG_WMT_PREFIX "mediatek/"
 
 /*******************************************************************************
 *                    E X T E R N A L   R E F E R E N C E S

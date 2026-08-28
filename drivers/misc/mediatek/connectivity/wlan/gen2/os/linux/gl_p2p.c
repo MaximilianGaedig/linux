@@ -1245,6 +1245,20 @@ BOOLEAN glP2pCreateWirelessDevice(P_GLUE_INFO_T prGlueInfo)
 
 	prNetDev->ieee80211_ptr = prWdev;
 	prWdev->netdev = prNetDev;
+	/*
+	 * iftype is otherwise left at its kzalloc'd default of
+	 * NL80211_IFTYPE_UNSPECIFIED until glP2pChangeType() assigns a real
+	 * type (AP/P2P_CLIENT) on first actual use. Confirmed on real
+	 * hardware: register_netdev() below fires cfg80211's netdev
+	 * notifier immediately, which WARN_ONs on an UNSPECIFIED iftype at
+	 * registration time and appears to leave some of its internal
+	 * per-wdev state half set up as a result - a NULL-workqueue crash
+	 * was observed shortly after, in an unrelated later delayed_work
+	 * callback. Set a sane default before registering; glP2pChangeType
+	 * already reassigns this dynamically later and doesn't care what
+	 * the initial value was.
+	 */
+	prWdev->iftype = NL80211_IFTYPE_STATION;
 
 #if CFG_TCP_IP_CHKSUM_OFFLOAD
 	prNetDev->features = NETIF_F_IP_CSUM;

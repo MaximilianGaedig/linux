@@ -2077,15 +2077,33 @@ done:
 #endif
 
 #if CFG_WMT_MULTI_PATCH
+/*
+ * WMT_CTRL_PATCH_SEARCH's real implementation (wmt_ctrl_patch_search() in
+ * wmt_ctrl.c) sends an upper-layer "srh_patch" command over /dev/stpwmt
+ * and blocks waiting for a userspace launcher daemon to search the
+ * filesystem and hand back a patch name/count via ioctl - the stock
+ * Amazon kernel works exactly the same way (confirmed by diffing against
+ * amazon-biscuit-kernel's own wmt_ctrl.c). This board has exactly one
+ * combo chip variant and one patch file, so there's nothing to search:
+ * register it directly, matching what mainline's own MediaTek Bluetooth
+ * drivers (drivers/bluetooth/btmtk.c) do - request_firmware() with a
+ * bare name, no userspace round-trip, no launcher daemon needed.
+ */
+#define BISCUIT_WMT_PATCH_NAME "mediatek/biscuit-connsys-patch.bin"
+
+static WMT_PATCH_INFO gBiscuitPatchInfo;
+
 static INT32 mtk_wcn_soc_patch_info_prepare(VOID)
 {
-	INT32 iRet = -1;
-	WMT_CTRL_DATA ctrlData;
+	osal_memset(&gBiscuitPatchInfo, 0, osal_sizeof(gBiscuitPatchInfo));
+	gBiscuitPatchInfo.dowloadSeq = 1;
+	osal_strncpy(gBiscuitPatchInfo.patchName, BISCUIT_WMT_PATCH_NAME,
+		     osal_sizeof(gBiscuitPatchInfo.patchName) - 1);
 
-	ctrlData.ctrlId = WMT_CTRL_PATCH_SEARCH;
-	iRet = wmt_ctrl(&ctrlData);
+	wmt_lib_set_patch_num(1);
+	wmt_lib_set_patch_info(&gBiscuitPatchInfo);
 
-	return iRet;
+	return 0;
 }
 
 static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)

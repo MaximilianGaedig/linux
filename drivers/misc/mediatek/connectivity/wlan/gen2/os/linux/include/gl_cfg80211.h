@@ -53,6 +53,7 @@ extern UINT_8 keyStructBuf[100];	/* add/remove key shared buffer */
 #endif
 
 extern struct delayed_work sched_workq;
+extern BOOLEAN wlanIsMcWorkInited(VOID);
 
 /*******************************************************************************
 *                              C O N S T A N T S
