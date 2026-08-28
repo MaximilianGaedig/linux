@@ -1083,12 +1083,32 @@ static INT32 mtk_wcn_soc_sw_init(P_WMT_HIF_CONF pWmtHifConf)
 			WMT_ERR_FUNC("patch dwn fail (%d),patch_index(%d)\n", iRet, patch_index);
 			return -7;
 		}
-		iRet = wmt_core_init_script(init_table_3, osal_array_size(init_table_3));
-		if (iRet) {
-			WMT_ERR_FUNC("init_table_3 fail(%d)\n", iRet);
-			return -8;
-		}
 	}
+
+	/*
+	 * Activate the patches once, after all of them are in place.
+	 *
+	 * init_table_3 is a single WMT_RESET, and the reset is what makes the
+	 * chip restart running the patched ROM. Upstream issues it inside the
+	 * loop, once per patch, which only makes sense if each patch is
+	 * independently activatable. These two are not: ROMv2_lm_patch_1_0 and
+	 * _1_1 are parts of one set, loaded to 0x00060000 and 0xf00e0000, and
+	 * resetting between them leaves the chip unable to accept the second -
+	 * the address command for patch 1 times out, and STP then reports a TX
+	 * timeout with its sequence numbers restarted.
+	 *
+	 * Do NOT flush the host STP context here. The chip keeps its sequence
+	 * numbering across this reset rather than restarting it - flushing the
+	 * host side makes the host expect rxseq 0 while the chip sends 1, and
+	 * STP then rejects every frame ("expected_rxseq = 0, parser.seq = 1").
+	 * Just give the restart time to finish.
+	 */
+	iRet = wmt_core_init_script(init_table_3, osal_array_size(init_table_3));
+	if (iRet) {
+		WMT_ERR_FUNC("init_table_3 fail(%d)\n", iRet);
+		return -8;
+	}
+	osal_sleep_ms(100);
 
 #if CFG_WMT_PATCH_DL_OPTM
 	if (0x0279 == wmt_ic_ops_soc.icId) {
@@ -2323,50 +2343,44 @@ static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)
 		 * 0x008a, SwVer 0x008a) is byte-identical between the two files.
 		 */
 		/*
-		 * Supply the address the stock launcher would have supplied.
+		 * Supply the address the stock launcher supplies.
 		 *
 		 * Disassembling /system/bin/6620_launcher recovered from this
-		 * device settles where it comes from. Around the
-		 * "read patch info:0x%02x,0x%02x,0x%02x,0x%02x" call site it does:
+		 * device settles it. Around the "read patch info" call site:
 		 *
-		 *   open(patch)                  fd
+		 *   open(patch)
 		 *   lseek(fd, 22, SEEK_SET)
-		 *   read(fd, buf+1, 1)           byte 22
-		 *   read(fd, buf+0, 1)           byte 23   (stored byte-swapped)
-		 *   ...compare against the expected SW version, and only if it
-		 *      matches:
-		 *   read(fd, buf, 4)             bytes 24..27
+		 *   read(fd, buf+1, 1)        byte 22   \ SW version,
+		 *   read(fd, buf+0, 1)        byte 23   / stored byte-swapped
+		 *   w6 = expected_swver ^ actual;  b8 = w6 & 0xff
+		 *   if (b8 != 0) give up on this file
+		 *   read(fd, buf, 4)          bytes 24..27
+		 *   ...
+		 *   str w7, [x25, #4]         addRess = bytes 24..27
+		 *   str b8, [x9, #4]          addRess[0] = b8, which is 0 here
 		 *
-		 * so the four bytes it hands the driver via
-		 * WMT_IOCTL_SET_PATCH_INFO are file offsets 24..27 - which is
-		 * exactly the u4PatchVer field of the 28-byte WMT_PATCH header.
-		 * They are per-patch:
-		 *   ROMv2_lm_patch_1_0_hdr.bin -> 22 00 06 00  (0x00060022)
-		 *   ROMv2_lm_patch_1_1_hdr.bin -> 21 00 0e f0  (0xf00e0021)
+		 * That last store is the part that matters and the part that is
+		 * easy to miss: after copying all four bytes in, the launcher
+		 * overwrites the LOW byte with the version-comparison result,
+		 * which is zero on the path that accepts the file. So the address
+		 * handed to the driver is bytes 24..27 with the low byte cleared:
 		 *
-		 * The name u4PatchVer is a red herring; the launcher treats the
-		 * field as the patch's destination address, and the two files
-		 * differ here while every field before them (date, platform
-		 * "1636", HwVer 0x008a, SwVer 0x008a) is byte-identical.
+		 *   ROMv2_lm_patch_1_0_hdr.bin  22 00 06 00 -> 0x00060000
+		 *   ROMv2_lm_patch_1_1_hdr.bin  21 00 0e f0 -> 0xf00e0000
 		 *
-		 * This was tried once before and rejected because the chip still
-		 * asserted - but that was with the EMI aperture misprogrammed and
-		 * the ROM patch destination being clobbered to zero, i.e. a
-		 * completely different machine state, so the result said nothing
-		 * about this field.
-		 * VERDICT: tried on hardware in the current, healthy state and it
-		 * is WRONG. Feeding 0x00060022 through as the address makes the
-		 * chip assert immediately (asser_type=4), reproducing the original
-		 * failure. So the earlier rejection of this field stands, and now
-		 * for a good reason rather than a confounded one: whatever the
-		 * launcher does with those four bytes, handing them to
-		 * WMT_PATCH_P_ADDRESS_CMD verbatim is not it.
-		 *
-		 * Keep the command's built-in default (0x01003f00, bytes
-		 * 00 3f 00 01). With it both patches download and the full init
-		 * script completes.
+		 * Both are clean page-aligned load addresses, and 0x00060000 is
+		 * exactly CFG_FW_LOAD_ADDRESS for this chip family. Passing the
+		 * raw four bytes instead (0x00060022) makes the chip assert
+		 * immediately - which is what happened the two times this field
+		 * was tried before and wrongly written off as "u4PatchVer is a
+		 * version, not an address". It is an address; the low byte just
+		 * is not part of it.
 		 */
-		WMT_DBG_FUNC("no per-patch address; keeping built-in default\n");
+		{
+			UINT32 u4PatchAddr = patchHdr->u4PatchVer & 0xFFFFFF00;
+
+			osal_memcpy(&WMT_PATCH_P_ADDRESS_CMD[12], &u4PatchAddr, osal_sizeof(u4PatchAddr));
+		}
 	} else {
 		osal_memcpy(&WMT_PATCH_P_ADDRESS_CMD[12], addressByte, osal_sizeof(addressByte));
 	}
