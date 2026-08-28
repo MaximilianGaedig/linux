@@ -60,7 +60,6 @@ endif
 # code, and wmt_chrdev_wifi exports the symbols wlan/gen2 links against. Having
 # it as a module means a driver change is an rmmod/insmod instead of a kernel
 # rebuild, a 15MB flash and a reboot - seconds instead of minutes.
-subdir-ccflags-y += -DBISCUIT_WLAN_GEN2_IS_MODULE
-obj-m += wlan/gen2/
+obj-$(CONFIG_MTK_COMBO_WIFI) += wlan/gen2/
 
 endif # CONFIG_MTK_COMBO
