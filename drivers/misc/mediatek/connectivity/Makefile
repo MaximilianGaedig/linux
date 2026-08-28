@@ -54,6 +54,13 @@ ifneq ($(filter CONSYS_%,$(COMBO_CHIP)),)
 obj-y += common/conn_soc/
 endif
 
-obj-$(CONFIG_MTK_COMBO_WIFI) += wlan/gen2/
+# Build the WiFi driver as a loadable module even though CONFIG_MTK_COMBO_WIFI
+# is y. Everything else here has to stay built-in: conn_soc owns the
+# reserved-memory node via RESERVEDMEM_OF_DECLARE, which only runs for built-in
+# code, and wmt_chrdev_wifi exports the symbols wlan/gen2 links against. Having
+# it as a module means a driver change is an rmmod/insmod instead of a kernel
+# rebuild, a 15MB flash and a reboot - seconds instead of minutes.
+subdir-ccflags-y += -DBISCUIT_WLAN_GEN2_IS_MODULE
+obj-m += wlan/gen2/
 
 endif # CONFIG_MTK_COMBO
