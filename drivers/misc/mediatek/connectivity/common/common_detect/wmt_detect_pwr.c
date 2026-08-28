@@ -95,10 +95,18 @@ int _wmt_detect_read_gpio_input(unsigned int id)
 static int wmt_detect_chip_pwr_on(void)
 {
 	int retval = -1;
-	/*setting validiation check*/
+	/*
+	 * setting validiation check. WIFI_EINT is intentionally not required
+	 * here: biscuit's WB_* pin group (see mt8163-amazon-common.dtsi) only
+	 * breaks out RSTB/SCLK/SDATA/SEN - there's no dedicated fifth pin for
+	 * it, consistent with this being an SDIO combo chip that signals
+	 * card-side interrupts in-band over the SDIO DAT1 line rather than a
+	 * separate GPIO. Every other use site below already no-ops safely on
+	 * INVALID_PIN_ID (see e.g. _wmt_detect_output_high()), so gating the
+	 * whole power-on sequence on it here was over-strict for this board.
+	 */
 	if ((INVALID_PIN_ID == gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num) ||
-		(INVALID_PIN_ID == gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num) ||
-		(INVALID_PIN_ID == gpio_ctrl_info.gpio_ctrl_state[GPIO_WIFI_EINT_PIN].gpio_num)) {
+		(INVALID_PIN_ID == gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num)) {
 		WMT_DETECT_ERR_FUNC("WMT-DETECT: either PMU(%d) or RST(%d) or WIFI_EINT(%d) is not set\n",
 				gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num,
 				gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num,
