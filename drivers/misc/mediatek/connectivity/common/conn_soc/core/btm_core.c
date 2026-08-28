@@ -510,9 +510,24 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 		 * assert itself is fixed and the EMI MPU is programmed, if the
 		 * dump contents are ever actually wanted.
 		 */
-		STP_BTM_ERR_FUNC("paged dump skipped (bring-up): coredump disabled and the dump path corrupts memory\n");
-		ret = 0;
-		break;
+		/*
+		 * Re-enabled. This was skipped because the dump path polls
+		 * connsys EMI shared memory while the chip is mid-assert, and
+		 * back then that corrupted kernel memory - the chip was DMA-ing
+		 * outside its reserved window because the EMI aperture register
+		 * was misprogrammed (0x15f4 instead of 0x11f4, aiming at
+		 * 0x9f400000, past the end of the RAM fitted here). That bug is
+		 * fixed, so the dump can run where it is supposed to.
+		 *
+		 * It is wanted now: the WiFi firmware starts, writes "INIT" and
+		 * 200 into its mailboxes, and then asserts during its own
+		 * initialisation. This path is the chip telling us why, and it
+		 * is the only source of that answer we have - the same image
+		 * initialises fine under FireOS on this very unit, so the reason
+		 * is something about our environment that nothing else has
+		 * surfaced.
+		 */
+		STP_BTM_INFO_FUNC("paged dump: running (re-enabled to capture the WiFi firmware assert)\n");
 
 		g_paged_dump_len = 0;
 		issue_type = STP_FW_ASSERT_ISSUE;
