@@ -2204,12 +2204,24 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					(stp_core_ctx.parser.type == STP_TASK_INDX)) {
 					if (0 != stp_core_ctx.rx_counter) {
 						STP_SET_READY(stp_core_ctx, 0);
-						mtk_wcn_stp_ctx_save();
-						STP_INFO_FUNC("++ start to read paged dump and paged trace ++\n");
-						stp_btm_notify_wmt_dmp_wq(stp_core_ctx.btm);
-						stp_btm_notify_wmt_trace_wq(stp_core_ctx.btm);
-						STP_INFO_FUNC("++ start to read paged dump and paged trace --\n");
-
+						/*
+						 * BRING-UP BISECT: the ctx-save +
+						 * paged dump/trace workqueues are
+						 * skipped here. A chip-side f/w
+						 * assert is reliably followed a
+						 * few seconds later by kernel heap
+						 * corruption (slab metadata, freed
+						 * from unrelated paths like
+						 * __fput). Skipping the paged-dump
+						 * handler alone was not enough, so
+						 * cut the whole assert-handling
+						 * block to establish whether the
+						 * corruption originates in this
+						 * code or in DMA the chip performs
+						 * on its own (CONSYS_EMI_MPU_SETTING
+						 * is 0, so nothing fences it).
+						 */
+						STP_INFO_FUNC("f/w assert: dump/trace handling skipped (bring-up bisect)\n");
 					}
 					STP_INFO_FUNC("[len=%d][type=%d]\n%s\n", stp_core_ctx.rx_counter,
 					       stp_core_ctx.parser.type, stp_core_ctx.rx_buf);
