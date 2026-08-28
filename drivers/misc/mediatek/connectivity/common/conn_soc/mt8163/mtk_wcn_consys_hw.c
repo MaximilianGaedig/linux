@@ -411,6 +411,35 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			}
 		}
 
+		/*
+		 * Enable the AP->CONNSYS 26MHz oscillator path before taking
+		 * the CONNSYS CPU out of reset.
+		 *
+		 * CONSYS_AP2CONN_OSC_EN_BIT was defined in mtk_wcn_consys_hw.h
+		 * but never actually set anywhere in this port - only the
+		 * WAKEUP bit was, and only from the force-assert debug path.
+		 * Without it the chip still answers STP over BTIF on whatever
+		 * clock it comes up with (the whole init handshake -
+		 * query stp / set stp / power-on DLM - completes with valid
+		 * CRCs), but it has no stable 26M reference for its own PLL,
+		 * so the moment the init script tells it to switch its MCU
+		 * clock to 138.67MHz it asserts and starts dumping core -
+		 * which is exactly the failure this port has been hitting,
+		 * every time, immediately after "set mcu clk to 138.67MH"
+		 * and before patch download is ever reached.
+		 *
+		 * Note the step-11 comment just below already assumed "26M is
+		 * ready now" - that assumption simply had nothing making it
+		 * true.
+		 */
+		CONSYS_REG_WRITE(conn_reg.topckgen_base + CONSYS_AP2CONN_OSC_EN_OFFSET,
+				 CONSYS_REG_READ(conn_reg.topckgen_base +
+						 CONSYS_AP2CONN_OSC_EN_OFFSET) |
+				 CONSYS_AP2CONN_OSC_EN_BIT);
+		WMT_PLAT_DBG_FUNC("AP2CONN OSC_EN set, reg now 0x%08x\n",
+				  CONSYS_REG_READ(conn_reg.topckgen_base +
+						  CONSYS_AP2CONN_OSC_EN_OFFSET));
+
 		/*3.assert CONNSYS CPU SW reset  0x10007018 "[12]=1'b1  [31:24]=8'h88 (key)" */
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		reset_control_reset(rstc);
