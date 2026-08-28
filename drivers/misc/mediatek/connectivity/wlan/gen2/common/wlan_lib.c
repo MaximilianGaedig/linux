@@ -985,7 +985,8 @@ extern phys_addr_t gConEmiPhyBase;
  *     Thumb encoding of "b ." so the MCU freezes if it fetches from there.
  *     Inconclusive: the PC read back ROM addresses rather than freezing.
  */
-#define BISCUIT_EMI_SCAN_TEST 1
+/* #define BISCUIT_EMI_SCAN_TEST 1 */
+/* #define BISCUIT_START_TRAP_TEST 1 */
 
 /*******************************************************************************
 *                              C O N S T A N T S
@@ -1679,6 +1680,42 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				       i, aucGot[0], aucGot[1], aucGot[2], aucGot[3],
 				       aucGot[4], aucGot[5], aucGot[6], aucGot[7]);
 			}
+
+#ifdef BISCUIT_START_TRAP_TEST
+			/*
+			 * Instrument the start path itself.
+			 *
+			 * Everything so far has been inferred from where the MCU
+			 * program counter happens to be, which is weak evidence:
+			 * CONN_MCU_CPUPCR is a real register, but a wandering PC
+			 * says little about whether the chip honoured the start
+			 * address or is just running off into whatever it finds.
+			 *
+			 * So make the answer unambiguous. Put "b ." (Thumb
+			 * 0xe7fe, a two-byte branch to itself) at the very start
+			 * of the EMI window and point INIT_CMD_ID_WIFI_START at
+			 * that address instead of the firmware's own entry. If
+			 * the chip honours the start address and can fetch from
+			 * EMI, the PC must come to rest on 0xf0006000 and stay
+			 * there. Anything else - a wandering PC, ROM addresses -
+			 * means control never got there, and the problem is in
+			 * the start hand-off rather than in the image.
+			 */
+			{
+				void __iomem *pucTrap = ioremap(gConEmiPhyBase + 0x6000, 8);
+
+				if (pucTrap) {
+					writew(0xe7fe, pucTrap + 0);
+					writew(0xe7fe, pucTrap + 2);
+					writew(0xe7fe, pucTrap + 4);
+					writew(0xe7fe, pucTrap + 6);
+					iounmap(pucTrap);
+					prRegInfo->u4StartAddress = 0xf0006000;
+					DBGLOG(INIT, WARN,
+					       "biscuit-starttrap: 'b .' planted at 0xf0006000, start address overridden to it\n");
+				}
+			}
+#endif
 		}
 #if !CFG_ENABLE_FW_DOWNLOAD_ACK
 		/* Send INIT_CMD_ID_QUERY_PENDING_ERROR command and wait for response */
