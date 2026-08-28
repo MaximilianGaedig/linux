@@ -985,7 +985,7 @@ extern phys_addr_t gConEmiPhyBase;
  *     Thumb encoding of "b ." so the MCU freezes if it fetches from there.
  *     Inconclusive: the PC read back ROM addresses rather than freezing.
  */
-/* #define BISCUIT_EMI_SCAN_TEST 1 */
+#define BISCUIT_EMI_SCAN_TEST 1
 
 /*******************************************************************************
 *                              C O N S T A N T S
@@ -1689,6 +1689,8 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		}
 #endif
 
+
+
 		/* 4. send Wi-Fi Start command */
 		DBGLOG(INIT, INFO, "<wifi> send Wi-Fi Start command\n");
 #if CFG_OVERRIDE_FW_START_ADDRESS
@@ -1745,14 +1747,31 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				 * this region at all, or is only reading from it.
 				 */
 				if (gConEmiPhyBase) {
-					void __iomem *pucChk = ioremap(gConEmiPhyBase, 0x6000);
+					/*
+					 * Scan the ENTIRE 2MB, not just the 24KB
+					 * scratch. The region was zeroed before
+					 * the download and only the two section
+					 * ranges were filled by hand afterwards,
+					 * so a non-zero byte anywhere else - the
+					 * gaps between sections, the coredump
+					 * area at +512KB, the tail - can only
+					 * have come from the chip. This answers
+					 * the question the aperture, TOPAXI and
+					 * MPU checks could not: whether the chip
+					 * ever writes this DRAM at all.
+					 */
+					void __iomem *pucChk = ioremap(gConEmiPhyBase, 2 * 1024 * 1024);
 
 					if (pucChk) {
-						UINT_32 u4Off, u4NonZero = 0, u4First = 0xffffffff;
+						UINT_32 u4Off, u4B, u4NonZero = 0, u4First = 0xffffffff;
 						UINT_8 aucChunk[256];
 
-						for (u4Off = 0; u4Off < 0x6000; u4Off += sizeof(aucChunk)) {
-							UINT_32 u4B;
+						for (u4Off = 0; u4Off < 2 * 1024 * 1024; u4Off += sizeof(aucChunk)) {
+							/* skip what we wrote ourselves */
+							if (u4Off >= 0x6000 && u4Off < 0x6000 + 0x3f1c0)
+								continue;
+							if (u4Off >= 0x4e000 && u4Off < 0x4e000 + 0x15010)
+								continue;
 
 							memcpy_fromio(aucChunk, pucChk + u4Off, sizeof(aucChunk));
 							for (u4B = 0; u4B < sizeof(aucChunk); u4B++) {
@@ -1765,7 +1784,7 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 						}
 						iounmap(pucChk);
 						DBGLOG(INIT, ERROR,
-						       "biscuit-emiwr: %u non-zero bytes in the 24KB scratch below the image, first at +0x%x (0 => MCU never wrote EMI)\n",
+						       "biscuit-emiwr: %u non-zero bytes across the whole 2MB outside what we wrote, first at +0x%x (0 => chip never wrote this DRAM at all)\n",
 						       u4NonZero, u4First);
 					}
 				}

@@ -494,6 +494,106 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		mtk_wcn_consys_power_on();
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
+
+		/*
+		 * Disable AXI bus protection for CONNSYS.
+		 *
+		 * This step was missing entirely from this port - the offsets
+		 * were defined in the header but nothing ever wrote them.
+		 *
+		 * While these bits are set the bus fabric fences CONNSYS off
+		 * its AXI master port, so the chip cannot reach DRAM. That is
+		 * silent in exactly the way we have been chasing: firmware
+		 * downloads whose destination is EMI (0xf0000000 and up - two
+		 * of the four sections of WIFI_RAM_CODE_8163, and the second
+		 * ROM patch, whose header carries an 0xf00e..... address) are
+		 * acknowledged by the chip with status 0 and then land nowhere.
+		 * Sweeping the whole 2MB reserved region afterwards finds no
+		 * trace of them.
+		 *
+		 * Poll STA1 until the protection has actually been released,
+		 * as the vendor driver does - the disable is not instantaneous.
+		 */
+		WMT_PLAT_DBG_FUNC("disabling CONNSYS AXI bus protection\n");
+		CONSYS_REG_WRITE(conn_reg.topckgen_base + CONSYS_TOPAXI_PROT_EN_OFFSET,
+				 CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_TOPAXI_PROT_EN_OFFSET) &
+				 ~CONSYS_PROT_MASK);
+		{
+			UINT32 u4ProtRetry = 100000;
+
+			while ((CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_TOPAXI_PROT_STA1_OFFSET)
+				& CONSYS_PROT_MASK) && u4ProtRetry--)
+				udelay(1);
+			WMT_PLAT_INFO_FUNC("biscuit-topaxi: PROT_EN=0x%08x STA1=0x%08x (mask 0x%x)%s\n",
+					   CONSYS_REG_READ(conn_reg.topckgen_base +
+							   CONSYS_TOPAXI_PROT_EN_OFFSET),
+					   CONSYS_REG_READ(conn_reg.topckgen_base +
+							   CONSYS_TOPAXI_PROT_STA1_OFFSET),
+					   (UINT32) CONSYS_PROT_MASK,
+					   u4ProtRetry ? "" : " *** TIMED OUT ***");
+		}
+
+		/*
+		 * EMI MPU region 12: let CONNSYS reach the 512KB of DRAM the
+		 * WiFi firmware lives in.
+		 *
+		 * The chip can plainly READ that memory - once the sections are
+		 * put there by hand the MCU leaves ROM and executes from
+		 * 0xf000.... - but it never WRITES it: sweeping the whole 2MB
+		 * after a download finds no trace of the two EMI-destined
+		 * sections, even though the chip acknowledges each one with
+		 * status 0. A read-allowed / write-denied asymmetry is exactly
+		 * what the EMI MPU expresses, and Amazon configures region 12
+		 * over precisely this range in their ahb_pdma.c, which mainline
+		 * has no driver for and nothing else sets up.
+		 *
+		 * On MT8163 these registers are written directly - the SMC path
+		 * in emi_reg_rw.c is a different implementation that this SoC
+		 * does not use - so no secure call is needed. EMI is at
+		 * 0x10203000; addresses are 64KB units relative to the base of
+		 * DRAM, and each of the 8 domains gets 3 permission bits.
+		 *
+		 * Amazon forbids everything except domains 2 and 7. We keep
+		 * domain 0 open as well: the AP has to be able to touch this
+		 * region too, both for the host-side section fill and to read
+		 * the area back when checking what landed.
+		 */
+		{
+			void __iomem *pucEmiReg = ioremap(0x10203000, 0x1000);
+
+			if (pucEmiReg) {
+				UINT32 u4Start = (UINT32) ((gConEmiPhyBase - 0x40000000) >> 16);
+				UINT32 u4End =
+				    (UINT32) ((gConEmiPhyBase + 512 * 1024 - 1 - 0x40000000) >> 16);
+				/* d7..d0, 3 bits each; 0 = NO_PROTECTION, 5 = FORBIDDEN */
+				UINT32 u4Low = (5 << 9) | (0 << 6) | (5 << 3) | 0;	/* d3,d2,d1,d0 */
+				UINT32 u4High = (0 << 9) | (5 << 6) | (5 << 3) | 5;	/* d7,d6,d5,d4 */
+				UINT32 u4Tmp, u4Tmp2;
+
+				WMT_PLAT_INFO_FUNC("biscuit-emimpu: before: MPUE2=0x%08x MPUK2=0x%08x MPUK2_2ND=0x%08x\n",
+						   readl(pucEmiReg + 0x0280),
+						   readl(pucEmiReg + 0x02b0),
+						   readl(pucEmiReg + 0x02b4));
+
+				u4Tmp = readl(pucEmiReg + 0x02b0) & 0xFFFF0000;
+				u4Tmp2 = readl(pucEmiReg + 0x02b4) & 0xFFFF0000;
+				/* clear access rights before moving the address window */
+				writel(0, pucEmiReg + 0x02b0);
+				writel(0, pucEmiReg + 0x02b4);
+				writel((u4Start << 16) | u4End, pucEmiReg + 0x0280);
+				writel(u4Tmp | u4Low, pucEmiReg + 0x02b0);
+				writel(u4Tmp2 | u4High, pucEmiReg + 0x02b4);
+
+				WMT_PLAT_INFO_FUNC("biscuit-emimpu: after:  MPUE2=0x%08x MPUK2=0x%08x MPUK2_2ND=0x%08x (range 0x%x-0x%x)\n",
+						   readl(pucEmiReg + 0x0280),
+						   readl(pucEmiReg + 0x02b0),
+						   readl(pucEmiReg + 0x02b4), u4Start, u4End);
+				iounmap(pucEmiReg);
+			} else {
+				WMT_PLAT_ERR_FUNC("biscuit-emimpu: ioremap of EMI failed\n");
+			}
+		}
+
 		/*11.26M is ready now, delay 10us for mem_pd de-assert */
 		udelay(10);
 		/*enable AP bus clock : connmcu_bus_pd  API: enable_clock() ++?? */
@@ -548,6 +648,34 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				 CONSYS_MCU_CFG_ACR_MBIST_BIT);
 		WMT_PLAT_DBG_FUNC("MCU_CFG ACR now 0x%08x\n",
 				  CONSYS_REG_READ(conn_reg.mcu_base + CONSYS_MCU_CFG_ACR_OFFSET));
+
+		/*
+		 * 15. Analog front end.
+		 *
+		 * These three were defined in the header when this was ported -
+		 * with exactly the vendor's values - but nothing ever wrote
+		 * them, the same way the AXI bus protection step went missing.
+		 * They configure the wireless baseband: the digital RC
+		 * calibration, the WBG PLL, and the TX path.
+		 *
+		 * This matters for the symptom we are left with. The firmware
+		 * downloads, the MCU runs it, and then the ready bit simply
+		 * never asserts - which is what you would expect if the MCU
+		 * comes up and waits on an RF/PLL block that was never brought
+		 * out of its default state.
+		 *
+		 * CONN_TOP_CR_BASE is the consys node's first reg range,
+		 * 0x18070000, mapped 0x20000 long as conn_reg.mcu_base - the
+		 * same base CONSYS_MCU_CFG_ACR_OFFSET is used against just
+		 * above - so the AFE block at +0x2000 is well inside it.
+		 */
+		CONSYS_REG_WRITE(conn_reg.mcu_base + 0x2010, CONSYS_AFE_REG_DIG_RCK_01_VALUE);
+		CONSYS_REG_WRITE(conn_reg.mcu_base + 0x2028, CONSYS_AFE_REG_WBG_PLL_02_VALUE);
+		CONSYS_REG_WRITE(conn_reg.mcu_base + 0x203c, CONSYS_AFE_REG_WBG_WB_TX_01_VALUE);
+		WMT_PLAT_INFO_FUNC("biscuit-afe: DIG_RCK_01=0x%08x WBG_PLL_02=0x%08x WBG_WB_TX_01=0x%08x\n",
+				   CONSYS_REG_READ(conn_reg.mcu_base + 0x2010),
+				   CONSYS_REG_READ(conn_reg.mcu_base + 0x2028),
+				   CONSYS_REG_READ(conn_reg.mcu_base + 0x203c));
 
 		/*16.deassert CONNSYS CPU SW reset - MCU starts running here */
 		reset_control_deassert(rstc);

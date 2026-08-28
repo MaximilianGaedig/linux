@@ -83,7 +83,18 @@ struct CONSYS_BASE_ADDRESS {
 #define CONSYS_CPUPCR_OFFSET			0x00000160
 /*AXI bus*/
 
-#define CONSYS_TOPAXI_PROT_EN_OFFSET    0x1220
+/*
+ * 0x220, not the 0x1220 the vendor header carried.
+ *
+ * The base this is added to is the consys node's third reg range,
+ * 0x10001000 - INFRACFG_AO - and it is mapped 0x1000 long, so 0x1220 lies
+ * outside the mapping entirely and faults. The companion STA1 offset just
+ * below was always 0x228, which is the giveaway: INFRACFG_AO's protection
+ * pair is PROTECTEN at 0x220 and PROTECTSTA1 at 0x228. Amazon's DT maps the
+ * same 0x1000, so 0x1220 was never reachable there either - the offset form
+ * of this register simply is not the branch their build compiles.
+ */
+#define CONSYS_TOPAXI_PROT_EN_OFFSET    0x0220
 #define CONSYS_TOPAXI_PROT_STA1_OFFSET  0x0228
 #endif
 
