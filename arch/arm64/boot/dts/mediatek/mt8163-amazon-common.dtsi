@@ -360,7 +360,17 @@
 / {
 	wifi_pwrseq: wifi-pwrseq {
 		compatible = "mmc-pwrseq-simple";
-		reset-gpios = <&pio 60 GPIO_ACTIVE_LOW>;
+		/*
+		 * pwrseq_simple_pre_power_on()/power_on() drive every GPIO in
+		 * this array to its "active" polarity together as one group
+		 * (devm_gpiod_get_array()) - listing both RST (WB_RSTB,
+		 * active-low: deasserting releases reset) and PMU_EN (WB_SEN,
+		 * active-high: asserting enables the chip) here gets both
+		 * toggled automatically before mmc core's boot-time SDIO
+		 * probe, instead of only after the too-late userspace WMT
+		 * trigger.
+		 */
+		reset-gpios = <&pio 60 GPIO_ACTIVE_LOW>, <&pio 65 GPIO_ACTIVE_HIGH>;
 		post-power-on-delay-ms = <10>;
 	};
 };
