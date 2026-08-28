@@ -499,11 +499,22 @@ INT32 wmt_conf_read_file(VOID)
 		if (0 == wmt_conf_parse(&gDevWmt, (const PINT8)gDevWmt.pWmtCfg->data, gDevWmt.pWmtCfg->size)) {
 			/*config file exists */
 			gDevWmt.rWmtGenConf.cfgExist = 1;
+			/*
+			 * Say so loudly. A silent failure here is invisible
+			 * downstream: the coex_wmt and coex_custom_feature
+			 * commands are still built and still acknowledged by
+			 * the chip, just carrying zeroed defaults instead of
+			 * this board's antenna settings.
+			 */
+			WMT_ERR_FUNC("biscuit-cfg: parsed OK, cfgExist=1 ant_mode=%d manual_ant=%d co_clock=%d\n",
+				     gDevWmt.rWmtGenConf.coex_wmt_ant_mode,
+				     gDevWmt.rWmtGenConf.coex_wmt_ext_component,
+				     gDevWmt.rWmtGenConf.co_clock_flag);
 
 			WMT_DBG_FUNC("&gDevWmt.rWmtGenConf=%p\n", &gDevWmt.rWmtGenConf);
 			ret = 0;
 		} else {
-			WMT_ERR_FUNC("wmt conf parsing fail\n");
+			WMT_ERR_FUNC("biscuit-cfg: wmt conf PARSING FAILED - coex/antenna will be defaults\n");
 			osal_assert(0);
 			ret = -1;
 		}
