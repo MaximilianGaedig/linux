@@ -1012,8 +1012,14 @@ extern INT_32 wmt_core_reg_rw_raw(UINT_32 isWrite, UINT_32 offset, PUINT_32 pVal
  * So write the entries the patch would have written. The values are taken
  * straight out of the patch's own code and all point into loaded memory:
  * 0x6xxxx is inside patch _1_0 (at 0x00060000) and 0xf00e5cxx is inside patch
- * _1_1 (at 0xf00e0000). The eighth entry (+0x1c) is a runtime value the patch
- * takes from a register, so it is left alone.
+ * _1_1 (at 0xf00e0000).
+ *
+ * The eighth entry (+0x1c) is NOT "a runtime value" as previously assumed - the
+ * patch loads it with `addi.gp $r7, #0x6a4`, and the CONNSYS ROM sets
+ * $gp = 0x020973D4 (`sethi $gp,#0x2097 ; ori $gp,$gp,#0x3d4` at ROM 0x26a,
+ * read off the chip), so it is the fixed address 0x02097A78 - a 20-byte struct
+ * the same routine zeroes just beforehand. Leaving it at 0x55555555 leaves a
+ * wild pointer in a table the firmware calls and indexes through.
  */
 static const UINT_32 g_biscuitFnTable[] = {
 	0x000608c8,	/* +0x00 */
@@ -1023,6 +1029,76 @@ static const UINT_32 g_biscuitFnTable[] = {
 	0xf00e5cc8,	/* +0x10 */
 	0xf00e5cb8,	/* +0x14 */
 	0x000612c8,	/* +0x18 */
+	0x02097a78,	/* +0x1c  = $gp + 0x6a4 */
+};
+
+/*
+ * The rest of the same routine (patch _1_0, 0x000644e4..0x000645b8).
+ *
+ * Writing only the call table above patched the crash but left everything else
+ * that routine does undone. Read off the live chip, 0x02090328 / 0x020903e4 /
+ * 0x02090414 hold *ROM* function pointers (0x4ac0, 0x37b8, 0x551c, 0x67e0 ...),
+ * i.e. the ROM installs its own default handlers into a vtable and this routine
+ * is what replaces six of those slots with the patched implementations. Because
+ * it never runs, the chip executes six unpatched ROM handlers with uninitialised
+ * state - 0x1063f0, 0x1063dc, 0x106468 and the three $gp buffers all read back
+ * as 0x55555555.
+ *
+ * Values and addresses are decoded directly from the patch:
+ *   644ea: movi $r7,#0x64350 ; swi.gp $r7,[-28608]
+ *   644f2: movi $r7,#0x64378 ; swi.gp $r7,[-28652]
+ *   644fa: movi $r7,#0x643cc ; swi.gp $r7,[-28636]
+ *   64502: movi $r7,#0x644c8 ; swi.gp $r7,[-28656]
+ *   6450a: movi $r7,#0x698c8 ; swi.gp $r7,[-28844]
+ *   64512: movi $r7,#0x643ec ; swi.gp $r7,[-28832]
+ * with $gp = 0x020973D4.
+ */
+static const struct {
+	UINT_32 u4Addr;
+	UINT_32 u4Val;
+} g_biscuitPatchVtable[] = {
+	{ 0x02090414, 0x00064350 },
+	{ 0x020903e8, 0x00064378 },
+	{ 0x020903f8, 0x000643cc },
+	{ 0x020903e4, 0x000644c8 },
+	{ 0x02090328, 0x000698c8 },
+	{ 0x02090334, 0x000643ec },
+};
+
+/*
+ * Byte/halfword stores from the same routine, expressed as masked word writes:
+ *   64526: sbi333 $r5,[$r3+#0]     with $r3 = 0x1063f0, $r5 = 8
+ *   6452a: sbi    $r4,[$r3+#8]     $r4 = -1
+ *   6452e: shi333 $r5,[$r3+#6]     $r5 = 0
+ *   64534: sbi    $r4,[$r15+#0x3dc] $r15 = 0x106000
+ */
+static const struct {
+	UINT_32 u4Addr;
+	UINT_32 u4Val;
+	UINT_32 u4Mask;
+} g_biscuitPatchData[] = {
+	{ 0x001063f0, 0x00000008, 0x000000ff },	/* byte     [0x1063f0] = 8    */
+	{ 0x001063f4, 0x00000000, 0xffff0000 },	/* halfword [0x1063f6] = 0    */
+	{ 0x001063f8, 0x000000ff, 0x000000ff },	/* byte     [0x1063f8] = 0xff */
+	{ 0x001063dc, 0x000000ff, 0x000000ff },	/* byte     [0x1063dc] = 0xff */
+};
+
+/*
+ * memset()s the routine performs through the ROM helper at 0x00012a5c:
+ *   64542: memset(0x00106468, 0,    0x30)
+ *   64554: memset($gp+0x800,  0xff, 0x10)
+ *   64566: memset($gp+0x7dc,  0xff, 0x10)
+ *   6456c: memset($gp+0x6a4,  0,    0x14)
+ */
+static const struct {
+	UINT_32 u4Addr;
+	UINT_32 u4Word;
+	UINT_32 u4Len;
+} g_biscuitPatchMemset[] = {
+	{ 0x00106468, 0x00000000, 0x30 },
+	{ 0x02097bd4, 0xffffffff, 0x10 },
+	{ 0x02097bb0, 0xffffffff, 0x10 },
+	{ 0x02097a78, 0x00000000, 0x14 },
 };
 
 /* 1 = write the table before WIFI_START */
@@ -2093,19 +2169,58 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		DBGLOG(INIT, ERROR, "biscuit-bisect: downloads done, NOT sending WIFI_START\n");
 #elif CFG_OVERRIDE_FW_START_ADDRESS
 		if (biscuit_fix_fntable) {
-			UINT_32 u4I;
+			UINT_32 u4I, u4J, u4Val, u4Back;
+			UINT_32 u4Bad = 0;
+
+			/*
+			 * Replay ROM patch _1_0's init routine (0x644e4) in the
+			 * order it performs the writes: the vtable slots and the
+			 * scalar state first, then the memsets, and only then the
+			 * call table - its last entry points at the buffer the
+			 * final memset clears, so that ordering matters.
+			 */
+			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitPatchVtable); u4I++) {
+				u4Val = g_biscuitPatchVtable[u4I].u4Val;
+				u4Back = 0;
+				wmt_core_reg_rw_raw(1, g_biscuitPatchVtable[u4I].u4Addr, &u4Val, 0xffffffff);
+				wmt_core_reg_rw_raw(0, g_biscuitPatchVtable[u4I].u4Addr, &u4Back, 0xffffffff);
+				if (u4Back != g_biscuitPatchVtable[u4I].u4Val)
+					u4Bad++;
+				DBGLOG(INIT, ERROR, "biscuit-vtable: [0x%08x] = 0x%08x (readback 0x%08x)\n",
+				       g_biscuitPatchVtable[u4I].u4Addr,
+				       g_biscuitPatchVtable[u4I].u4Val, u4Back);
+			}
+
+			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitPatchData); u4I++) {
+				u4Val = g_biscuitPatchData[u4I].u4Val;
+				wmt_core_reg_rw_raw(1, g_biscuitPatchData[u4I].u4Addr, &u4Val,
+						    g_biscuitPatchData[u4I].u4Mask);
+			}
+
+			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitPatchMemset); u4I++) {
+				for (u4J = 0; u4J < g_biscuitPatchMemset[u4I].u4Len; u4J += 4) {
+					u4Val = g_biscuitPatchMemset[u4I].u4Word;
+					wmt_core_reg_rw_raw(1, g_biscuitPatchMemset[u4I].u4Addr + u4J,
+							    &u4Val, 0xffffffff);
+				}
+			}
 
 			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitFnTable); u4I++) {
 				UINT_32 u4Addr = 0x001077e0 + u4I * 4;
-				UINT_32 u4Val = g_biscuitFnTable[u4I];
-				UINT_32 u4Back = 0;
-				INT_32 iW = wmt_core_reg_rw_raw(1, u4Addr, &u4Val, 0xffffffff);
 
+				u4Val = g_biscuitFnTable[u4I];
+				u4Back = 0;
+				wmt_core_reg_rw_raw(1, u4Addr, &u4Val, 0xffffffff);
 				wmt_core_reg_rw_raw(0, u4Addr, &u4Back, 0xffffffff);
+				if (u4Back != g_biscuitFnTable[u4I])
+					u4Bad++;
 				DBGLOG(INIT, ERROR,
-				       "biscuit-fntable: [0x%08x] = 0x%08x (wr=%d, readback 0x%08x)\n",
-				       u4Addr, g_biscuitFnTable[u4I], iW, u4Back);
+				       "biscuit-fntable: [0x%08x] = 0x%08x (readback 0x%08x)\n",
+				       u4Addr, g_biscuitFnTable[u4I], u4Back);
 			}
+
+			DBGLOG(INIT, ERROR, "biscuit-patchinit: replayed 0x644e4, %u bad readbacks\n",
+			       u4Bad);
 		}
 
 		wlanConfigWifiFunc(prAdapter, TRUE, prRegInfo->u4StartAddress);
@@ -5092,6 +5207,25 @@ WLAN_STATUS wlanQueryNicCapability(IN P_ADAPTER_T prAdapter)
 	prAdapter->fgIsHw5GBandDisabled = (BOOLEAN) prEventNicCapability->ucHw5GBandDisabled;
 	prAdapter->fgIsEepromUsed = (BOOLEAN) prEventNicCapability->ucEepromUsed;
 	prAdapter->fgIsEfuseValid = (BOOLEAN) prEventNicCapability->ucEfuseValid;
+
+	/*
+	 * Where the firmware is getting its RF calibration from.
+	 *
+	 * MediaTek's own documentation states RF parameters come from EEPROM or
+	 * eFuse and that this source takes priority over anything the host
+	 * supplies. The chip reports which it is using in this event, and the
+	 * driver has always stored these three flags without ever printing them
+	 * - so on a board with no NVRAM (ours) there was no way to tell whether
+	 * the firmware had usable calibration at all. Relevant because 2.4GHz
+	 * receives nothing while 5GHz works.
+	 */
+	DBGLOG(INIT, WARN,
+	       "biscuit-cal: EepromUsed=%u EfuseValid=%u Hw5GDisabled=%u RfCalFail=%u BbCalFail=%u\n",
+	       prEventNicCapability->ucEepromUsed,
+	       prEventNicCapability->ucEfuseValid,
+	       prEventNicCapability->ucHw5GBandDisabled,
+	       prEventNicCapability->ucRfCalFail,
+	       prEventNicCapability->ucBbCalFail);
 	prAdapter->fgIsEmbbededMacAddrValid = (BOOLEAN) prEventNicCapability->ucMacAddrValid;
 
 	u4FwIDVersion = (prAdapter->rVerInfo.u2FwProductID << 16) | (prAdapter->rVerInfo.u2FwOwnVersion);
