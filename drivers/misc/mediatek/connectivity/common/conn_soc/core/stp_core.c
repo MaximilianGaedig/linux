@@ -2192,6 +2192,26 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					mtk_wcn_stp_coredump_flag_ctrl(1);
 				}
 #endif
+				/*
+				 * Print the assert payload unconditionally.
+				 *
+				 * The firmware's own explanation arrives in
+				 * rx_buf, but the block below only ran when STP
+				 * debug was enabled - and gStpDbgLvl was turned
+				 * down to WARN during bring-up, so the one
+				 * message that says WHY the chip asserted was
+				 * being thrown away. The WiFi firmware starts,
+				 * writes "INIT" and 200 into its mailboxes and
+				 * then goes quiet, and this is the only channel
+				 * it has to say what went wrong.
+				 */
+				if (stp_core_ctx.parser.type == STP_TASK_INDX && stp_core_ctx.rx_counter) {
+					stp_core_ctx.rx_buf[MTKSTP_BUFFER_SIZE - 1] = 0;
+					STP_ERR_FUNC("biscuit-fwassert: len=%d type=%d text=\"%s\"\n",
+						     stp_core_ctx.rx_counter, stp_core_ctx.parser.type,
+						     stp_core_ctx.rx_buf);
+				}
+
 				/*Trace32 Dump */
 				if (STP_IS_ENABLE_DBG(stp_core_ctx) &&
 					(stp_core_ctx.parser.type == STP_TASK_INDX)) {
