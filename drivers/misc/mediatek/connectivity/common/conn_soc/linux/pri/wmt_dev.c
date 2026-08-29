@@ -39,6 +39,8 @@
 */
 
 #include <linux/firmware.h>
+#include <linux/vmalloc.h>
+#include <linux/uaccess.h>
 
 #include "osal_typedef.h"
 #include "osal.h"
@@ -159,6 +161,91 @@ static INT32 wmt_dbg_func_ctrl(INT32 par1, INT32 par2, INT32 par3);
 static INT32 wmt_dbg_raed_chipid(INT32 par1, INT32 par2, INT32 par3);
 static INT32 wmt_dbg_wmt_dbg_level(INT32 par1, INT32 par2, INT32 par3);
 static INT32 wmt_dbg_stp_dbg_level(INT32 par1, INT32 par2, INT32 par3);
+/*
+ * biscuit: bulk chip-memory dumper.
+ *
+ * wmt_lib_reg_rw(0, addr, &val, mask) is a real read of the combo chip's own
+ * address space over WMT/STP - the same primitive the driver already uses to
+ * read the chip id. Driving it one word at a time from userspace through
+ * /proc/driver/wmt_dbg works but is far too slow to pull a whole firmware
+ * section, so do the loop in the kernel.
+ *
+ * This is what makes the ENCRYPTED in-chip sections readable: sec0 (0x0006a000)
+ * and sec1 (0x0209f800) are ciphertext in WIFI_RAM_CODE_8163 and only exist in
+ * plaintext inside the chip after it decrypts them. Reading them back here
+ * gives us something we can actually disassemble.
+ *
+ *   echo "6a000 1d00" > /proc/biscuit_peek   # addr len, hex
+ *   cat /proc/biscuit_peek > sec0.bin
+ *
+ * The chip must be powered on (WMT up) or every read fails with "STP Not Ready".
+ */
+#define BISCUIT_PEEK_MAX (256 * 1024)
+static UINT8 *g_peek_buf;
+static UINT32 g_peek_len;
+
+static ssize_t biscuit_peek_read(struct file *f, char __user *buf, size_t len, loff_t *off)
+{
+	if (!g_peek_buf || *off >= (loff_t)g_peek_len)
+		return 0;
+	if (len > g_peek_len - (UINT32)*off)
+		len = g_peek_len - (UINT32)*off;
+	if (copy_to_user(buf, g_peek_buf + *off, len))
+		return -EFAULT;
+	*off += len;
+	return len;
+}
+
+static ssize_t biscuit_peek_write(struct file *f, const char __user *ubuf, size_t count, loff_t *off)
+{
+	INT8 buf[64];
+	PINT8 pBuf = buf, pTok;
+	long addr = 0, len = 0;
+	UINT32 i, fail = 0;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	pTok = osal_strsep(&pBuf, " \t\n");
+	if (!pTok || osal_strtol(pTok, 16, &addr))
+		return -EINVAL;
+	pTok = osal_strsep(&pBuf, " \t\n");
+	if (!pTok || osal_strtol(pTok, 16, &len))
+		return -EINVAL;
+
+	if (len <= 0 || len > BISCUIT_PEEK_MAX)
+		return -EINVAL;
+	if (!g_peek_buf) {
+		g_peek_buf = vmalloc(BISCUIT_PEEK_MAX);
+		if (!g_peek_buf)
+			return -ENOMEM;
+	}
+
+	g_peek_len = 0;
+	for (i = 0; i < (UINT32)len; i += 4) {
+		UINT32 val = 0;
+
+		if (wmt_lib_reg_rw(0, (UINT32)addr + i, &val, 0xffffffff)) {
+			fail++;
+			val = 0xdeadbeef;
+		}
+		osal_memcpy(g_peek_buf + i, &val, 4);
+		g_peek_len = i + 4;
+	}
+	WMT_INFO_FUNC("biscuit_peek: addr=0x%08x len=0x%x done, %u failed reads\n",
+		      (UINT32)addr, (UINT32)len, fail);
+	return count;
+}
+
+static const struct proc_ops biscuit_peek_fops = {
+	.proc_read = biscuit_peek_read,
+	.proc_write = biscuit_peek_write,
+	.proc_lseek = default_llseek,
+};
+
 static INT32 wmt_dbg_reg_read(INT32 par1, INT32 par2, INT32 par3);
 static INT32 wmt_dbg_reg_write(INT32 par1, INT32 par2, INT32 par3);
 static INT32 wmt_dbg_coex_test(INT32 par1, INT32 par2, INT32 par3);
@@ -1278,6 +1365,7 @@ INT32 wmt_dev_dbg_setup(VOID)
 		.proc_write = wmt_dev_dbg_write,
 	};
 	gWmtDbgEntry = proc_create(WMT_DBG_PROCNAME, 0664, NULL, &wmt_dbg_fops);
+	proc_create("biscuit_peek", 0664, NULL, &biscuit_peek_fops);
 	if (gWmtDbgEntry == NULL) {
 		WMT_ERR_FUNC("Unable to create /proc entry\n\r");
 		return -1;

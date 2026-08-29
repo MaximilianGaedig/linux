@@ -181,17 +181,28 @@
 /* #define HIF_DEBUG_SUP */
 /* #define HIF_DEBUG_SUP_TX */
 
-#ifdef HIF_DEBUG_SUP
-#define HIF_DBG(msg)	(printk msg)
-#else
-#define HIF_DBG(msg)
-#endif /* HIF_DEBUG_SUP */
+/*
+ * The vendor ships the whole HIF trace behind HIF_DEBUG_SUP, which is commented
+ * out above, so every register/DMA access in this file is silent in a normal
+ * build.  Turning it on at compile time is not what we want either: the trace
+ * sits in the per-packet RX/TX path, and printk-ing there is slow enough to
+ * cause the very AP-DMA timeouts we are trying to diagnose.
+ *
+ * So make it a runtime switch instead, default off:
+ *     echo 1 > /sys/module/wlan_gen2/parameters/biscuit_hif_trace
+ * Bring-up traffic is low volume, so it can be flipped on for one experiment
+ * and back off before the data path matters.
+ *
+ * Note DBG stays 0 (see Makefile): with DBG=1 this driver's ASSERT() expands to
+ * "do {} while (1)", which would hang the box on the first failed assertion
+ * rather than telling us anything.
+ */
+int biscuit_hif_trace;
+module_param(biscuit_hif_trace, int, 0644);
+MODULE_PARM_DESC(biscuit_hif_trace, "trace every HIF register/DMA access (noisy)");
 
-#ifdef HIF_DEBUG_SUP_TX
-#define HIF_DBG_TX(msg)	(printk msg)
-#else
-#define HIF_DBG_TX(msg)
-#endif /* HIF_DEBUG_SUP */
+#define HIF_DBG(msg)	do { if (biscuit_hif_trace) printk msg; } while (0)
+#define HIF_DBG_TX(msg)	do { if (biscuit_hif_trace) printk msg; } while (0)
 
 /*******************************************************************************
 *                              C O N S T A N T S
@@ -868,7 +879,7 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 
 	/* sanity check */
 	if ((WlanDmaFatalErr == 1) || (fgIsResetting == TRUE) || (HifIsFwOwn(GlueInfo->prAdapter) == TRUE)) {
-		DBGLOG(RX, ERROR, "WlanDmaFatalErr: %d, fgIsResetting: %d, HifIsFwOwn: %d\n",
+		pr_err("biscuit-portfail: WlanDmaFatalErr=%d fgIsResetting=%d HifIsFwOwn=%d\n",
 				WlanDmaFatalErr, fgIsResetting, HifIsFwOwn(GlueInfo->prAdapter));
 		return FALSE;
 	}
@@ -983,6 +994,7 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 			HifDumpEnhanceModeData(GlueInfo->prAdapter);
 			if (prDmaOps->DmaRegDump != NULL)
 				prDmaOps->DmaRegDump(HifInfo);
+			pr_err("biscuit-dmatimeout: AP-DMA timed out, latching WlanDmaFatalErr\n");
 			WlanDmaFatalErr = 1;
 			/* we still need complete dma progress even dma timeout */
 			break;
@@ -1077,7 +1089,7 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 
 	/* sanity check */
 	if ((WlanDmaFatalErr == 1) || (fgIsResetting == TRUE) || (HifIsFwOwn(GlueInfo->prAdapter) == TRUE)) {
-		DBGLOG(RX, ERROR, "WlanDmaFatalErr: %d, fgIsResetting: %d, HifIsFwOwn: %d\n",
+		pr_err("biscuit-portfail: WlanDmaFatalErr=%d fgIsResetting=%d HifIsFwOwn=%d\n",
 				WlanDmaFatalErr, fgIsResetting, HifIsFwOwn(GlueInfo->prAdapter));
 		return FALSE;
 	}
@@ -1178,6 +1190,7 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 			DBGLOG(TX, INFO, "TX DMA Timeout, HSTCR: 0x%08x\n", u4HSTCRValue);
 			if (prDmaOps->DmaRegDump != NULL)
 				prDmaOps->DmaRegDump(HifInfo);
+			pr_err("biscuit-dmatimeout: AP-DMA timed out, latching WlanDmaFatalErr\n");
 			WlanDmaFatalErr = 1;
 			/* we still need complete dma progress even dma timeout */
 			break;

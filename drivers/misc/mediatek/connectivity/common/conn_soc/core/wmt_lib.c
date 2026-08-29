@@ -1135,6 +1135,7 @@ INT32 wmt_lib_reg_rw(UINT32 isWrite, UINT32 offset, PUINT32 pvalue, UINT32 mask)
 
 	return bRet;
 }
+EXPORT_SYMBOL(wmt_lib_reg_rw);
 #endif
 
 /* TODO:[ChangeFeature][George] is this function obsoleted? */
@@ -1322,6 +1323,7 @@ INT32 wmt_lib_reg_rw(UINT32 isWrite, UINT32 offset, PUINT32 pvalue, UINT32 mask)
 		      isWrite, offset, value, mask, bRet);
 	return -1;
 }
+EXPORT_SYMBOL(wmt_lib_reg_rw);
 
 INT32 wmt_lib_efuse_rw(UINT32 isWrite, UINT32 offset, PUINT32 pvalue, UINT32 mask)
 {
