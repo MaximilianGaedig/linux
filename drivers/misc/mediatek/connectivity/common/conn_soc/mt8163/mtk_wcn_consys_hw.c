@@ -64,6 +64,9 @@
 #endif
 
 #include <linux/of_reserved_mem.h>
+#include <linux/proc_fs.h>
+#include <linux/uaccess.h>
+#include <linux/slab.h>
 
 #if CONSYS_CLOCK_BUF_CTRL
 #include <mt_clkbuf_ctl.h>
@@ -1016,6 +1019,50 @@ int reserve_memory_consys_fn(struct reserved_mem *rmem)
 RESERVEDMEM_OF_DECLARE(reserve_memory_test, "mediatek,consys-reserve-memory", reserve_memory_consys_fn);
 
 
+/*
+ * /proc/biscuit_emi - read the CONNSYS EMI window.
+ *
+ * The WiFi firmware image is encrypted on disk and the chip decrypts it as it
+ * places it, so this DRAM holds the only plaintext copy of that firmware that
+ * exists anywhere. Reading it back is the difference between guessing what the
+ * firmware waits for and looking at it. /dev/mem cannot reach it: this is a
+ * no-map reserved region and has no kernel mapping to hand out.
+ */
+static ssize_t biscuit_emi_read(struct file *f, char __user *buf, size_t len, loff_t *off)
+{
+	void __iomem *p;
+	void *tmp;
+	size_t n;
+
+	if (!gConEmiPhyBase || *off >= (2 * 1024 * 1024))
+		return 0;
+	n = min(len, (size_t)(2 * 1024 * 1024 - (size_t)*off));
+	n = min(n, (size_t)(64 * 1024));
+
+	p = ioremap(gConEmiPhyBase + *off, n);
+	if (!p)
+		return -EIO;
+	tmp = kmalloc(n, GFP_KERNEL);
+	if (!tmp) {
+		iounmap(p);
+		return -ENOMEM;
+	}
+	memcpy_fromio(tmp, p, n);
+	iounmap(p);
+	if (copy_to_user(buf, tmp, n)) {
+		kfree(tmp);
+		return -EFAULT;
+	}
+	kfree(tmp);
+	*off += n;
+	return n;
+}
+
+static const struct proc_ops biscuit_emi_fops = {
+	.proc_read = biscuit_emi_read,
+	.proc_lseek = default_llseek,
+};
+
 INT32 mtk_wcn_consys_hw_init(void)
 {
 
@@ -1023,6 +1070,9 @@ INT32 mtk_wcn_consys_hw_init(void)
 	UINT32 addrPhy = 0;
 	INT32 i = 0;
 	struct device_node *node = NULL;
+
+	/* create this early - later paths in this function can return first */
+	proc_create("biscuit_emi", 0400, NULL, &biscuit_emi_fops);
 
 	node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-consys");
 	if (node) {
