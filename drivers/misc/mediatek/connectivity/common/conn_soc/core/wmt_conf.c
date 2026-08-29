@@ -506,7 +506,7 @@ INT32 wmt_conf_read_file(VOID)
 			 * the chip, just carrying zeroed defaults instead of
 			 * this board's antenna settings.
 			 */
-			WMT_ERR_FUNC("biscuit-cfg: parsed OK, cfgExist=1 ant_mode=%d manual_ant=%d co_clock=%d\n",
+			WMT_ERR_FUNC("biscuit-cfg: parsed OK, cfgExist=1 ant_mode=%d ext_component=%d co_clock=%d\n",
 				     gDevWmt.rWmtGenConf.coex_wmt_ant_mode,
 				     gDevWmt.rWmtGenConf.coex_wmt_ext_component,
 				     gDevWmt.rWmtGenConf.co_clock_flag);
