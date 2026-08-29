@@ -25,7 +25,23 @@ int do_wlan_drv_init(int chip_id)
 {
 	int i_ret = 0;
 
-#ifdef CONFIG_MTK_COMBO_WIFI
+#if IS_MODULE(CONFIG_MTK_COMBO_WIFI)
+	/*
+	 * CONFIG_MTK_COMBO_WIFI is tristate. Built as a module it is
+	 * CONFIG_MTK_COMBO_WIFI_MODULE, so the old "#ifdef
+	 * CONFIG_MTK_COMBO_WIFI" fell through to the else branch and this
+	 * function did nothing but log "CONFIG_MTK_COMBO_WIFI is not defined" -
+	 * /dev/stpwmt appeared, the modules loaded, and wlan0 was never
+	 * created.
+	 *
+	 * In module mode there is genuinely nothing to call from here: both
+	 * mtk_wcn_wmt_wifi_init() and mtk_wcn_wlan_gen2_init() now live in
+	 * modules and run from their own module_init at insmod time. Calling
+	 * them from this built-in translation unit would not even link.
+	 */
+	WMT_DETECT_INFO_FUNC("WLAN gen2 is a module (chip 0x%x); it registers itself at insmod\n",
+			     chip_id);
+#elif IS_BUILTIN(CONFIG_MTK_COMBO_WIFI)
 	int ret = 0;
 
 	WMT_DETECT_INFO_FUNC("start to do wlan module init 0x%x\n", chip_id);
