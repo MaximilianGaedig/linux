@@ -440,9 +440,10 @@ VOID aisFsmStateAbort_SCAN(IN P_ADAPTER_T prAdapter);
 VOID aisFsmStateAbort_NORMAL_TR(IN P_ADAPTER_T prAdapter);
 
 VOID aisFsmStateAbort_IBSS(IN P_ADAPTER_T prAdapter);
-#if 0
+/* Re-enabled: the only caller (ais_fsm.c) now uses this to honour the channel
+ * list cfg80211 requested, instead of asking the firmware for a FULL sweep.
+ */
 VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ ScanReqMsg, IN ENUM_AIS_STATE_T CurrentState);
-#endif
 VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState);
 
 /*----------------------------------------------------------------------------*/

@@ -2184,10 +2184,32 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 				prScanReqMsg->arChnlInfoList[0].eBand = eBand;
 				prScanReqMsg->arChnlInfoList[0].ucChannelNum = ucChannel;
 			} else {
-#if 0
+				/*
+				 * Honour the channel list cfg80211 asked for.
+				 *
+				 * This call was #if 0'd out, so every scan fell
+				 * through to the band-preference block below and
+				 * asked the firmware for SCAN_CHANNEL_FULL. On this
+				 * chip a FULL sweep only ever returns 5GHz results -
+				 * every BSS descriptor comes back on channel 36 and
+				 * not one 2.4GHz AP is ever reported, even though the
+				 * domain command correctly carries the 2.4GHz subband
+				 * (regclass 81, ch 1..13) and the radio itself is fine
+				 * (BLE receives at -45 dBm on the same antenna).
+				 *
+				 * aisFsmSetChannelInfo() builds an explicit
+				 * SCAN_CHANNEL_SPECIFIED list from scan_req->channels,
+				 * which for a normal scan includes channels 1..13, so
+				 * the firmware is told exactly where to look instead
+				 * of being trusted to sweep both bands itself. It
+				 * falls through to the band preference below when
+				 * cfg80211 supplied no channels.
+				 */
 				aisFsmSetChannelInfo(prAdapter, prScanReqMsg, prAisFsmInfo->eCurrentState);
-#endif
-				if (prAdapter->aePreferBand[NETWORK_TYPE_AIS_INDEX]
+				if (prScanReqMsg->eScanChannel == SCAN_CHANNEL_SPECIFIED)
+					DBGLOG(AIS, INFO, "biscuit-scanch: %u specified channels\n",
+					       prScanReqMsg->ucChannelListNum);
+				else if (prAdapter->aePreferBand[NETWORK_TYPE_AIS_INDEX]
 					== BAND_NULL) {
 					if (prAdapter->fgEnable5GBand == TRUE)
 						prScanReqMsg->eScanChannel = SCAN_CHANNEL_FULL;
@@ -2346,7 +2368,7 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 	return;
 
 }				/* end of aisFsmSteps() */
-#if 0
+/* Re-enabled: aisFsmSteps() calls this to honour cfg80211's channel list. */
 /*----------------------------------------------------------------------------*/
 /*!
 * \brief
@@ -2382,15 +2404,15 @@ VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ ScanRe
 						break;
 
 					DBGLOG(AIS, TRACE, "set channel band=%d\n", channel_tmp->band);
-					if (channel_tmp->band >= IEEE80211_BAND_60GHZ) {
+					if (channel_tmp->band >= NL80211_BAND_60GHZ) {
 						j++;
 						continue;
 					}
 					if (i >= MAXIMUM_OPERATION_CHANNEL_LIST)
 						break;
-					if (channel_tmp->band == IEEE80211_BAND_2GHZ)
+					if (channel_tmp->band == NL80211_BAND_2GHZ)
 						ScanReqMsg->arChnlInfoList[i].eBand = BAND_2G4;
-					else if (channel_tmp->band == IEEE80211_BAND_5GHZ)
+					else if (channel_tmp->band == NL80211_BAND_5GHZ)
 						ScanReqMsg->arChnlInfoList[i].eBand = BAND_5G;
 
 					DBGLOG(AIS, TRACE, "set channel channel_rer =%d\n",
@@ -2437,7 +2459,6 @@ VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ ScanRe
 
 
 }
-#endif
 
 /*----------------------------------------------------------------------------*/
 /*!
