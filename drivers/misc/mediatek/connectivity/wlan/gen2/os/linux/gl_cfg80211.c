@@ -878,7 +878,24 @@ int mtk_cfg80211_connect(struct wiphy *wiphy, struct net_device *ndev, struct cf
 	prGlueInfo->rWpaInfo.u4CipherPairwise = IW_AUTH_CIPHER_NONE;
 	prGlueInfo->rWpaInfo.u4AuthAlg = IW_AUTH_ALG_OPEN_SYSTEM;
 #if CFG_SUPPORT_802_11W
-	prGlueInfo->rWpaInfo.u4Mfp = IW_AUTH_MFP_DISABLED;
+	/*
+	 * Carry the supplicant's Management Frame Protection choice into the
+	 * driver so the RSN IE advertises MFPC/MFPR. Without this u4Mfp stayed
+	 * DISABLED and WPA2/WPA3-transition APs that require PMF rejected the
+	 * association with status code 31 (robust management frame policy
+	 * violation). IW_AUTH_MFP_* and NL80211_MFP_* share values 0/1/2.
+	 */
+	switch (sme->mfp) {
+	case NL80211_MFP_REQUIRED:
+		prGlueInfo->rWpaInfo.u4Mfp = IW_AUTH_MFP_REQUIRED;
+		break;
+	case NL80211_MFP_OPTIONAL:
+		prGlueInfo->rWpaInfo.u4Mfp = IW_AUTH_MFP_OPTIONAL;
+		break;
+	default:
+		prGlueInfo->rWpaInfo.u4Mfp = IW_AUTH_MFP_DISABLED;
+		break;
+	}
 #endif
 
 	if (sme->crypto.wpa_versions & NL80211_WPA_VERSION_1)
@@ -967,13 +984,23 @@ int mtk_cfg80211_connect(struct wiphy *wiphy, struct net_device *ndev, struct cf
 		} else if (prGlueInfo->rWpaInfo.u4WpaVersion == IW_AUTH_WPA_VERSION_WPA2) {
 			switch (sme->crypto.akm_suites[0]) {
 			case WLAN_AKM_SUITE_8021X:
+			case WLAN_AKM_SUITE_8021X_SHA256:
 				eAuthMode = AUTH_MODE_WPA2;
 				break;
 			case WLAN_AKM_SUITE_PSK:
+			/*
+			 * PSK-SHA256 is the AKM WPA2/WPA3-transition APs pair
+			 * with PMF. The driver has no separate SHA256 auth mode,
+			 * so map it to WPA2-PSK (same PMK/PSK, the SHA256 KDF is
+			 * negotiated via the RSN IE); without this case the
+			 * connect was rejected -EINVAL ("Association request to
+			 * the driver failed") whenever PMF was requested.
+			 */
+			case WLAN_AKM_SUITE_PSK_SHA256:
 				eAuthMode = AUTH_MODE_WPA2_PSK;
 				break;
 			default:
-				DBGLOG(REQ, WARN, "invalid cipher group (%d)\n", sme->crypto.cipher_group);
+				DBGLOG(REQ, WARN, "invalid akm suite (0x%08x)\n", sme->crypto.akm_suites[0]);
 				return -EINVAL;
 			}
 		}
