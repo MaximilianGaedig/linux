@@ -974,6 +974,72 @@
  * the chip; see the verification loop in wlanAdapterStart().
  */
 extern phys_addr_t gConEmiPhyBase;
+extern UINT_32 wmt_plat_read_cpupcr(void);
+/* STP_FORCE_TRG_ASSERT_EMI == 0: writes the host out-of-band assert magic into
+ * the CONNSYS shared block, making the firmware assert on demand.
+ */
+extern unsigned int wmt_plat_force_trigger_assert(int type);
+/* MMIO read of the CONN_MCU_CONFIG block - bypasses the MCU's data cache, so
+ * unlike the chip's EMI core dump it comes back complete and repeatable.
+ */
+extern UINT_32 wmt_plat_read_mcu_cr(UINT_32 offset);
+/* read/write the combo chip's own address space over WMT/STP */
+/*
+ * Use wmt_core_reg_rw_raw(), NOT wmt_lib_reg_rw().
+ *
+ * wlanAdapterStart() runs on the mtk_wmtd thread (wmtd_thread -> opfunc_func_on
+ * -> wmt_func_wifi_on -> wlanProbe), and wmt_lib_reg_rw() queues an op onto that
+ * same thread and waits for it - an immediate self-deadlock, confirmed on
+ * hardware. The _raw form talks to the chip directly, which is safe here because
+ * we already hold the chip.
+ */
+extern INT_32 wmt_core_reg_rw_raw(UINT_32 isWrite, UINT_32 offset, PUINT_32 pVal, UINT_32 mask);
+
+/*
+ * Populate the firmware's indirect-call table at 0x001077E0.
+ *
+ * ROM patch _1_0 contains the code that fills this table (at 0x6457a, verified
+ * byte-for-byte present in the chip), but that init function never executes
+ * here: read back off the live chip the whole table is 0x55555555, i.e. never
+ * written. The firmware then does
+ *
+ *     sethi $r15, #0x107 ; lwi $r1, [$r15 + #0x7ec] ; jral5 $r1
+ *
+ * at sec2 +0x23c - loading 0x55555555 and calling it, which is the
+ * instruction-fetch abort the chip reports as "exception type: ABT" ~13ms after
+ * WIFI_START, after which the MCU resets into its ROM loop.
+ *
+ * So write the entries the patch would have written. The values are taken
+ * straight out of the patch's own code and all point into loaded memory:
+ * 0x6xxxx is inside patch _1_0 (at 0x00060000) and 0xf00e5cxx is inside patch
+ * _1_1 (at 0xf00e0000). The eighth entry (+0x1c) is a runtime value the patch
+ * takes from a register, so it is left alone.
+ */
+static const UINT_32 g_biscuitFnTable[] = {
+	0x000608c8,	/* +0x00 */
+	0x00060a14,	/* +0x04 */
+	0x00060c90,	/* +0x08 */
+	0x00061190,	/* +0x0c  <- the entry the firmware faults on */
+	0xf00e5cc8,	/* +0x10 */
+	0xf00e5cb8,	/* +0x14 */
+	0x000612c8,	/* +0x18 */
+};
+
+/* 1 = write the table before WIFI_START */
+int biscuit_fix_fntable = 1;
+module_param(biscuit_fix_fntable, int, 0644);
+
+/*
+ * Force the firmware to assert this many microseconds after WIFI_START.
+ *
+ * The natural death at ~13ms leaves the MCU dead, so the chip can never drive
+ * the paged-dump handshake and we only ever recover page 1 of 7 - which stops
+ * short of the DLM range where section 1 lives. Asserting earlier, while the
+ * MCU is demonstrably still executing firmware, lets the dump actually complete.
+ * 0 disables.
+ */
+int biscuit_force_assert_us;
+module_param(biscuit_force_assert_us, int, 0644);
 
 /*
  * Bisection switches, all off. Each was used with Bluetooth as an oracle -
@@ -1154,6 +1220,11 @@ typedef struct _CODE_MAPPING_T {
 ********************************************************************************
 */
 BOOLEAN fgIsBusAccessFailed = FALSE;
+
+/* 0 = poll for the real WLAN_READY bit; 1 = old "mailbox means ready" shortcut */
+int biscuit_fake_ready;
+module_param(biscuit_fake_ready, int, 0644);
+MODULE_PARM_DESC(biscuit_fake_ready, "treat a non-zero mailbox as firmware-ready (bring-up shortcut)");
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A
@@ -1667,7 +1738,6 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 			 * must read 0x11f4.
 			 */
 			void __iomem *pucTopck = ioremap(0x10001000 + 0x320, 4);
-			void __iomem *pucWipe;
 
 			if (pucTopck) {
 				UINT_32 u4Aperture = readl(pucTopck);
@@ -1746,62 +1816,17 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				}
 			}
 #endif
-			pucWipe = ioremap(gConEmiPhyBase, 512 * 1024);
-			if (pucWipe) {
-#ifdef BISCUIT_EMI_TRAP_TEST /* disabled */
-				/*
-				 * EXPERIMENT: fill the window with the Thumb
-				 * encoding of "b ." (0xe7fe), a two-byte
-				 * branch to itself.
-				 *
-				 * The MCU's program counter sits in
-				 * 0xf0005fbe-0xf0006002 and moves backwards
-				 * within that range, so it is running code with
-				 * a backward branch - but that range is memory
-				 * we zeroed and the MCU never wrote (the
-				 * scratch scan below finds 0 non-zero bytes).
-				 * Zeros contain no backward branch, so either
-				 * the MCU is not fetching from this DRAM at
-				 * all, or the aperture does not land where we
-				 * think.
-				 *
-				 * If the MCU is fetching from here, every
-				 * instruction is now an infinite self-loop and
-				 * the PC must freeze at a single address. If it
-				 * keeps moving, it is reading something else.
-				 */
-				PUINT_8 pucPat = kmalloc(0x6000, GFP_KERNEL);
-
-				memset_io(pucWipe, 0, 512 * 1024);
-				if (pucPat) {
-					UINT_32 u4Fill;
-
-					for (u4Fill = 0; u4Fill < 0x6000; u4Fill += 2) {
-						pucPat[u4Fill] = 0xfe;
-						pucPat[u4Fill + 1] = 0xe7;
-					}
-					/*
-					 * Only the 24KB scratch below the image -
-					 * that is where the PC actually sits, and
-					 * a byte-at-a-time loop over the whole
-					 * 512KB of uncached window was slow enough
-					 * to stall the bring-up. Build the pattern
-					 * in normal memory and push it across in
-					 * one go.
-					 */
-					memcpy_toio(pucWipe, pucPat, 0x6000);
-					kfree(pucPat);
-					DBGLOG(INIT, WARN,
-					       "biscuit-emi: filled 24KB scratch with 'b .' trap pattern\n");
-				}
-#else
-#ifdef BISCUIT_EMI_HOST_FILL
-				memset_io(pucWipe, 0, 512 * 1024);
-				DBGLOG(INIT, WARN, "biscuit-emi: zeroed 512KB of WiFi EMI region\n");
-#endif
-#endif
-				iounmap(pucWipe);
-			}
+			/*
+			 * The reserved region is wiped ONCE at consys power-on
+			 * (mtk_wcn_consys_hw.c, "biscuit-emiwipe"), before the
+			 * ROM patches and the firmware image are downloaded.
+			 *
+			 * It used to be done here, which is too late: this runs
+			 * after the WMT patch download, so wiping from here
+			 * erased ROM patch _1_1 at +0x0e0000. Wiping early also
+			 * means anything non-zero found below was demonstrably
+			 * written by the chip on this boot.
+			 */
 
 			for (i = 0; i < prFwHead->u4NumOfEntries; i++) {
 				UINT_32 u4Dest = prFwHead->arSection[i].u4DestAddr;
@@ -1848,6 +1873,65 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 #endif
 				/* read back through the same mapping */
 				memcpy_fromio(aucGot, pucEmi, u4CmpLen);
+
+				/*
+				 * Comparing the first 256 bytes cannot tell
+				 * "the chip stored nothing here" apart from
+				 * "it stored something that is not the
+				 * plaintext" - and the image is encrypted, so
+				 * a mismatch is expected either way.  Count how
+				 * much of the whole section is non-zero, right
+				 * here after the download and before
+				 * WIFI_START, so the answer is not confounded
+				 * by whatever the firmware writes later.
+				 */
+				{
+					UINT_32 u4Idx, u4NonZero = 0;
+					UINT_32 u4Blk, u4Blocks = 0, u4HoleBlocks = 0;
+					UINT_32 u4FirstHole = 0xffffffff;
+
+					for (u4Idx = 0; u4Idx < u4Len; u4Idx++) {
+						if (readb((PUINT_8 __iomem)pucEmi + u4Idx))
+							u4NonZero++;
+					}
+
+					/*
+					 * Byte-level occupancy cannot tell "decrypted
+					 * code that happens to contain zeros" from
+					 * "chunks the chip never wrote".  Count whole
+					 * 32-byte blocks that are entirely zero instead:
+					 * real code has almost none, whereas a lossy
+					 * chip->EMI write path leaves regular holes.
+					 * The chip's own core-dump page shows exactly
+					 * that shape (17 of 23 blocks present), so check
+					 * whether the firmware image has it too.
+					 */
+					for (u4Blk = 0; u4Blk + 32 <= u4Len; u4Blk += 32) {
+						UINT_32 u4B;
+						UINT_32 fgAllZero = 1;
+
+						for (u4B = 0; u4B < 32; u4B++) {
+							if (readb((PUINT_8 __iomem)pucEmi + u4Blk + u4B)) {
+								fgAllZero = 0;
+								break;
+							}
+						}
+						u4Blocks++;
+						if (fgAllZero) {
+							u4HoleBlocks++;
+							if (u4FirstHole == 0xffffffff)
+								u4FirstHole = u4Blk;
+						}
+					}
+
+					DBGLOG(INIT, WARN,
+					       "biscuit-fwsec[%u]: occupancy %u/%u bytes (%u%%), zero-blocks %u/%u (%u%%), first hole +0x%x\n",
+					       i, u4NonZero, u4Len,
+					       u4Len ? (u4NonZero * 100 / u4Len) : 0,
+					       u4HoleBlocks, u4Blocks,
+					       u4Blocks ? (u4HoleBlocks * 100 / u4Blocks) : 0,
+					       u4FirstHole);
+				}
 				iounmap(pucEmi);
 				DBGLOG(INIT, WARN,
 				       "biscuit-fwsec[%u]: host-wrote 0x%x bytes into EMI window\n",
@@ -2008,7 +2092,129 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		 */
 		DBGLOG(INIT, ERROR, "biscuit-bisect: downloads done, NOT sending WIFI_START\n");
 #elif CFG_OVERRIDE_FW_START_ADDRESS
+		if (biscuit_fix_fntable) {
+			UINT_32 u4I;
+
+			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitFnTable); u4I++) {
+				UINT_32 u4Addr = 0x001077e0 + u4I * 4;
+				UINT_32 u4Val = g_biscuitFnTable[u4I];
+				UINT_32 u4Back = 0;
+				INT_32 iW = wmt_core_reg_rw_raw(1, u4Addr, &u4Val, 0xffffffff);
+
+				wmt_core_reg_rw_raw(0, u4Addr, &u4Back, 0xffffffff);
+				DBGLOG(INIT, ERROR,
+				       "biscuit-fntable: [0x%08x] = 0x%08x (wr=%d, readback 0x%08x)\n",
+				       u4Addr, g_biscuitFnTable[u4I], iW, u4Back);
+			}
+		}
+
 		wlanConfigWifiFunc(prAdapter, TRUE, prRegInfo->u4StartAddress);
+
+		/*
+		 * Trace the CONNSYS MCU program counter across the window in
+		 * which it dies.
+		 *
+		 * The chip's core dump says "exception type: ABT" with
+		 * IPC 0xF0080024, but PC 0x10 with R14..R27 and FP all zero is
+		 * equally consistent with post-reset register state - i.e. IPC
+		 * may be a leftover rather than the faulting address.  Sampling
+		 * the PC directly settles it: if the MCU is seen inside the
+		 * downloaded image (sec0 0x0006a000, sec1 0x0209f800, or EMI
+		 * 0xf00xxxxx) and then leaves, we know control transferred and
+		 * where it was lost; if it never leaves ROM (<0x10000),
+		 * WIFI_START never handed over at all.
+		 *
+		 * CONN_MCU_CPUPCR is a real PC register read over MMIO, not an
+		 * EMI buffer our own writes could colour, so these samples are
+		 * trustworthy.
+		 */
+		{
+			/*
+			 * Catch the last instructions the firmware executes.
+			 *
+			 * Sampling every 10us leaves ~1000 instructions of slop,
+			 * so the "last firmware PC" it reports is only the right
+			 * neighbourhood, not the faulting instruction.  Sample as
+			 * fast as the MMIO read allows into a ring instead, and
+			 * snapshot the ring the moment the PC settles in ROM -
+			 * that keeps the final ~450 samples before the transition
+			 * at full resolution, and works regardless of whether the
+			 * firmware dies at 4ms or 14ms.
+			 *
+			 * The firmware calls ROM routines constantly during normal
+			 * operation, so a brief excursion below 0x60000 is not
+			 * death: re-arm if firmware code runs again, and only keep
+			 * a snapshot that stays in ROM for a long time afterwards.
+			 */
+			static UINT_32 au4Ring[512];
+			static UINT_32 au4Snap[512];
+			static UINT_32 au4Mcu[0x200 / 4];
+			UINT_32 u4Idx = 0, u4Post = 0, u4Iter;
+			UINT_32 u4SnapIdx = 0, fgSnap = 0, fgSeenFw = 0, fgHave = 0;
+
+			for (u4Iter = 0; u4Iter < 4000000; u4Iter++) {
+				UINT_32 pc = wmt_plat_read_cpupcr();
+
+				au4Ring[u4Idx & 511] = pc;
+				u4Idx++;
+
+				if (pc >= 0x00060000) {
+					fgSeenFw = 1;
+					u4Post = 0;
+					fgSnap = 0;
+				} else {
+					u4Post++;
+					if (fgSeenFw && !fgSnap && u4Post == 128) {
+						UINT_32 u4R;
+
+						kalMemCopy(au4Snap, au4Ring, sizeof(au4Snap));
+						u4SnapIdx = u4Idx;
+						fgSnap = 1;
+						fgHave = 1;
+						/* grab the MCU state block right here, while
+						 * it still reflects the fault
+						 */
+						for (u4R = 0; u4R < 0x200 / 4; u4R++)
+							au4Mcu[u4R] = wmt_plat_read_mcu_cr(u4R * 4);
+					}
+					if (fgSnap && u4Post > 60000)
+						break;
+				}
+			}
+
+			if (!fgHave) {
+				DBGLOG(INIT, ERROR,
+				       "biscuit-pctrace: no firmware->ROM transition captured (seenFw=%u)\n",
+				       fgSeenFw);
+			} else {
+				UINT_32 u4K, u4Prev = 0xffffffff, u4Shown = 0;
+
+				DBGLOG(INIT, ERROR,
+				       "biscuit-mcucr: CONN_MCU_CONFIG at the fault (0x18070000, MMIO - no cache):\n");
+				for (u4K = 0; u4K < 0x200 / 4; u4K += 4) {
+					DBGLOG(INIT, ERROR,
+					       "biscuit-mcucr: +0x%03x: %08x %08x %08x %08x\n",
+					       u4K * 4, au4Mcu[u4K], au4Mcu[u4K + 1],
+					       au4Mcu[u4K + 2], au4Mcu[u4K + 3]);
+				}
+				DBGLOG(INIT, ERROR,
+				       "biscuit-pctrace: final samples before the MCU settled in ROM:\n");
+				/* only the tail of the ring matters - that is the
+				 * approach to the fault; the head is ordinary running
+				 */
+				for (u4K = 330; u4K < 512; u4K++) {
+					UINT_32 pc = au4Snap[(u4SnapIdx + u4K) & 511];
+
+					if (pc == u4Prev)
+						continue;
+					u4Prev = pc;
+					DBGLOG(INIT, ERROR, "biscuit-pctrace:   [%3u] pc=0x%08x\n",
+					       u4K, pc);
+					if (++u4Shown > 120)
+						break;
+				}
+			}
+		}
 #else
 		wlanConfigWifiFunc(prAdapter, FALSE, 0);
 #endif
@@ -2023,7 +2229,53 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 			if (u4Value & WCIR_WLAN_READY) {
 				DBGLOG(INIT, TRACE, "Ready bit asserted\n");
 				break;
-			} else if (kalIsCardRemoved(prAdapter->prGlueInfo) == TRUE || fgIsBusAccessFailed == TRUE) {
+			}
+
+			/*
+			 * The firmware writes 0xC8 and "INIT" into D2HRM0/1
+			 * within 500ms of the start command and then stops,
+			 * while WCIR never changes at all - not the ready bit,
+			 * not even the power-on indicator. Everything else
+			 * about the load is verified: the image is decrypted
+			 * and placed (measured against a zeroed region), the
+			 * entry is right, and the firmware plainly runs.
+			 *
+			 * So test the other reading of that evidence: the
+			 * firmware is up and it is our readiness check that is
+			 * looking in the wrong place. Take the mailbox as the
+			 * signal and let the rest of init run - if it gets
+			 * through, WCIR is simply not where this chip reports
+			 * ready.
+			 */
+			/*
+			 * BRING-UP INSTRUMENTATION, not a workaround.
+			 *
+			 * We used to break out of this loop as soon as mailbox 0
+			 * went non-zero, treating that as "ready".  That is what
+			 * made wlan0 appear, but it also meant the loop exited at
+			 * t=0ms every time, so we never got to see whether the
+			 * real WLAN_READY bit (WCIR bit 21) would eventually set.
+			 * Every downstream symptom - the AP-DMA stall on WTDR0,
+			 * every command failing with 0xC0000001 - came from
+			 * driving a chip that had not actually started.
+			 *
+			 * Keep polling for the real bit and just log what the chip
+			 * is doing, so the ready-or-not question is answered by
+			 * measurement instead of by forcing it.
+			 */
+			if (biscuit_fake_ready && u4Value == 0x00108163) {
+				UINT_32 u4Mb = 0;
+
+				nicGetMailbox(prAdapter, 0, &u4Mb);
+				if (u4Mb != 0) {
+					DBGLOG(INIT, ERROR,
+					       "biscuit-ready: taking mailbox 0x%08x as ready (WCIR=0x%08x)\n",
+					       u4Mb, u4Value);
+					break;
+				}
+			}
+
+			if (kalIsCardRemoved(prAdapter->prGlueInfo) == TRUE || fgIsBusAccessFailed == TRUE) {
 				u4Status = WLAN_STATUS_FAILURE;
 				eFailReason = WAIT_FIRMWARE_READY_FAIL;
 				break;
@@ -2808,6 +3060,16 @@ WLAN_STATUS wlanSendCommand(IN P_ADAPTER_T prAdapter, IN P_CMD_INFO_T prCmdInfo)
 	do {
 		/* <0> card removal check */
 		if (kalIsCardRemoved(prAdapter->prGlueInfo) == TRUE || fgIsBusAccessFailed == TRUE) {
+			/*
+			 * Every command out of wlanProcessCommandQueue comes
+			 * back 0xC0000001, and this is the only branch in
+			 * wlanSendCommand that returns it - so one of these two
+			 * is stuck true and is failing the lot, including the
+			 * scan. Say which.
+			 */
+			DBGLOG(TX, ERROR, "biscuit-cmdfail: cardRemoved=%d busAccessFailed=%d CID=%d\n",
+			       kalIsCardRemoved(prAdapter->prGlueInfo), fgIsBusAccessFailed,
+			       prCmdInfo->ucCID);
 			rStatus = WLAN_STATUS_FAILURE;
 			break;
 		}

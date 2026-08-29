@@ -587,6 +587,7 @@ INT32 wmt_core_reg_rw_raw(UINT32 isWrite, UINT32 offset, PUINT32 pVal, UINT32 ma
 	/* no error here just return 0 */
 	return 0;
 }
+EXPORT_SYMBOL(wmt_core_reg_rw_raw);
 
 INT32 wmt_core_init_script(struct init_script *script, INT32 count)
 {

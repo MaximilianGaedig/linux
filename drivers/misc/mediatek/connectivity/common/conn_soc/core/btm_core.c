@@ -12,6 +12,10 @@
 * If not, see <http://www.gnu.org/licenses/>.
 */
 #include <asm/atomic.h>
+#include <linux/proc_fs.h>
+#include <linux/vmalloc.h>
+#include <linux/uaccess.h>
+#include <linux/fs.h>
 
 #include "osal_typedef.h"
 #include "osal.h"
@@ -387,6 +391,61 @@ INT32 _stp_trigger_firmware_assert_via_emi(VOID)
 
 #define COMBO_DUMP2AEE
 #if 1
+/*
+ * biscuit: a local sink for the paged core dump.
+ *
+ * The vendor offers exactly two destinations for a dump page - Android's AEE
+ * daemon (g_coredump_mode 1) and a netlink consumer (mode 2).  Neither exists
+ * in this build, so g_coredump_mode is 0 and the handler used to just return,
+ * abandoning the page BEFORE acking it to the chip.  That is what capped us at
+ * one page: unacked, the chip gave up and set chip_sync_state to END.
+ *
+ * Collect the pages here instead and expose them as /proc/biscuit_coredump so
+ * the whole dump - including the registers that say why the MCU reset - can be
+ * pulled off the device.
+ */
+#define BISCUIT_DUMP_MAX (512 * 1024)
+static UINT8 *g_biscuit_dump;
+static UINT32 g_biscuit_dump_len;
+static struct proc_dir_entry *g_biscuit_dump_proc;
+
+static ssize_t biscuit_dump_read(struct file *f, char __user *buf, size_t len, loff_t *off)
+{
+	if (!g_biscuit_dump || *off >= (loff_t)g_biscuit_dump_len)
+		return 0;
+	if (len > g_biscuit_dump_len - (UINT32)*off)
+		len = g_biscuit_dump_len - (UINT32)*off;
+	if (copy_to_user(buf, g_biscuit_dump + *off, len))
+		return -EFAULT;
+	*off += len;
+	return len;
+}
+
+static const struct proc_ops biscuit_dump_fops = {
+	.proc_read = biscuit_dump_read,
+	.proc_lseek = default_llseek,
+};
+
+static void biscuit_dump_append(const UINT8 *p, UINT32 n)
+{
+	if (!g_biscuit_dump) {
+		g_biscuit_dump = vmalloc(BISCUIT_DUMP_MAX);
+		if (!g_biscuit_dump)
+			return;
+		g_biscuit_dump_len = 0;
+	}
+	if (!g_biscuit_dump_proc)
+		g_biscuit_dump_proc = proc_create("biscuit_coredump", 0444, NULL,
+						  &biscuit_dump_fops);
+	if (n > BISCUIT_DUMP_MAX - g_biscuit_dump_len)
+		n = BISCUIT_DUMP_MAX - g_biscuit_dump_len;
+	if (n) {
+		memcpy(g_biscuit_dump + g_biscuit_dump_len, p, n);
+		g_biscuit_dump_len += n;
+		pr_err("btmtrace: stashed page, total=%u bytes\n", g_biscuit_dump_len);
+	}
+}
+
 #define STP_DBG_PAGED_DUMP_BUFFER_SIZE (32*1024*sizeof(char))
 UINT8 g_paged_dump_buffer[STP_DBG_PAGED_DUMP_BUFFER_SIZE] = { 0 };
 
@@ -568,28 +627,60 @@ pr_err("btmtrace: loop top, page_counter=%u\n", page_counter);
 			UINT8 *dump_vir_addr = NULL;
 			UINT32 dump_len = 0;
 			UINT32 isEnd = 0;
+			UINT32 fgChipEnded = 0;
 
 pr_err("btmtrace: about to read host_state, offset=%u pEmibaseaddr valid=%d\n",
 	p_ecsi->p_ecso->emi_apmem_ctrl_host_sync_state, wmt_plat_get_emi_virt_add(0) != NULL);
 			host_state = (ENUM_HOST_DUMP_STATE)wmt_plat_get_dump_info(
 				p_ecsi->p_ecso->emi_apmem_ctrl_host_sync_state);
-pr_err("btmtrace: host_state=%d\n", host_state);
+			chip_state = (ENUM_CHIP_DUMP_STATE)wmt_plat_get_dump_info(
+				p_ecsi->p_ecso->emi_apmem_ctrl_chip_sync_state);
+			pr_err("btmtrace: host_state=%d chip_state=%d page=%u\n",
+			       host_state, chip_state, page_counter);
+
 			if (STP_HOST_DUMP_NOT_START == host_state) {
 				counter++;
 				STP_BTM_INFO_FUNC("counter(%d)\n", counter);
-				osal_sleep_ms(100);
-pr_err("btmtrace: woke from sleep, counter=%u\n", counter);
+				/*
+				 * Only pace ourselves when the chip has nothing
+				 * ready yet.
+				 *
+				 * This sleep used to be unconditional, but
+				 * wmt_plat_set_host_dump_state(NOT_START) runs
+				 * immediately before this loop, so host_state is
+				 * ALWAYS NOT_START on the first pass - meaning we
+				 * always burned 100ms before so much as looking at
+				 * the chip.  On this board that is the whole
+				 * window: the chip publishes its page, waits for
+				 * us, gives up, and advances chip_sync_state
+				 * 2 (PUT_DONE) -> 3 (END).  We then polled for 2
+				 * only, never matched, timed out after 10*5ms and
+				 * captured 1 page out of 7 - losing the registers
+				 * that say why the MCU reset.
+				 */
+				if (chip_state != STP_CHIP_DUMP_PUT_DONE &&
+				    chip_state != STP_CHIP_DUMP_END)
+					osal_sleep_ms(100);
 			} else {
 				counter = 0;
 			}
-pr_err("btmtrace: entering chip_state poll loop\n");
+
 			while (1) {
-pr_err("btmtrace: chip_state poll iter, offset=%u\n",
-	p_ecsi->p_ecso->emi_apmem_ctrl_chip_sync_state);
 				chip_state = (ENUM_CHIP_DUMP_STATE)wmt_plat_get_dump_info(
 					p_ecsi->p_ecso->emi_apmem_ctrl_chip_sync_state);
 				if (STP_CHIP_DUMP_PUT_DONE == chip_state) {
 					STP_BTM_INFO_FUNC("chip put done\n");
+					break;
+				}
+				/*
+				 * The chip finished the whole sequence before we
+				 * got here.  The page it last published is still
+				 * sitting at chip_sync_addr, so take that one
+				 * rather than throwing it away, and stop after it.
+				 */
+				if (STP_CHIP_DUMP_END == chip_state) {
+					pr_err("btmtrace: chip already at END, taking last page\n");
+					fgChipEnded = 1;
 					break;
 				}
 				STP_BTM_INFO_FUNC("waiting chip put done\n");
@@ -597,7 +688,8 @@ pr_err("btmtrace: chip_state poll iter, offset=%u\n",
 				loop_cnt1++;
 				osal_sleep_ms(5);
 
-				if (loop_cnt1 > 10)
+				/* 10*5ms was too tight when the chip is still mid-PUT */
+				if (loop_cnt1 > 40)
 					goto paged_dump_end;
 
 			}
@@ -647,6 +739,7 @@ pr_err("btmtrace: chip_state poll iter, offset=%u\n",
 			/*move dump info according to dump_addr & dump_len */
 #if 1
 			osal_memcpy(&g_paged_dump_buffer[0], dump_vir_addr, dump_len);
+			biscuit_dump_append(&g_paged_dump_buffer[0], dump_len);
 			_stp_dump_emi_dump_buffer(&g_paged_dump_buffer[0], dump_len);
 
 			if (0 == page_counter) {	/* do fw assert infor paser in first paged dump */
@@ -667,9 +760,18 @@ pr_err("btmtrace: chip_state poll iter, offset=%u\n",
 					ret = stp_dbg_aee_send(&g_paged_dump_buffer[0], dump_len, 0);
 				else if	(2 == g_coredump_mode)
 					ret = _stp_btm_put_emi_dump_to_nl(&g_paged_dump_buffer[0], dump_len);
-				else{
-					STP_BTM_INFO_FUNC("coredump is disabled!\n");
-					return 0;
+				else {
+					/*
+					 * No AEE and no netlink consumer in this
+					 * build.  The vendor returns here, which
+					 * abandons the handler before the page is
+					 * acked below - the chip then stops and we
+					 * capture 1 page of 7.  The page is already
+					 * saved by biscuit_dump_append() above, so
+					 * just carry on with the handshake.
+					 */
+					STP_BTM_INFO_FUNC("no aee/netlink sink; page kept locally\n");
+					ret = 0;
 				}
 				if (ret == 0)
 					STP_BTM_INFO_FUNC("aee send ok!\n");
@@ -696,6 +798,10 @@ pr_err("btmtrace: chip_state poll iter, offset=%u\n",
 			STP_BTM_INFO_FUNC("\n\n++ paged dump counter(%d) ++\n\n\n", page_counter);
 
 			while (1) {
+				if (fgChipEnded) {
+					wmt_plat_set_host_dump_state(STP_HOST_DUMP_END);
+					break;
+				}
 				chip_state = (ENUM_CHIP_DUMP_STATE)wmt_plat_get_dump_info(
 					p_ecsi->p_ecso->emi_apmem_ctrl_chip_sync_state);
 				if (STP_CHIP_DUMP_END == chip_state) {

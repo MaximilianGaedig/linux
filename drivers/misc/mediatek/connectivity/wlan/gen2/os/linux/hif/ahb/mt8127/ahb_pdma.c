@@ -234,6 +234,8 @@ VOID HifPdmaInit(GL_HIF_INFO_T *HifInfo)
 * \retval NONE
 */
 /*----------------------------------------------------------------------------*/
+static int biscuit_pdma_cfg_dbg;
+
 static VOID HifPdmaConfig(IN void *HifInfoSrc, IN void *Param)
 {
 	GL_HIF_INFO_T *HifInfo = (GL_HIF_INFO_T *) HifInfoSrc;
@@ -266,6 +268,24 @@ static VOID HifPdmaConfig(IN void *HifInfoSrc, IN void *Param)
 	/* AP_DMA_HIF_0_LEN */
 	HIF_DMAR_WRITEL(HifInfo, AP_DMA_HIF_0_LEN, (Conf->Count & ADH_CR_LEN));
 	PDMA_DBG("PDMA> AP_DMA_HIF_0_LEN = %u\n", (UINT_32)(Conf->Count & ADH_CR_LEN));
+
+	/*
+	 * A stalled transfer leaves EN=1 and LEN=0 behind, which is ambiguous:
+	 * either the length register never took the write, or the engine counts
+	 * it down and died at the end.  Read the four registers straight back
+	 * while we still know what we asked for, for the first few transfers
+	 * only so this cannot flood the log.
+	 */
+	if (biscuit_pdma_cfg_dbg < 4) {
+		biscuit_pdma_cfg_dbg++;
+		pr_err("biscuit-pdmacfg: want dir=%d count=%u src=0x%08lx dst=0x%08lx | readback CON=0x%08x SRC=0x%08x DST=0x%08x LEN=0x%08x\n",
+		       (int)Conf->Dir, (unsigned int)Conf->Count,
+		       (unsigned long)Conf->Src, (unsigned long)Conf->Dst,
+		       HIF_DMAR_READL(HifInfo, AP_DMA_HIF_0_CON),
+		       HIF_DMAR_READL(HifInfo, AP_DMA_HIF_0_SRC_ADDR),
+		       HIF_DMAR_READL(HifInfo, AP_DMA_HIF_0_DST_ADDR),
+		       HIF_DMAR_READL(HifInfo, AP_DMA_HIF_0_LEN));
+	}
 
 }				/* End of HifPdmaConfig */
 

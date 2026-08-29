@@ -2210,6 +2210,32 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					STP_ERR_FUNC("biscuit-fwassert: len=%d type=%d text=\"%s\"\n",
 						     stp_core_ctx.rx_counter, stp_core_ctx.parser.type,
 						     stp_core_ctx.rx_buf);
+
+					/*
+					 * Kick off the paged core dump, the way the
+					 * mandatory-mode parser does at the matching
+					 * point (see MTKSTP_FW_MSG above).
+					 *
+					 * Full mode never had this call: the block
+					 * below that used to do it is gated behind
+					 * STP_IS_ENABLE_DBG and, on top of that, had
+					 * its ctx-save + dump/trace handling replaced
+					 * by an info message during an earlier
+					 * bring-up bisect.  That bisect was chasing
+					 * kernel heap corruption which turned out to
+					 * be the chip DMA-ing outside its reserved
+					 * window because the EMI aperture register
+					 * was misprogrammed - that bug is fixed, and
+					 * btm_core.c's paged-dump handler has already
+					 * been re-enabled on the same reasoning.
+					 *
+					 * Do it here, unconditionally, so it does not
+					 * depend on the STP debug level: this dump is
+					 * the only channel the firmware has to say why
+					 * it asserted.
+					 */
+					mtk_wcn_stp_coredump_start_ctrl(1);
+					stp_btm_notify_wmt_dmp_wq(stp_core_ctx.btm);
 				}
 
 				/*Trace32 Dump */
