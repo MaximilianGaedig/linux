@@ -74,19 +74,21 @@ static const WMT_IC_PIN_STATE cmb_aif2pin_stat[] = {
 #if CFG_WMT_PS_SUPPORT
 static UINT32 gPsIdleTime = STP_PSM_IDLE_TIME_SLEEP;
 /*
- * TEMPORARILY disabled for bring-up: the PSM sleep/wake handshake
- * races the initial firmware patch download over BTIF on this board -
- * the chip hasn't settled into a state that echoes the sleep/wake
- * event yet, so wmt_ctrl_evt_parser finds nothing and the driver
- * treats it as a fatal chip-sync failure, forcing a reset loop before
- * HCIDEVUP can complete.
- *
- * Re-enabled: HCI bring-up is confirmed now - BLE scanning works and
- * returns real advertisements - so the condition this was waiting on is
- * met. Power save matters for real device operation, and leaving it off
- * was never meant to be permanent.
+ * Disabled for this board: the STP PSM sleep/wake handshake is broken here.
+ * Two symptoms, both traced to PSM:
+ *  1) at bring-up it races the initial firmware patch download over BTIF, and
+ *  2) on BT_close the PSM sleep's ACT handshake times out
+ *     ("_stp_psm_do_wait: Wait for ACT takes 2000 msec" -> "Abnormal flag=12"),
+ *     which escalates to "evt err trigger assert fail, do chip reset to
+ *     recovery" = a WHOLE-CHIP reset that also tears down wlan0.
+ * A previous attempt re-enabled this after confirming BLE scan works, but that
+ * only tested the open+scan path - with PSM on, every BT_close resets the chip
+ * and destabilises WiFi too. Verified 2026-08-30: with PSM off, blescan closes
+ * cleanly ("WMT turn off BT OK!", no reset) and BLE advertisements are received.
+ * This board is mains-powered (Echo Dot), so STP power-save is not worth the
+ * instability. Runtime equivalent: `echo "0 0" > /proc/driver/wmt_dbg`.
  */
-static UINT32 gPsEnable = 1;
+static UINT32 gPsEnable;	/* = 0: STP power-save off (see above) */
 static PF_WMT_SDIO_PSOP sdio_own_ctrl;
 #endif
 
