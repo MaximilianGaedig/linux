@@ -1196,6 +1196,15 @@ int biscuit_patch_tables;
 module_param(biscuit_patch_tables, int, 0644);
 
 /*
+ * 1 = install a trampoline at the WiFi entry (0x6a000) so the firmware runs the
+ * patch main-init (0x69828) itself. Default 0; enable via sysfs before WiFi
+ * function-on so a failure just reboots to the working path. See the install
+ * site in wlanAdapterStart.
+ */
+int biscuit_trampoline;
+module_param(biscuit_trampoline, int, 0644);
+
+/*
  * Force the firmware to assert this many microseconds after WIFI_START.
  *
  * The natural death at ~13ms leaves the MCU dead, so the chip can never drive
@@ -2353,6 +2362,63 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 
 			DBGLOG(INIT, ERROR, "biscuit-patchinit: replayed 0x644e4, %u bad readbacks\n",
 			       u4Bad);
+		}
+
+		/*
+		 * Trampoline: make the WiFi firmware run the patch main-init
+		 * (0x69828) itself, which host memory pokes cannot do (its config
+		 * table at 0x02097400 lives in live CONNSYS RAM - writing it from
+		 * the host before WIFI_START asserts the running firmware).
+		 *
+		 * The WiFi entry at 0x0006a000 is just
+		 *   sethi $r0,#0x6b ; ori $r0,$r0,#0x16c ; jr $r0   (-> 0x6b16c)
+		 * and WIFI_START is delivered to the ALREADY-RUNNING firmware, so
+		 * the MCU has a valid stack when 0x6a000 executes and 0x69828
+		 * (which pushes) is safe to call there. Its config writes then
+		 * happen in-firmware at the moment WiFi owns that RAM.
+		 *
+		 * Install a 6-instruction trampoline in free executable EMI at
+		 * 0xf00ee000 (just past ROM patch _1_1, below the 0x60ed4 zero
+		 * region) that jral's 0x69828 then jr's to the original 0x6b16c,
+		 * and repoint 0x6a000 at it.
+		 *
+		 * Endianness: this MCU fetches instructions big-endian but the
+		 * reg interface reads/writes raw little-endian bytes, so an
+		 * instruction word W is written as byteswap(W). (Data words like
+		 * the call table above are written direct - that is why the
+		 * fntable worked unswapped.) Verified against a live read of
+		 * 0x6a000: reg-read there is 0x6b000046 = byteswap(0x4600006b),
+		 * the sethi that objdump -EB decodes.
+		 *
+		 * Default off; enable with
+		 *   echo 1 > /sys/module/wlan_gen2/parameters/biscuit_trampoline
+		 * before the WiFi function-on, so a bad build just reboots back to
+		 * the working (trampoline-off) path.
+		 */
+		if (biscuit_trampoline) {
+			static const struct { UINT_32 addr, val; } arTramp[] = {
+				/* trampoline body at 0xf00ee000 (byteswapped insns) */
+				{ 0xf00ee000, 0x69000046 },  /* sethi $r0,#0x69      */
+				{ 0xf00ee004, 0x28080058 },  /* ori   $r0,$r0,#0x828 */
+				{ 0xf00ee008, 0x0100e04b },  /* jral  $r0  (0x69828) */
+				{ 0xf00ee00c, 0x6b000046 },  /* sethi $r0,#0x6b      */
+				{ 0xf00ee010, 0x6c010058 },  /* ori   $r0,$r0,#0x16c */
+				{ 0xf00ee014, 0x0000004a },  /* jr    $r0  (0x6b16c) */
+				/* repoint the WiFi entry 0x6a000 -> 0xf00ee000 */
+				{ 0x0006a000, 0xee000f46 },  /* sethi $r0,#0xf00ee   */
+				{ 0x0006a004, 0x00000058 },  /* ori   $r0,$r0,#0x0   */
+				{ 0x0006a008, 0x0000004a },  /* jr    $r0            */
+			};
+			UINT_32 u4T;
+
+			for (u4T = 0; u4T < ARRAY_SIZE(arTramp); u4T++) {
+				UINT_32 v = arTramp[u4T].val, b = 0;
+
+				wmt_core_reg_rw_raw(1, arTramp[u4T].addr, &v, 0xffffffff);
+				wmt_core_reg_rw_raw(0, arTramp[u4T].addr, &b, 0xffffffff);
+				DBGLOG(INIT, ERROR, "biscuit-tramp: [0x%08x] = 0x%08x (readback 0x%08x)\n",
+				       arTramp[u4T].addr, arTramp[u4T].val, b);
+			}
 		}
 
 		wlanConfigWifiFunc(prAdapter, TRUE, prRegInfo->u4StartAddress);
