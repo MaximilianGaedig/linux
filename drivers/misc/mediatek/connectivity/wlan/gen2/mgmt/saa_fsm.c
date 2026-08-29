@@ -912,6 +912,9 @@ VOID saaFsmRunEventRxAuth(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 	ASSERT(prSwRfb);
 	prStaRec = cnmGetStaRecByIndex(prAdapter, prSwRfb->ucStaRecIdx);
 
+	DBGLOG(SAA, ERROR, "biscuit-rxauth: RX AUTH frame, staIdx=%u staRec=%p\n",
+	       prSwRfb->ucStaRecIdx, prStaRec);
+
 	/* We should have the corresponding Sta Record. */
 	if (!prStaRec) {
 		/* Peter: we can handle the packet without station record */
