@@ -1440,7 +1440,7 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 				prNextSwRfb = (P_SW_RFB_T) QUEUE_GET_NEXT_ENTRY((P_QUE_ENTRY_T) prRetSwRfb);
 				if (fIsDummy == TRUE) {
 					nicRxReturnRFB(prAdapter, prRetSwRfb);
-					RX_INC_CNT(prRxCtrl, RX_DROP_TOTAL_COUNT);
+					RX_INC_CNT(&prAdapter->rRxCtrl, RX_DROP_TOTAL_COUNT);
 					DBGLOG(RX, WARN, "Drop Dummy Packets");
 
 				} else {
@@ -1464,7 +1464,7 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 					case RX_PKT_DESTINATION_NULL:
 						nicRxReturnRFB(prAdapter, prRetSwRfb);
 						RX_INC_CNT(prRxCtrl, RX_DST_NULL_DROP_COUNT);
-						RX_INC_CNT(prRxCtrl, RX_DROP_TOTAL_COUNT);
+						RX_INC_CNT(&prAdapter->rRxCtrl, RX_DROP_TOTAL_COUNT);
 						break;
 
 					default:
@@ -1480,7 +1480,7 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 	} else {
 		nicRxReturnRFB(prAdapter, prSwRfb);
 		RX_INC_CNT(prRxCtrl, RX_CLASS_ERR_DROP_COUNT);
-		RX_INC_CNT(prRxCtrl, RX_DROP_TOTAL_COUNT);
+		RX_INC_CNT(&prAdapter->rRxCtrl, RX_DROP_TOTAL_COUNT);
 	}
 }
 
@@ -2531,7 +2531,7 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 			LOG_FUNC("QM RX MGT: Drop Unprotected Mgmt frame!!!\n");
 #endif
 			nicRxReturnRFB(prAdapter, prSwRfb);
-			RX_INC_CNT(prRxCtrl, RX_DROP_TOTAL_COUNT);
+			RX_INC_CNT(&prAdapter->rRxCtrl, RX_DROP_TOTAL_COUNT);
 			return;
 		}
 #endif
@@ -2721,7 +2721,7 @@ VOID nicRxProcessRFBs(IN P_ADAPTER_T prAdapter)
 
 			default:
 				RX_INC_CNT(prRxCtrl, RX_TYPE_ERR_DROP_COUNT);
-				RX_INC_CNT(prRxCtrl, RX_DROP_TOTAL_COUNT);
+				RX_INC_CNT(&prAdapter->rRxCtrl, RX_DROP_TOTAL_COUNT);
 				DBGLOG(RX, ERROR, "ucPacketType = %d\n", prSwRfb->ucPacketType);
 				nicRxReturnRFB(prAdapter, prSwRfb);	/* need to free it */
 				break;
