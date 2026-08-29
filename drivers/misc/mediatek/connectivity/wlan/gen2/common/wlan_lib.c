@@ -1101,9 +1101,48 @@ static const struct {
 	{ 0x02097a78, 0x00000000, 0x14 },
 };
 
+/*
+ * The same table for the 2021-05-31 build of ROM patch _1_0, as shipped in
+ * Amazon's OTA (update-kindle-csm_biscuit-272.6.8.0). It has the identical
+ * structure - the writer sits at 0x630ca instead of 0x6457a - but every target
+ * moved, so the 2017 values must not be used with it. $gp is set by the ROM
+ * and is therefore the same 0x020973D4, giving +0x1c = $gp + 0x6ac.
+ */
+static const UINT_32 g_biscuitFnTable2021[] = {
+	0x00060938,	/* +0x00 */
+	0x00060a84,	/* +0x04 */
+	0x00060d00,	/* +0x08 */
+	0x000613b0,	/* +0x0c */
+	0xf00e7c6c,	/* +0x10 */
+	0xf00e7c5c,	/* +0x14 */
+	0x000615ec,	/* +0x18 */
+	0x02097a80,	/* +0x1c  = $gp + 0x6ac */
+};
+
+/* memsets the 2021 build performs ($gp + 0x7d0 / 0x7ac / 0x6ac) */
+static const struct {
+	UINT_32 u4Addr;
+	UINT_32 u4Word;
+	UINT_32 u4Len;
+} g_biscuitPatchMemset2021[] = {
+	{ 0x00106468, 0x00000000, 0x30 },
+	{ 0x02097ba4, 0xffffffff, 0x10 },
+	{ 0x02097b80, 0xffffffff, 0x10 },
+	{ 0x02097a80, 0x00000000, 0x14 },
+};
+
 /* 1 = write the table before WIFI_START */
 int biscuit_fix_fntable = 1;
 module_param(biscuit_fix_fntable, int, 0644);
+
+/*
+ * 0 = the 2017 patch that ships on this device, 1 = the 2021 patch from the
+ * OTA. Selects which decoded table to replay; getting this wrong writes
+ * addresses from the other build and the firmware faults exactly as it did
+ * before the fixup existed.
+ */
+int biscuit_fw2021;
+module_param(biscuit_fw2021, int, 0644);
 
 /*
  * Force the firmware to assert this many microseconds after WIFI_START.
@@ -2179,7 +2218,11 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 			 * call table - its last entry points at the buffer the
 			 * final memset clears, so that ordering matters.
 			 */
-			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitPatchVtable); u4I++) {
+			/* the vtable/scalar writes were decoded from the 2017
+			 * patch only; skip them for the 2021 build rather than
+			 * poking addresses that came from a different binary.
+			 */
+			for (u4I = 0; !biscuit_fw2021 && u4I < ARRAY_SIZE(g_biscuitPatchVtable); u4I++) {
 				u4Val = g_biscuitPatchVtable[u4I].u4Val;
 				u4Back = 0;
 				wmt_core_reg_rw_raw(1, g_biscuitPatchVtable[u4I].u4Addr, &u4Val, 0xffffffff);
@@ -2191,32 +2234,41 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 				       g_biscuitPatchVtable[u4I].u4Val, u4Back);
 			}
 
-			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitPatchData); u4I++) {
+			for (u4I = 0; !biscuit_fw2021 && u4I < ARRAY_SIZE(g_biscuitPatchData); u4I++) {
 				u4Val = g_biscuitPatchData[u4I].u4Val;
 				wmt_core_reg_rw_raw(1, g_biscuitPatchData[u4I].u4Addr, &u4Val,
 						    g_biscuitPatchData[u4I].u4Mask);
 			}
 
 			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitPatchMemset); u4I++) {
-				for (u4J = 0; u4J < g_biscuitPatchMemset[u4I].u4Len; u4J += 4) {
-					u4Val = g_biscuitPatchMemset[u4I].u4Word;
-					wmt_core_reg_rw_raw(1, g_biscuitPatchMemset[u4I].u4Addr + u4J,
-							    &u4Val, 0xffffffff);
+				UINT_32 u4MAddr = biscuit_fw2021 ? g_biscuitPatchMemset2021[u4I].u4Addr
+								 : g_biscuitPatchMemset[u4I].u4Addr;
+				UINT_32 u4MWord = biscuit_fw2021 ? g_biscuitPatchMemset2021[u4I].u4Word
+								 : g_biscuitPatchMemset[u4I].u4Word;
+				UINT_32 u4MLen = biscuit_fw2021 ? g_biscuitPatchMemset2021[u4I].u4Len
+								: g_biscuitPatchMemset[u4I].u4Len;
+
+				for (u4J = 0; u4J < u4MLen; u4J += 4) {
+					u4Val = u4MWord;
+					wmt_core_reg_rw_raw(1, u4MAddr + u4J, &u4Val, 0xffffffff);
 				}
 			}
 
 			for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitFnTable); u4I++) {
 				UINT_32 u4Addr = 0x001077e0 + u4I * 4;
 
-				u4Val = g_biscuitFnTable[u4I];
+				UINT_32 u4Want = biscuit_fw2021 ? g_biscuitFnTable2021[u4I]
+								: g_biscuitFnTable[u4I];
+
+				u4Val = u4Want;
 				u4Back = 0;
 				wmt_core_reg_rw_raw(1, u4Addr, &u4Val, 0xffffffff);
 				wmt_core_reg_rw_raw(0, u4Addr, &u4Back, 0xffffffff);
-				if (u4Back != g_biscuitFnTable[u4I])
+				if (u4Back != u4Want)
 					u4Bad++;
 				DBGLOG(INIT, ERROR,
-				       "biscuit-fntable: [0x%08x] = 0x%08x (readback 0x%08x)\n",
-				       u4Addr, g_biscuitFnTable[u4I], u4Back);
+				       "biscuit-fntable[%s]: [0x%08x] = 0x%08x (readback 0x%08x)\n",
+				       biscuit_fw2021 ? "2021" : "2017", u4Addr, u4Want, u4Back);
 			}
 
 			DBGLOG(INIT, ERROR, "biscuit-patchinit: replayed 0x644e4, %u bad readbacks\n",
