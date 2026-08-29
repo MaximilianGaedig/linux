@@ -109,6 +109,10 @@ struct CONSYS_BASE_ADDRESS conn_reg;
 phys_addr_t gConEmiPhyBase;
 EXPORT_SYMBOL(gConEmiPhyBase);
 static UINT8 __iomem *pEmibaseaddr;
+
+/* 1 = run the 2MB AP write/readback test at consys power-on (slow) */
+static int biscuit_emitest;
+module_param(biscuit_emitest, int, 0644);
 static struct clk *clk_infra_conn_main;	/*ctrl infra_connmcu_bus clk */
 static struct platform_device *my_pdev;
 static struct reset_control *rstc;
@@ -568,8 +572,38 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 			if (pucEmiReg) {
 				UINT32 u4Start = (UINT32) ((gConEmiPhyBase - 0x40000000) >> 16);
+				/*
+				 * Cover the WHOLE 2MB the DT reserves, not just the
+				 * 512KB the WiFi firmware image occupies.
+				 *
+				 * This was the bug.  512KB covers the image
+				 * (sections land at +0x6000..+0x63010) but stops
+				 * dead at +0x80000 - and +0x80000 is exactly where
+                                 * the CONNSYS EXP_APMEM control block lives
+				 * (CONSYS_EMI_FW_PHY_BASE 0xf0080000), with the
+				 * paged dump at +0x88400 and the full dump at
+				 * +0x90400 beyond it.
+				 *
+				 * So the chip could place and fetch its firmware
+				 * but faulted the instant that firmware touched the
+				 * shared block.  Measured, from the chip's own core
+				 * dump once the stale copy was wiped:
+				 *     ; exception type: ABT
+				 *     R.S IPC 0xF0080024
+				 * 0xF0080024 is EXP_APMEM_CTRL_CHIP_PRINT_BUFF_IDX,
+				 * i.e. +0x80000 + 0x24 - 0x24 bytes past the end of
+				 * the protected window.  The MCU took a bus abort,
+				 * reset, and landed back in ROM, which is what
+				 * "asser_type=4 / exp_main: maybe jump from RST"
+				 * had been reporting all along.
+				 *
+				 * An earlier experiment "opened all eight domains
+				 * and nothing changed" - that varied the PERMISSION
+				 * bits but never this range, so it could not have
+				 * found it.
+				 */
 				UINT32 u4End =
-				    (UINT32) ((gConEmiPhyBase + 512 * 1024 - 1 - 0x40000000) >> 16);
+				    (UINT32) ((gConEmiPhyBase + 2 * 1024 * 1024 - 1 - 0x40000000) >> 16);
 				/* d7..d0, 3 bits each; 0 = NO_PROTECTION, 5 = FORBIDDEN */
 				/*
 				 * Open this region to every domain.
@@ -595,9 +629,31 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				 * Tried opening all eight domains (0 =
 				 * NO_PROTECTION everywhere) on hardware: the
 				 * registers read back 0 as asked and the
-				 * firmware still stops in the same place, so
-				 * the MPU is not what is holding it. Back to
-				 * the permissions Amazon programs.
+				 * firmware still stopped in the same place.
+				 * That ruled out the permission bits but NOT
+				 * the MPU - the address window above was still
+				 * only 512KB, so every domain was being granted
+				 * access to a region that ended 0x24 bytes
+				 * before the address the firmware faults on.
+				 * Keep Amazon's permissions; the range is the
+				 * part that was wrong.
+				 */
+				/*
+				 * EXPERIMENT (biscuit): open every domain.
+				 *
+				 * Re-run of a test that was previously called
+				 * negative, but that verdict was made against
+				 * STALE DRAM - the reserved region is no-map and
+				 * survives warm reboots, so leftover firmware
+				 * bytes from an earlier boot looked like a
+				 * successful download. With the region wiped
+				 * first, the real picture is that sections 2 and
+				 * 3 land NOWHERE (0 bytes, 100% zero blocks),
+				 * while the chip's core dump - which lands
+				 * OUTSIDE the old 512KB protected window - writes
+				 * fine. That asymmetry points straight at these
+				 * permission bits, so measure it properly now
+				 * that the measurement is trustworthy.
 				 */
 				UINT32 u4Low = (5 << 9) | (0 << 6) | (5 << 3) | 0;	/* d3,d2,d1,d0 */
 				UINT32 u4High = (0 << 9) | (5 << 6) | (5 << 3) | 5;	/* d7,d6,d5,d4 */
@@ -624,6 +680,88 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				iounmap(pucEmiReg);
 			} else {
 				WMT_PLAT_ERR_FUNC("biscuit-emimpu: ioremap of EMI failed\n");
+			}
+		}
+
+		/*
+		 * biscuit: wipe the whole reserved region ONCE, here, before
+		 * anything is downloaded into it.
+		 *
+		 * This DRAM is no-map and survives warm reboots, so bytes left
+		 * by a previous boot are indistinguishable from bytes the chip
+		 * just wrote.  That confound produced two wrong conclusions:
+		 * the WiFi firmware sections were reported as 88%/50% resident
+		 * when in fact they were leftovers from the long-retired
+		 * BISCUIT_EMI_HOST_FILL experiment, and an "MPU permissions
+		 * make no difference" verdict was reached against the same
+		 * stale bytes.
+		 *
+		 * It has to be here rather than in wlanAdapterStart(): that
+		 * runs long after the WMT ROM patches are downloaded, and ROM
+		 * patch _1_1 goes to chip address 0xf00e0000 = +0x0e0000, so a
+		 * late wipe erases a patch the chip needs at runtime.
+		 *
+		 * With this in place, anything non-zero in the region afterwards
+		 * was demonstrably written by the chip on this boot.
+		 */
+		if (gConEmiPhyBase) {
+			void __iomem *pucAll = ioremap(gConEmiPhyBase, 2 * 1024 * 1024);
+
+			if (pucAll) {
+				/*
+				 * Before zeroing, prove the AP can write and read
+				 * back this DRAM reliably.
+				 *
+				 * The chip's own core-dump text arrives with 32-byte
+				 * holes punched through it, and those holes land in
+				 * DIFFERENT places on every boot (14 of 32 blocks
+				 * differ between two runs) - so writes into this
+				 * region are being lost, not merely unwritten. That
+				 * would also corrupt the firmware's own EMI data
+				 * (it stores to 0xf0063xxx), which is reason enough
+				 * to crash. This says whether the loss is on the AP
+				 * side (DRAM / reservation / mapping) or the chip's.
+				 */
+				UINT32 u4Off, u4Bad = 0, u4FirstBad = 0xffffffff;
+
+				/*
+				 * RESULT (kept for the record): bad=0/524288 words
+				 * over the full 2MB. The AP can write and read this
+				 * DRAM perfectly, so the reservation, the mapping and
+				 * the memory itself are all sound - the 32-byte holes
+				 * in the chip's core dump are on the chip's side.
+				 * They are almost certainly MCU cache lines that were
+				 * never written back rather than lost transactions,
+				 * since the firmware DOWNLOAD - also a chip write to
+				 * EMI, but via the download engine - lands with zero
+				 * holes (sec2: 0/8078 empty blocks).
+				 *
+				 * Off by default; set biscuit_emitest=1 to re-run.
+				 */
+				if (!biscuit_emitest)
+					goto skip_emitest;
+
+				for (u4Off = 0; u4Off < 2 * 1024 * 1024; u4Off += 4)
+					writel(0xA5000000u | u4Off, pucAll + u4Off);
+				/* make sure nothing is sitting in a write buffer */
+				wmb();
+				for (u4Off = 0; u4Off < 2 * 1024 * 1024; u4Off += 4) {
+					if (readl(pucAll + u4Off) != (0xA5000000u | u4Off)) {
+						if (u4FirstBad == 0xffffffff)
+							u4FirstBad = u4Off;
+						u4Bad++;
+					}
+				}
+				WMT_PLAT_INFO_FUNC("biscuit-emitest: AP write/readback bad=%u/%u words, first bad +0x%x\n",
+						   u4Bad, (UINT32)(2 * 1024 * 1024 / 4), u4FirstBad);
+skip_emitest:
+
+				memset_io(pucAll, 0, 2 * 1024 * 1024);
+				iounmap(pucAll);
+				WMT_PLAT_INFO_FUNC("biscuit-emiwipe: zeroed all 2MB at 0x%llx before download\n",
+						   (unsigned long long)gConEmiPhyBase);
+			} else {
+				WMT_PLAT_ERR_FUNC("biscuit-emiwipe: ioremap failed\n");
 			}
 		}
 

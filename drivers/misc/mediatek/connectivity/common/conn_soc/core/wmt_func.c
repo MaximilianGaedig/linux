@@ -39,6 +39,10 @@
 #include "osal_typedef.h"
 
 #include "wmt_func.h"
+
+/* 0 = stock: send the chip nothing before wlan probe (see wmt_func_wifi_on) */
+int biscuit_wifi_func_on;
+module_param(biscuit_wifi_func_on, int, 0644);
 #include "wmt_lib.h"
 #include "wmt_core.h"
 #include "wmt_exp.h"
@@ -644,20 +648,22 @@ INT32 wmt_func_wifi_on(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf)
 	unsigned long ctrlPa2;
 
 	/*
-	 * Tell the chip to enable its WiFi function before probing.
+	 * NOTE: we deliberately do NOT ask the chip to turn its WiFi function
+	 * on here.
 	 *
-	 * BT does exactly this - PALDO on, then
-	 * wmt_core_func_ctrl_cmd(WMTDRV_TYPE_BT, TRUE) - and BT works: an
-	 * HCI_Reset written to /dev/stpbt comes back as Command Complete with
-	 * status 0. The WiFi path sends the chip nothing at all; it only calls
-	 * the driver's probe, and upstream's wmt_func_wifi_ctrl(FUNC_ON) is
-	 * behind an "#if 0". So the one radio that works is the one that asks
-	 * the chip to turn its function on, and the one that hangs is the one
-	 * that does not - which fits a firmware that downloads, starts, writes
-	 * "INIT" into its mailbox and then waits forever for a subsystem that
-	 * was never enabled.
+	 * An earlier experiment did (WMT_CTRL_SOC_PALDO_CTRL + then
+	 * wmt_core_func_ctrl_cmd(WMTDRV_TYPE_WIFI, TRUE)), reasoning that BT
+	 * does exactly that and BT works.  The chip accepted the command (ret
+	 * 0) but it did not fix anything, and it is a deviation from stock:
+	 * Amazon's wmt_func_wifi_on() sends the chip nothing at all here, it
+	 * only calls the driver's probe, and upstream's
+	 * wmt_func_wifi_ctrl(FUNC_ON) is behind an "#if 0" in BOTH trees.
+	 *
+	 * It also enables the WiFi subsystem BEFORE any firmware has been
+	 * downloaded, which is the wrong order relative to stock.  Set
+	 * biscuit_wifi_func_on=1 to put it back for a comparison.
 	 */
-	{
+	if (biscuit_wifi_func_on) {
 		unsigned long paPa1 = WIFI_PALDO;
 		unsigned long paPa2 = PALDO_ON;
 		INT32 iPa;

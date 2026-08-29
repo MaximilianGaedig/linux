@@ -138,10 +138,11 @@ do { \
 			ASSERT(0); \
 		} \
 		if (kalDevRegRead(_prAdapter->prGlueInfo, _u4Offset, _pu4Value) == FALSE) {\
+			if (fgIsBusAccessFailed == FALSE) \
+				pr_err("biscuit-busfail: FIRST at MCR_RD off=0x%x\n", \
+				       (unsigned int)(_u4Offset)); \
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
-			/* DBGLOG(HAL, ERROR, ("HAL_MCR_RD access fail! 0x%x: 0x%x\n", */ \
-				/* (UINT32)_u4Offset, (UINT32)*_pu4Value)); */ \
 		} \
 	} else { \
 		/* DBGLOG(HAL, WARN, ("ignore HAL_MCR_RD access! 0x%x\n", (UINT32)_u4Offset)); */ \
@@ -155,10 +156,11 @@ do { \
 			ASSERT(0); \
 		} \
 		if (kalDevRegWrite(_prAdapter->prGlueInfo, _u4Offset, _u4Value) == FALSE) {\
+			if (fgIsBusAccessFailed == FALSE) \
+				pr_err("biscuit-busfail: FIRST at MCR_WR off=0x%x val=0x%x\n", \
+				       (unsigned int)(_u4Offset), (unsigned int)(_u4Value)); \
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
-			/* DBGLOG(HAL, ERROR, ("HAL_MCR_WR access fail! 0x%x: 0x%x\n", */ \
-				/* (UINT32)_u4Offset, (UINT32)_u4Value)); */ \
 		} \
 	} else { \
 		/* DBGLOG(HAL, WARN, ("ignore HAL_MCR_WR access! 0x%x: 0x%x\n", */ \
@@ -176,8 +178,10 @@ do { \
 		if (kalDevPortRead(_prAdapter->prGlueInfo, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
 			== FALSE) {\
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
+			if (fgIsBusAccessFailed == FALSE) \
+				pr_err("biscuit-busfail: FIRST at PORT_RD port=0x%x len=%u\n", \
+				       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 			fgIsBusAccessFailed = TRUE; \
-			DBGLOG(HAL, ERROR, "HAL_PORT_RD access fail! 0x%x\n", _u4Port); \
 			} \
 		else { \
 			/*fgResult = TRUE;*/ } \
@@ -196,8 +200,10 @@ do { \
 		if (kalDevPortWrite(_prAdapter->prGlueInfo, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
 			== FALSE) {\
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
+			if (fgIsBusAccessFailed == FALSE) \
+				pr_err("biscuit-busfail: FIRST at PORT_WR port=0x%x len=%u\n", \
+				       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 			fgIsBusAccessFailed = TRUE; \
-			DBGLOG(HAL, ERROR, "HAL_PORT_WR access fail! 0x%x\n", _u4Port); \
 		} \
 		else { \
 		/*fgResult = TRUE;*/ } \
@@ -256,8 +262,12 @@ do { \
 		ASSERT(0); \
 	} \
 	if (kalDevRegRead(_prAdapter->prGlueInfo, _u4Offset, _pu4Value) \
-		== FALSE) \
+		== FALSE) { \
+		if (!fgIsBusAccessFailed) \
+			pr_err("biscuit-busfail: MCR_RD off=0x%x\n", \
+			       (unsigned int)(_u4Offset)); \
 		fgIsBusAccessFailed = TRUE; \
+	} \
 }
 
 #define HAL_MCR_WR(_prAdapter, _u4Offset, _u4Value) \
@@ -266,8 +276,12 @@ do { \
 		ASSERT(0); \
 	} \
 	if (kalDevRegWrite(_prAdapter->prGlueInfo, _u4Offset, _u4Value) \
-		== FALSE) \
+		== FALSE) { \
+		if (!fgIsBusAccessFailed) \
+			pr_err("biscuit-busfail: MCR_WR off=0x%x\n", \
+			       (unsigned int)(_u4Offset)); \
 		fgIsBusAccessFailed = TRUE; \
+	} \
 }
 
 #define HAL_PORT_RD(_prAdapter, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
@@ -276,18 +290,35 @@ do { \
 		ASSERT(0); \
 	} \
 	if (kalDevPortRead(_prAdapter->prGlueInfo, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
-		== FALSE) \
+		== FALSE) { \
+		if (!fgIsBusAccessFailed) \
+			pr_err("biscuit-busfail: PORT_RD port=0x%x len=%u\n", \
+			       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 		fgIsBusAccessFailed = TRUE; \
+	} \
 }
 
+/*
+ * Say which access failed.
+ *
+ * fgIsBusAccessFailed is a single global and it is sticky: once any HIF
+ * access returns FALSE, wlanSendCommand rejects every command from then on
+ * with 0xC0000001, which is what empties the scan results. Knowing which
+ * port/offset tripped it is the difference between that being a mystery and
+ * being a bug with an address on it.
+ */
 #define HAL_PORT_WR(_prAdapter, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
 { \
 	if (_prAdapter->rAcpiState == ACPI_STATE_D3) { \
 		ASSERT(0); \
 	} \
 	if (kalDevPortWrite(_prAdapter->prGlueInfo, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
-		== FALSE) \
+		== FALSE) { \
+		if (!fgIsBusAccessFailed) \
+			pr_err("biscuit-busfail: PORT_WR port=0x%x len=%u\n", \
+			       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 		fgIsBusAccessFailed = TRUE; \
+	} \
 }
 
 #if 0				/* only for SDIO */

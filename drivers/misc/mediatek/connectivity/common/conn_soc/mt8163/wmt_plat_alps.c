@@ -911,6 +911,23 @@ UINT32 wmt_plat_read_cpupcr(void)
 }
 EXPORT_SYMBOL(wmt_plat_read_cpupcr);
 
+/*
+ * Read any register in the CONN_MCU_CONFIG block (0x18070000, 0x200 bytes).
+ *
+ * The chip writes its core dump into EMI through the MCU's data cache, and the
+ * dirty lines are never written back once the MCU parks in its ROM loop - so
+ * the dump we can read from the AP always has 32-byte holes in it, in different
+ * places every boot. This block is MMIO: reading it bypasses the MCU cache
+ * entirely and gives a complete, repeatable view of the MCU's state.
+ */
+UINT32 wmt_plat_read_mcu_cr(UINT32 offset)
+{
+	if (offset >= 0x200)	/* DT reg size of CONN_MCU_CONFIG_BASE */
+		return 0xdeadbeef;
+	return CONSYS_REG_READ(conn_reg.mcu_base + offset);
+}
+EXPORT_SYMBOL(wmt_plat_read_mcu_cr);
+
 UINT32 wmt_plat_read_dmaregs(UINT32 type)
 {
 	return 0;
