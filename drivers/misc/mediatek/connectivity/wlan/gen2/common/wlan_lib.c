@@ -1120,7 +1120,7 @@ static WLAN_STATUS __maybe_unused biscuitReadChipMem(IN P_ADAPTER_T prAdapter, I
  *     Thumb encoding of "b ." so the MCU freezes if it fetches from there.
  *     Inconclusive: the PC read back ROM addresses rather than freezing.
  */
-#define BISCUIT_EMI_SCAN_TEST 1
+/* #define BISCUIT_EMI_SCAN_TEST 1 */
 /* #define BISCUIT_START_TRAP_TEST 1 */
 
 /*******************************************************************************
