@@ -2259,6 +2259,25 @@ VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSTyp
 #if CFG_ENABLE_WIFI_DIRECT
 						prBssDesc->fgIsP2PReport = FALSE;
 #endif
+					} else {
+						/*
+						 * No fresh raw frame (the 2.4GHz receiver on
+						 * this board is often delivered only as a
+						 * scan-result summary) - surface it from the
+						 * descriptor (parsed IEs if any, else a
+						 * synthesised SSID/DS element) so a received
+						 * BSS still appears in the scan.
+						 */
+						kalIndicateBssInfoFromDesc(prAdapter->prGlueInfo,
+								   prBssDesc->aucBSSID,
+								   prBssDesc->ucChannelNum,
+								   prBssDesc->u2CapInfo,
+								   prBssDesc->u2BeaconInterval,
+								   prBssDesc->aucSSID,
+								   prBssDesc->ucSSIDLen,
+								   (PUINT_8) prBssDesc->aucIEBuf,
+								   prBssDesc->u2IELength,
+								   RCPI_TO_dBm(prBssDesc->ucRCPI));
 					}
 				} else {
 #if CFG_ENABLE_WIFI_DIRECT
