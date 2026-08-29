@@ -246,6 +246,49 @@ static const struct proc_ops biscuit_peek_fops = {
 	.proc_lseek = default_llseek,
 };
 
+/*
+ * biscuit_poke: write one chip-space word via the same STP register path the
+ * trampoline uses. "echo '800003c0 1' > /proc/biscuit_poke" reads 0x800003c0,
+ * ORs in 0x1 and writes it back (read-modify-write with the given value as an
+ * OR mask); "echo '800003c0 =1234' ..." would set it directly. Used to ring
+ * the firmware's command-dispatch doorbell after the WiFi core is ready.
+ */
+static ssize_t biscuit_poke_write(struct file *f, const char __user *ubuf, size_t count, loff_t *off)
+{
+	INT8 buf[64];
+	PINT8 pBuf = buf, pTok;
+	long addr = 0, val = 0;
+	UINT32 u4Cur = 0, u4New;
+	INT32 fgSet = 0;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	pTok = osal_strsep(&pBuf, " \t\n");
+	if (!pTok || osal_strtol(pTok, 16, &addr))
+		return -EINVAL;
+	pTok = osal_strsep(&pBuf, " \t\n");
+	if (!pTok)
+		return -EINVAL;
+	if (pTok[0] == '=') { fgSet = 1; pTok++; }
+	if (osal_strtol(pTok, 16, &val))
+		return -EINVAL;
+
+	wmt_lib_reg_rw(0, (UINT32)addr, &u4Cur, 0xffffffff);
+	u4New = fgSet ? (UINT32)val : (u4Cur | (UINT32)val);
+	wmt_lib_reg_rw(1, (UINT32)addr, &u4New, 0xffffffff);
+	WMT_INFO_FUNC("biscuit_poke: [0x%08x] 0x%08x -> 0x%08x\n",
+		      (UINT32)addr, u4Cur, u4New);
+	return count;
+}
+
+static const struct proc_ops biscuit_poke_fops = {
+	.proc_write = biscuit_poke_write,
+};
+
 static INT32 wmt_dbg_reg_read(INT32 par1, INT32 par2, INT32 par3);
 static INT32 wmt_dbg_reg_write(INT32 par1, INT32 par2, INT32 par3);
 static INT32 wmt_dbg_coex_test(INT32 par1, INT32 par2, INT32 par3);
@@ -2468,6 +2511,7 @@ static int WMT_init(void)
 	 * point keeps the only tool that can read CONNSYS memory available.
 	 */
 	proc_create("biscuit_peek", 0664, NULL, &biscuit_peek_fops);
+	proc_create("biscuit_poke", 0664, NULL, &biscuit_poke_fops);
 
 #if 0
 	pWmtDevCtx = wmt_drv_create();
