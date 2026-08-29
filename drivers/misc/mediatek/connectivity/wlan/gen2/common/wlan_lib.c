@@ -2401,47 +2401,40 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		if (biscuit_trampoline) {
 			static const struct { UINT_32 addr, val; } arTramp[] = {
 				/*
-				 * The REAL WiFi entry is 0x6b16c, not 0x6a000:
-				 * the chip ignores the WIFI_START address, and
-				 * 0x6a000 is only a veneer (jr 0x6b16c) that is
-				 * never executed. 0x6b16c is the firmware reset
-				 * handler - it pushes r6-r10/lp (valid WMT stack),
-				 * then calls sub-inits (incl. the 0x6a00c BSS zero
-				 * the PC trace caught at 0x6a046).
-				 *
-				 * Trampoline at 0xf00ee000: relocate 0x6b16c's
-				 * prologue (smw.adm) and next two insns, run
-				 * 0x69828 in between (after the reg save), then
-				 * continue at 0x6b178. byteswap(BE) per the
-				 * mixed-endian rule.
+				 * Deterministic trigger: at the real entry 0x6b16c, force
+				 * gp[-26604] (*0x02090be8) = 0 so that 0x1a0c(3) - the async
+				 * event path 0x69828 takes via 0x6157c - fires its semaphore
+				 * signal instead of skipping it (it only signals when that
+				 * flag is 0). That flag being nonzero on some boots is why
+				 * the command-0x22 dispatch (which enables the 2.4GHz RX)
+				 * fired only ~30% of boots. Then call 0x69828. sentinel 0xa1
+				 * @0xf00ee800 reached, 0xa2 @0xf00ee804 = 0x69828 returned.
 				 */
-				/* sentinel1 (0xa1) @0xf00ee800 = trampoline reached */
 				{ 0xf00ee000, 0xa1000044 },
 				{ 0xf00ee004, 0xee00ff46 },
 				{ 0xf00ee008, 0x0088f758 },
 				{ 0xf00ee00c, 0x00800714 },
-				/* relocated 0x6b16c prologue */
 				{ 0xf00ee010, 0xbca86f3a },
-				/* jral 0x69828 */
-				{ 0xf00ee014, 0x69000046 },
-				{ 0xf00ee018, 0x28080058 },
-				{ 0xf00ee01c, 0x0100e04b },
-				/* sentinel2 (0xa2) @0xf00ee804 = 0x69828 returned */
-				{ 0xf00ee020, 0xa2000044 },
-				{ 0xf00ee024, 0xee00ff46 },
-				{ 0xf00ee028, 0x0488f758 },
-				{ 0xf00ee02c, 0x00800714 },
-				/* relocated 0x6b170/0x6b174 */
-				{ 0xf00ee030, 0x1400f046 },
-				{ 0xf00ee034, 0x2e820704 },
-				/* continue at 0x6b178 */
-				{ 0xf00ee038, 0x6b00f046 },
-				{ 0xf00ee03c, 0x7881f758 },
-				{ 0xf00ee040, 0x003c004a },
+				{ 0xf00ee014, 0x00000044 },
+				{ 0xf00ee018, 0x9020f046 },
+				{ 0xf00ee01c, 0xe88bf758 },
+				{ 0xf00ee020, 0x00800714 },
+				{ 0xf00ee024, 0x69000046 },
+				{ 0xf00ee028, 0x28080058 },
+				{ 0xf00ee02c, 0x0100e04b },
+				{ 0xf00ee030, 0xa2000044 },
+				{ 0xf00ee034, 0xee00ff46 },
+				{ 0xf00ee038, 0x0488f758 },
+				{ 0xf00ee03c, 0x00800714 },
+				{ 0xf00ee040, 0x1400f046 },
+				{ 0xf00ee044, 0x2e820704 },
+				{ 0xf00ee048, 0x6b00f046 },
+				{ 0xf00ee04c, 0x7881f758 },
+				{ 0xf00ee050, 0x003c004a },
 				/* repoint the real entry 0x6b16c -> 0xf00ee000 */
-				{ 0x0006b16c, 0xee000f46 },  /* sethi $r0,#0xf00ee        */
-				{ 0x0006b170, 0x00000058 },  /* ori   $r0,$r0,#0x0        */
-				{ 0x0006b174, 0x0000004a },  /* jr    $r0                 */
+				{ 0x0006b16c, 0xee000f46 },
+				{ 0x0006b170, 0x00000058 },
+				{ 0x0006b174, 0x0000004a },
 			};
 			UINT_32 u4T;
 
