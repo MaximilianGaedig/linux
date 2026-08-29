@@ -143,6 +143,23 @@ mtk_cfg80211_change_iface(struct wiphy *wiphy,
 	if (rStatus != WLAN_STATUS_SUCCESS)
 		DBGLOG(REQ, WARN, "set infrastructure mode error:%x\n", rStatus);
 
+	/*
+	 * cfg80211 requires the driver to publish the new type itself -
+	 * cfg80211_change_iface() does
+	 *
+	 *     err = rdev_change_virtual_intf(rdev, dev, ntype, params);
+	 *     WARN_ON(!err && dev->ieee80211_ptr->iftype != ntype);
+	 *
+	 * and never assigns it (mac80211 sets it inside its own
+	 * change_interface). This routine returned 0 without ever touching
+	 * iftype, so "iw dev wlan0 set type ibss" reported success while the
+	 * interface stayed NL80211_IFTYPE_STATION - and the following
+	 * "iw dev wlan0 ibss join" was then rejected by cfg80211 itself with
+	 * -EOPNOTSUPP (-95) before mtk_cfg80211_join_ibss() could ever run,
+	 * which looked like the driver not supporting IBSS at all.
+	 */
+	ndev->ieee80211_ptr->iftype = type;
+
 	/* reset wpa info */
 	prGlueInfo->rWpaInfo.u4WpaVersion = IW_AUTH_WPA_VERSION_DISABLED;
 	prGlueInfo->rWpaInfo.u4KeyMgmt = 0;
@@ -1182,8 +1199,23 @@ int mtk_cfg80211_join_ibss(struct wiphy *wiphy, struct net_device *ndev, struct 
 			return -EFAULT;
 	}
 
-	/* set SSID */
+	/*
+	 * set SSID
+	 *
+	 * rNewSsid is an uninitialised stack struct and this only ever copied
+	 * aucSsid, never assigning u4SsidLen - so the length handed to
+	 * wlanoidSetSsid was whatever happened to be on the stack. That is why
+	 * the join logged an empty "SSID " and why the box could reboot part
+	 * way through: a garbage length is used downstream as a copy length.
+	 * (Amazon's tree has the same bug; they evidently never used IBSS.)
+	 */
+	if (params->ssid_len > PARAM_MAX_LEN_SSID)
+		return -EINVAL;
+
+	kalMemZero(&rNewSsid, sizeof(rNewSsid));
 	kalMemCopy(rNewSsid.aucSsid, params->ssid, params->ssid_len);
+	rNewSsid.u4SsidLen = params->ssid_len;
+
 	rStatus = kalIoctl(prGlueInfo,
 			   wlanoidSetSsid,
 			   (PVOID)(&rNewSsid), sizeof(PARAM_SSID_T), FALSE, FALSE, TRUE, FALSE, &u4BufLen);
