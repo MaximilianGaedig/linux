@@ -81,13 +81,12 @@ static UINT32 gPsIdleTime = STP_PSM_IDLE_TIME_SLEEP;
  * treats it as a fatal chip-sync failure, forcing a reset loop before
  * HCIDEVUP can complete.
  *
- * TODO: re-enable (restore to 1) once basic HCI bring-up is confirmed
- * stable - properly fix by gating mtk_wcn_stp_psm_enable() behind
- * patch-download completion instead of leaving power-save off. Power
- * save is important for real device operation, this is not meant to
- * be a permanent disable.
+ * Re-enabled: HCI bring-up is confirmed now - BLE scanning works and
+ * returns real advertisements - so the condition this was waiting on is
+ * met. Power save matters for real device operation, and leaving it off
+ * was never meant to be permanent.
  */
-static UINT32 gPsEnable;
+static UINT32 gPsEnable = 1;
 static PF_WMT_SDIO_PSOP sdio_own_ctrl;
 #endif
 

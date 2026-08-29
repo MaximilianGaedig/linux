@@ -259,6 +259,8 @@ set_pin_exit:
 
 		if (pwrap_pdev) {
 			pmic_regmap = dev_get_regmap(&pwrap_pdev->dev, NULL);
+			WMT_PLAT_ERR_FUNC("biscuit-pmic: regmap=%p (NULL means the raw MT6323 pokes are all skipped)\n",
+					  pmic_regmap);
 			if (!pmic_regmap)
 				WMT_PLAT_ERR_FUNC("pwrap has no regmap yet\n");
 			else
