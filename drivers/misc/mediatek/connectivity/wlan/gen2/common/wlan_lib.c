@@ -1145,6 +1145,57 @@ int biscuit_fw2021;
 module_param(biscuit_fw2021, int, 0644);
 
 /*
+ * The config table the patch's main init copies into RAM before anything else
+ * (0x60358: copy 0x69da8[0..0x1ac] -> $gp+0x2c = 0x02097400). $gp = 0x020973D4
+ * (read from CONNSYS ROM: 0x26a sethi $gp,#0x2097 ; ori #0x3d4). Without the
+ * copy that RAM reads 0x55555555. It carries the patch build stamp
+ * (0x20170214 at word 58) and what look like per-rate gain/power arrays around
+ * words 41-47, so it is a genuine firmware config blob - a candidate for the
+ * 2.4GHz-specific state that never gets set up because 0x69828 never runs
+ * (writing only the call table is enough for 5GHz + ready, but not 2.4GHz RX).
+ * Values are copied verbatim from ROMv2_lm_patch_1_0_hdr.bin.
+ */
+static const UINT_32 g_biscuitPatchCfg[] = {
+	0x0052cd84, 0x10008000, 0x7e170009, 0x32a4441e, 0x00304c44, 0xa8282400,
+	0x78a200ff, 0x94480000, 0x008000ab, 0x666c916e, 0x80068000, 0xf0f0fce0,
+	0xb1b33a00, 0x80c06638, 0x53757700, 0x64666626, 0x44848808, 0x00044044,
+	0x53226303, 0x023f02bf, 0x7ce01101, 0xd0004040, 0x55ff90ff, 0xb46cb46c,
+	0x00210028, 0x10008011, 0x00801010, 0x00000027, 0xbb848100, 0xc0c00100,
+	0xf66b6666, 0x00000000, 0x55f5ff00, 0x00003fbf, 0x00000200, 0x41164200,
+	0x00000080, 0xd5ff0090, 0x0000fcff, 0x00000000, 0x00000000, 0x90909090,
+	0xbf9f9f90, 0x04040490, 0x04040404, 0x80801404, 0xb0808080, 0x0080b0b0,
+	0x2119130f, 0x292d2529, 0x00000029, 0x02350105, 0x0000050c, 0x00000b19,
+	0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x20170214,
+	0x0152301a, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+	0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x00000000,
+	0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+	0x00000000, 0x00000000, 0x00000032, 0x00000032, 0x00000000, 0xf00e3064,
+	0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+	0x00000000, 0x00000032, 0x000000ff, 0x00000000, 0x00000100, 0x00000000,
+	0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+	0x00000001, 0x00000f14, 0x00000001, 0x00000000, 0x00011cf0,
+};
+
+/*
+ * 0 = do not touch these tables, 1 = also replay the memory-only sub-inits of
+ * the patch main init (the config-table copy plus 0x603a0's scalars and
+ * 0x60ef0's function pointer). Separate from biscuit_fix_fntable so it can be
+ * toggled at /sys/module/wlan_gen2/parameters/biscuit_patch_tables without a
+ * reflash if it regresses 5GHz.
+ *
+ * DEFAULT 0: replaying this table from the host BEFORE WIFI_START corrupts live
+ * CONNSYS RAM. The $gp region (0x0209xxxx) is shared by the already-running
+ * WMT/BT firmware, not WiFi-only like the 0x1077e0 call table and the
+ * 0x0209032x vtable slots, so writing 0x1ac bytes at 0x02097400 makes the
+ * running firmware <ASSERT> during WiFi bring-up (5GHz regressed to 0 too).
+ * The real init must run in firmware context (it is hooked on ROM 0x3954 =
+ * dispatcher command 0x22), not be poked from the host. Kept off by default for
+ * the record; do not enable.
+ */
+int biscuit_patch_tables;
+module_param(biscuit_patch_tables, int, 0644);
+
+/*
  * Force the firmware to assert this many microseconds after WIFI_START.
  *
  * The natural death at ~13ms leaves the MCU dead, so the chip can never drive
@@ -2210,6 +2261,35 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		if (biscuit_fix_fntable) {
 			UINT_32 u4I, u4J, u4Val, u4Back;
 			UINT_32 u4Bad = 0;
+
+			/*
+			 * The memory-only sub-inits at the very start of the
+			 * patch main init (0x69828), which runs before 0x644e4:
+			 *   0x60358  copy g_biscuitPatchCfg -> 0x02097400
+			 *   0x603a0  byte 0x020975b2 = 0xff; words 0x020975dc/
+			 *            0x020975e0/0x020975e4 = 0
+			 *   0x60ef0  word 0x020903c8 = 0x000625a0
+			 * (2017 build only; $gp = 0x020973D4.)
+			 */
+			if (biscuit_patch_tables && !biscuit_fw2021) {
+				for (u4I = 0; u4I < ARRAY_SIZE(g_biscuitPatchCfg); u4I++) {
+					u4Val = g_biscuitPatchCfg[u4I];
+					wmt_core_reg_rw_raw(1, 0x02097400 + u4I * 4, &u4Val, 0xffffffff);
+				}
+				u4Val = 0x000000ff;
+				wmt_core_reg_rw_raw(1, 0x020975b2, &u4Val, 0x000000ff);
+				u4Val = 0;
+				wmt_core_reg_rw_raw(1, 0x020975dc, &u4Val, 0xffffffff);
+				wmt_core_reg_rw_raw(1, 0x020975e0, &u4Val, 0xffffffff);
+				wmt_core_reg_rw_raw(1, 0x020975e4, &u4Val, 0xffffffff);
+				u4Val = 0x000625a0;
+				wmt_core_reg_rw_raw(1, 0x020903c8, &u4Val, 0xffffffff);
+
+				u4Back = 0;
+				wmt_core_reg_rw_raw(0, 0x02097400, &u4Back, 0xffffffff);
+				DBGLOG(INIT, ERROR, "biscuit-patchcfg: [0x02097400]=0x%08x (want 0x%08x)\n",
+				       u4Back, g_biscuitPatchCfg[0]);
+			}
 
 			/*
 			 * Replay ROM patch _1_0's init routine (0x644e4) in the
