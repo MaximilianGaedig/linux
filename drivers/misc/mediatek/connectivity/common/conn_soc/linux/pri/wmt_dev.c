@@ -1365,7 +1365,6 @@ INT32 wmt_dev_dbg_setup(VOID)
 		.proc_write = wmt_dev_dbg_write,
 	};
 	gWmtDbgEntry = proc_create(WMT_DBG_PROCNAME, 0664, NULL, &wmt_dbg_fops);
-	proc_create("biscuit_peek", 0664, NULL, &biscuit_peek_fops);
 	if (gWmtDbgEntry == NULL) {
 		WMT_ERR_FUNC("Unable to create /proc entry\n\r");
 		return -1;
@@ -2459,6 +2458,17 @@ static int WMT_init(void)
 		goto error;
 #endif
 
+	/*
+	 * Register the chip-memory peek entry HERE rather than in
+	 * wmt_dev_dbg_setup(): that is only reached if wmt_lib_init() below
+	 * succeeds, and on this board it does not - /dev/stpwmt is created
+	 * above and WMT then works well enough to bring WiFi up, so the
+	 * failure is invisible except that neither /proc/driver/wmt_dbg nor
+	 * /proc/biscuit_peek ever appears. Registering it before the failure
+	 * point keeps the only tool that can read CONNSYS memory available.
+	 */
+	proc_create("biscuit_peek", 0664, NULL, &biscuit_peek_fops);
+
 #if 0
 	pWmtDevCtx = wmt_drv_create();
 	if (!pWmtDevCtx) {
@@ -2480,8 +2490,11 @@ static int WMT_init(void)
 #endif
 	ret = wmt_lib_init();
 	if (ret) {
-		WMT_ERR_FUNC("wmt_lib_init() fails (%d)\n", ret);
-		goto error;
+		/* Loud, and do NOT abandon the rest of WMT_init: the driver
+		 * demonstrably works afterwards, and bailing here silently
+		 * cost us every /proc debug entry.
+		 */
+		pr_err("biscuit: wmt_lib_init() FAILED (%d) - continuing anyway\n", ret);
 	}
 #if CFG_WMT_DBG_SUPPORT
 	wmt_dev_dbg_setup();
