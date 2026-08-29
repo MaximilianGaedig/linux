@@ -650,7 +650,16 @@ static void WIFI_exit(void)
 	WIFI_INFO_FUNC("%s driver removed.\n", WIFI_DRIVER_NAME);
 }
 
-#ifdef MTK_WCN_REMOVE_KERNEL_MODULE
+/*
+ * MTK_WCN_REMOVE_KERNEL_MODULE is set tree-wide for conn_soc, which turns
+ * this file into a library whose init is called by the built-in detect
+ * driver instead of by module_init. When wlan/gen2 is built as a module
+ * (CONFIG_MTK_COMBO_WIFI=m) this file becomes a module too, nothing calls
+ * mtk_wcn_wmt_wifi_init() any more, and /dev/wmtWifi is never created - so
+ * the stock 'write /dev/wmtWifi 1' probe trigger has nothing to write to
+ * and wlan0 never appears. Keep the real module_init in that case.
+ */
+#if defined(MTK_WCN_REMOVE_KERNEL_MODULE) && !IS_MODULE(CONFIG_MTK_COMBO_WIFI)
 
 INT32 mtk_wcn_wmt_wifi_init(VOID)
 {
