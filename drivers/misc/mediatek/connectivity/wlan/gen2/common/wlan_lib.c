@@ -1204,6 +1204,9 @@ module_param(biscuit_patch_tables, int, 0644);
 int biscuit_trampoline;
 module_param(biscuit_trampoline, int, 0644);
 
+int biscuit_entry_probe;
+module_param(biscuit_entry_probe, int, 0644);
+
 /*
  * Force the firmware to assert this many microseconds after WIFI_START.
  *
@@ -2397,17 +2400,48 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		 */
 		if (biscuit_trampoline) {
 			static const struct { UINT_32 addr, val; } arTramp[] = {
-				/* trampoline body at 0xf00ee000 (byteswapped insns) */
-				{ 0xf00ee000, 0x69000046 },  /* sethi $r0,#0x69      */
-				{ 0xf00ee004, 0x28080058 },  /* ori   $r0,$r0,#0x828 */
-				{ 0xf00ee008, 0x0100e04b },  /* jral  $r0  (0x69828) */
-				{ 0xf00ee00c, 0x6b000046 },  /* sethi $r0,#0x6b      */
-				{ 0xf00ee010, 0x6c010058 },  /* ori   $r0,$r0,#0x16c */
-				{ 0xf00ee014, 0x0000004a },  /* jr    $r0  (0x6b16c) */
-				/* repoint the WiFi entry 0x6a000 -> 0xf00ee000 */
-				{ 0x0006a000, 0xee000f46 },  /* sethi $r0,#0xf00ee   */
-				{ 0x0006a004, 0x00000058 },  /* ori   $r0,$r0,#0x0   */
-				{ 0x0006a008, 0x0000004a },  /* jr    $r0            */
+				/*
+				 * The REAL WiFi entry is 0x6b16c, not 0x6a000:
+				 * the chip ignores the WIFI_START address, and
+				 * 0x6a000 is only a veneer (jr 0x6b16c) that is
+				 * never executed. 0x6b16c is the firmware reset
+				 * handler - it pushes r6-r10/lp (valid WMT stack),
+				 * then calls sub-inits (incl. the 0x6a00c BSS zero
+				 * the PC trace caught at 0x6a046).
+				 *
+				 * Trampoline at 0xf00ee000: relocate 0x6b16c's
+				 * prologue (smw.adm) and next two insns, run
+				 * 0x69828 in between (after the reg save), then
+				 * continue at 0x6b178. byteswap(BE) per the
+				 * mixed-endian rule.
+				 */
+				/* sentinel1 (0xa1) @0xf00ee800 = trampoline reached */
+				{ 0xf00ee000, 0xa1000044 },
+				{ 0xf00ee004, 0xee00ff46 },
+				{ 0xf00ee008, 0x0088f758 },
+				{ 0xf00ee00c, 0x00800714 },
+				/* relocated 0x6b16c prologue */
+				{ 0xf00ee010, 0xbca86f3a },
+				/* jral 0x69828 */
+				{ 0xf00ee014, 0x69000046 },
+				{ 0xf00ee018, 0x28080058 },
+				{ 0xf00ee01c, 0x0100e04b },
+				/* sentinel2 (0xa2) @0xf00ee804 = 0x69828 returned */
+				{ 0xf00ee020, 0xa2000044 },
+				{ 0xf00ee024, 0xee00ff46 },
+				{ 0xf00ee028, 0x0488f758 },
+				{ 0xf00ee02c, 0x00800714 },
+				/* relocated 0x6b170/0x6b174 */
+				{ 0xf00ee030, 0x1400f046 },
+				{ 0xf00ee034, 0x2e820704 },
+				/* continue at 0x6b178 */
+				{ 0xf00ee038, 0x6b00f046 },
+				{ 0xf00ee03c, 0x7881f758 },
+				{ 0xf00ee040, 0x003c004a },
+				/* repoint the real entry 0x6b16c -> 0xf00ee000 */
+				{ 0x0006b16c, 0xee000f46 },  /* sethi $r0,#0xf00ee        */
+				{ 0x0006b170, 0x00000058 },  /* ori   $r0,$r0,#0x0        */
+				{ 0x0006b174, 0x0000004a },  /* jr    $r0                 */
 			};
 			UINT_32 u4T;
 
@@ -2422,6 +2456,32 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		}
 
 		wlanConfigWifiFunc(prAdapter, TRUE, prRegInfo->u4StartAddress);
+
+		/*
+		 * Find the REAL firmware entry. WIFI_START's address is ignored
+		 * by the chip (trampolines at 0x6a000 and 0x6b16c both proved
+		 * never-executed), so capture the first 64 PC samples the moment
+		 * the MCU first runs downloaded code (>= 0x60000): au4First[0] is
+		 * the entry.
+		 */
+		if (biscuit_entry_probe) {
+			static UINT_32 au4First[64];
+			UINT_32 u4N = 0, u4J, fgFw = 0;
+
+			for (u4J = 0; u4J < 4000000 && u4N < 64; u4J++) {
+				UINT_32 pc = wmt_plat_read_cpupcr();
+
+				if (pc >= 0x00060000)
+					fgFw = 1;
+				if (fgFw)
+					au4First[u4N++] = pc;
+			}
+			for (u4J = 0; u4J < u4N; u4J++)
+				DBGLOG(INIT, ERROR, "biscuit-entry: [%2u] pc=0x%08x\n",
+				       u4J, au4First[u4J]);
+			if (u4N == 0)
+				DBGLOG(INIT, ERROR, "biscuit-entry: never saw firmware PC\n");
+		}
 
 		/*
 		 * Trace the CONNSYS MCU program counter across the window in
