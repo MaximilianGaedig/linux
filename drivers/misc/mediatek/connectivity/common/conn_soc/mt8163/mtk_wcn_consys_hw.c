@@ -239,6 +239,56 @@ static INT32 mtk_wmt_probe(struct platform_device *pdev)
 		goto set_pin_exit;
 	}
 	pinctrl_select_state(mt6625_spi_pinctrl, mt6625_spi_default);
+
+	/*
+	 * Verify the ANT_SEL mux actually took, and program it if not.
+	 *
+	 * pinctrl_lookup_state() and pinctrl_select_state() both succeed here -
+	 * no error is logged - yet the mux register reads back as function 0
+	 * (plain GPIO) for pins 85/86 instead of function 2 (ANT_SEL0/ANT_SEL1).
+	 * Measured on hardware: 0x10005710 == 0x00000000, where 0x12 is expected
+	 * (pin 85 in bits[2:0], pin 86 in bits[5:3], mode 2 each).
+	 *
+	 * With those pins left as GPIO the chip's coex block cannot drive the
+	 * 2.4GHz antenna switch, so WiFi is never granted that antenna. That
+	 * matches the symptom exactly: 2.4GHz returns zero BSSes on every scan
+	 * while 5GHz - which does not use this switch - works, and BT, which
+	 * holds the default path, receives fine at -45 dBm.
+	 *
+	 * The existing fallback below does the same write but only when the
+	 * pinctrl *lookup* fails, which is not what happens. Check the register
+	 * itself rather than trusting the return codes, and do it here so the
+	 * mux is correct before the chip is powered on and latches its antenna
+	 * configuration.
+	 */
+	{
+		struct device_node *pio_np =
+			of_find_compatible_node(NULL, NULL, "mediatek,mt8163-pinctrl");
+		struct device_node *regmap_np;
+		struct regmap *pio_regmap;
+		u32 val = 0;
+
+		if (pio_np) {
+			regmap_np = of_parse_phandle(pio_np, "mediatek,pctl-regmap", 0);
+			if (regmap_np) {
+				pio_regmap = syscon_node_to_regmap(regmap_np);
+				of_node_put(regmap_np);
+				if (!IS_ERR(pio_regmap)) {
+					regmap_read(pio_regmap, 0x710, &val);
+					if ((val & 0x3Fu) != 0x12u) {
+						regmap_update_bits(pio_regmap, 0x710, 0x3Fu, 0x12u);
+						regmap_read(pio_regmap, 0x710, &val);
+						WMT_PLAT_ERR_FUNC("biscuit-antsel: mux was wrong, programmed ANT_SEL0/1 (0x710=0x%08x)\n",
+								  val);
+					} else {
+						WMT_PLAT_INFO_FUNC("biscuit-antsel: ANT_SEL0/1 mux already correct (0x%08x)\n",
+								   val);
+					}
+				}
+			}
+			of_node_put(pio_np);
+		}
+	}
 set_pin_exit:
 
 	/*
