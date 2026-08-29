@@ -1534,6 +1534,13 @@ VOID
 kalIndicateBssInfo(IN P_GLUE_INFO_T prGlueInfo,
 		   IN PUINT_8 pucFrameBuf, IN UINT_32 u4BufLen, IN UINT_8 ucChannelNum, IN INT_32 i4SignalStrength);
 
+VOID
+kalIndicateBssInfoFromDesc(IN P_GLUE_INFO_T prGlueInfo,
+			   IN PUINT_8 pucBssid, IN UINT_8 ucChannelNum,
+			   IN UINT_16 u2CapInfo, IN UINT_16 u2BeaconInterval,
+			   IN PUINT_8 pucSsid, IN UINT_8 ucSsidLen,
+			   IN PUINT_8 pucIeBuf, IN UINT_32 u4IeLen, IN INT_32 i4SignalStrength);
+
 /*----------------------------------------------------------------------------*/
 /* PNO Support                                                                */
 /*----------------------------------------------------------------------------*/

@@ -3836,6 +3836,82 @@ kalIndicateBssInfo(IN P_GLUE_INFO_T prGlueInfo,
 
 /*----------------------------------------------------------------------------*/
 /*!
+* \brief  Inform cfg80211 of a BSS from its descriptor fields (no raw frame).
+*
+* The firmware receives 2.4GHz beacons and keeps a descriptor (SSID, BSSID,
+* channel, capinfo, beacon interval, parsed IEs, RCPI), but does not always
+* re-deliver the raw beacon frame each scan, so u2RawLength is 0 and
+* kalIndicateBssInfo() (which needs the raw frame) is skipped - the BSS then
+* ages out of cfg80211 and never appears in the scan dump even though it is
+* being received. Use cfg80211_inform_bss(), which builds the entry from the
+* retained IE buffer, so a received BSS surfaces regardless of the raw frame.
+*/
+VOID
+kalIndicateBssInfoFromDesc(IN P_GLUE_INFO_T prGlueInfo,
+			   IN PUINT_8 pucBssid, IN UINT_8 ucChannelNum,
+			   IN UINT_16 u2CapInfo, IN UINT_16 u2BeaconInterval,
+			   IN PUINT_8 pucSsid, IN UINT_8 ucSsidLen,
+			   IN PUINT_8 pucIeBuf, IN UINT_32 u4IeLen, IN INT_32 i4SignalStrength)
+{
+	struct wiphy *wiphy;
+	struct ieee80211_channel *prChannel = NULL;
+	UINT_8 aucSynthIe[64];
+	const u8 *pucIe = (const u8 *)pucIeBuf;
+	size_t szIeLen = (size_t)u4IeLen;
+
+	ASSERT(prGlueInfo);
+	wiphy = priv_to_wiphy(prGlueInfo);
+
+	if (ucChannelNum <= 14)
+		prChannel = ieee80211_get_channel(wiphy,
+			ieee80211_channel_to_frequency(ucChannelNum, NL80211_BAND_2GHZ));
+	else
+		prChannel = ieee80211_get_channel(wiphy,
+			ieee80211_channel_to_frequency(ucChannelNum, NL80211_BAND_5GHZ));
+
+	/*
+	 * The firmware often delivers a 2.4GHz BSS only as a scan-result summary
+	 * (SSID/BSSID/channel/RCPI) with no IEs, so synthesise the minimum
+	 * cfg80211 needs to list it: an SSID element and a DS-parameter element.
+	 */
+	if (u4IeLen == 0) {
+		UINT_8 ucLen = (ucSsidLen > 32) ? 32 : ucSsidLen;
+		UINT_32 u4Pos = 0;
+
+		aucSynthIe[u4Pos++] = 0;		/* ELEM_ID_SSID */
+		aucSynthIe[u4Pos++] = ucLen;
+		if (ucLen) {
+			kalMemCopy(&aucSynthIe[u4Pos], pucSsid, ucLen);
+			u4Pos += ucLen;
+		}
+		aucSynthIe[u4Pos++] = 3;		/* ELEM_ID_DS_PARAM_SET */
+		aucSynthIe[u4Pos++] = 1;
+		aucSynthIe[u4Pos++] = ucChannelNum;
+		pucIe = (const u8 *)aucSynthIe;
+		szIeLen = u4Pos;
+	}
+
+	if (prChannel != NULL &&
+	    (prGlueInfo->prScanRequest != NULL || prGlueInfo->prSchedScanRequest != NULL)) {
+		struct cfg80211_bss *bss;
+
+		bss = cfg80211_inform_bss(wiphy, prChannel, CFG80211_BSS_FTYPE_UNKNOWN,
+					  pucBssid, 0, u2CapInfo, u2BeaconInterval,
+					  pucIe, szIeLen,
+					  i4SignalStrength * 100, GFP_KERNEL);
+		if (!bss) {
+			DBGLOG(SCN, WARN, "inform bss(desc) failed, ch %d rcpi %d\n",
+			       ucChannelNum, i4SignalStrength);
+		} else {
+			cfg80211_put_bss(wiphy, bss);
+			DBGLOG(SCN, TRACE, "inform bss(desc) ok, ch %d rcpi %d ielen %zu\n",
+			       ucChannelNum, i4SignalStrength, szIeLen);
+		}
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+/*!
 * \brief    To indicate channel ready
 *
 * \param[in]
