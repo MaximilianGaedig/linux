@@ -109,6 +109,58 @@
 #if CFG_SUPPORT_THERMO_THROTTLING
 static P_GLUE_INFO_T g_prGlueInfo_proc;
 #endif
+
+/*
+ * biscuit_mcr: firmware-mediated MCR (MAC/BB/RF) register access.
+ *
+ * procMCRRead()/procMCRWrite() below already implement this, but they use the
+ * pre-3.10 proc API (char *page, off_t off, int *eof) and sit inside a #if 0,
+ * so nothing was ever registered - there is no way to read a single chip
+ * register from userspace.  That is the one instrument needed to tell a
+ * mis-programmed radio from a deaf one, so provide it with the modern
+ * proc_ops API.
+ *
+ *   echo 60000      > /proc/net/wlan/biscuit_mcr   # select one register
+ *   echo "60000 +64" > /proc/net/wlan/biscuit_mcr  # select a 64-dword window
+ *   echo "60000 1234" > /proc/net/wlan/biscuit_mcr # write 0x1234
+ *   cat /proc/net/wlan/biscuit_mcr
+ *
+ * Values are hex with no 0x prefix (the kernel's sscanf %x accepts both, but
+ * "0x%x" would not match a bare digit string).  The reads go through
+ * wlanoidQueryMcrRead, i.e. CMD_ID_ACCESS_REG to the firmware, so they only
+ * work while the firmware is up - a wedged chip returns a read failure rather
+ * than silently reporting zeros, which matters because "all zeros" is exactly
+ * what a dead radio and a dead bus look like.
+ */
+#define PROC_BISCUIT_MCR	"biscuit_mcr"
+#define BISCUIT_MCR_MAX_COUNT	256
+static P_GLUE_INFO_T g_prGlueInfo_mcr;
+static UINT_32 g_u4BiscuitMcrOffset;
+static UINT_32 g_u4BiscuitMcrCount = 1;
+
+/*
+ * biscuit_ate: RF test (ATE) control.
+ *
+ * The RF-test OIDs (wlanoidRftestSetTestMode / SetAutoTest / QueryAutoTest)
+ * were only ever reachable through the Android iwpriv path, which does not
+ * exist here.  They are the only way to park the radio on one channel and ask
+ * the firmware what it is actually receiving, which is what separates a radio
+ * that hears nothing from one that hears energy it cannot demodulate.
+ *
+ *   echo "mode 1"     > /proc/net/wlan/biscuit_ate   # enter RF test mode
+ *   echo "s 18 2437"  > /proc/net/wlan/biscuit_ate   # RF_AT_FUNCID_CHNL_FREQ
+ *   echo "s 1 2"      > /proc/net/wlan/biscuit_ate   # COMMAND = STARTRX
+ *   echo "q 34"       > /proc/net/wlan/biscuit_ate   # RXOK_COUNT
+ *   cat /proc/net/wlan/biscuit_ate
+ *   echo "mode 0"     > /proc/net/wlan/biscuit_ate   # leave RF test mode
+ *
+ * Useful query indices: 32 TXED, 33 TXOK, 34 RXOK, 35 RXERROR, 41 RX_PHY_STATIS,
+ * 45 READ_EFUSE, 46 RX_RSSI.  Set indices: 1 COMMAND, 18 CHNL_FREQ.
+ */
+#define PROC_BISCUIT_ATE	"biscuit_ate"
+static UINT_32 g_u4AteIdx;
+static UINT_32 g_u4AteVal;
+static UINT_32 g_u4AteStatus = 0xffffffff;
 /*******************************************************************************
 *                                 M A C R O S
 ********************************************************************************
@@ -930,6 +982,181 @@ static ssize_t procfile_write(struct file *filp, const char __user *buffer, size
 	};
 #endif
 
+static ssize_t procBiscuitMcrRead(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
+{
+	PARAM_CUSTOM_MCR_RW_STRUCT_T rMcrInfo;
+	UINT_32 u4BufLen = 0;
+	UINT_32 i;
+	WLAN_STATUS rStatus;
+	char *pcBuf;
+	size_t cap;
+	int len = 0;
+
+	if (*f_pos > 0)
+		return 0;
+	if (!g_prGlueInfo_mcr)
+		return -ENODEV;
+
+	cap = (size_t) g_u4BiscuitMcrCount * 32 + 64;
+	pcBuf = kalMemAlloc(cap, VIR_MEM_TYPE);
+	if (!pcBuf)
+		return -ENOMEM;
+
+	for (i = 0; i < g_u4BiscuitMcrCount; i++) {
+		if ((size_t) len + 40 >= cap)
+			break;
+
+		kalMemZero(&rMcrInfo, sizeof(rMcrInfo));
+		rMcrInfo.u4McrOffset = g_u4BiscuitMcrOffset + (i * 4);
+
+		rStatus = kalIoctl(g_prGlueInfo_mcr,
+				   wlanoidQueryMcrRead,
+				   (PVOID) &rMcrInfo,
+				   sizeof(rMcrInfo), TRUE, TRUE, TRUE, FALSE, &u4BufLen);
+
+		if (rStatus != WLAN_STATUS_SUCCESS) {
+			len += snprintf(pcBuf + len, cap - len, "0x%08x: READ-FAILED(0x%08x)\n",
+					(unsigned int)rMcrInfo.u4McrOffset, (unsigned int)rStatus);
+			break;
+		}
+
+		len += snprintf(pcBuf + len, cap - len, "0x%08x: 0x%08x\n",
+				(unsigned int)rMcrInfo.u4McrOffset, (unsigned int)rMcrInfo.u4McrData);
+	}
+
+	if ((size_t) len > count)
+		len = (int)count;
+
+	if (copy_to_user(buf, pcBuf, len)) {
+		kalMemFree(pcBuf, VIR_MEM_TYPE, cap);
+		return -EFAULT;
+	}
+
+	kalMemFree(pcBuf, VIR_MEM_TYPE, cap);
+	*f_pos += len;
+	return len;
+}
+
+static ssize_t procBiscuitMcrWrite(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
+{
+	char acBuf[64];
+	unsigned int u4Off = 0, u4Val = 0, u4Cnt = 0;
+	PARAM_CUSTOM_MCR_RW_STRUCT_T rMcrInfo;
+	UINT_32 u4BufLen = 0;
+	size_t len;
+
+	len = (count < (sizeof(acBuf) - 1)) ? count : (sizeof(acBuf) - 1);
+	if (copy_from_user(acBuf, buf, len))
+		return -EFAULT;
+	acBuf[len] = '\0';
+
+	/* "<off> +<n>" must be tried before "<off> <val>": the kernel's %x
+	 * accepts a leading '+', so a range request would otherwise be taken
+	 * as a register write of that value.
+	 */
+	if (sscanf(acBuf, "%x +%u", &u4Off, &u4Cnt) == 2) {
+		g_u4BiscuitMcrOffset = u4Off;
+		if (u4Cnt == 0)
+			u4Cnt = 1;
+		g_u4BiscuitMcrCount = (u4Cnt > BISCUIT_MCR_MAX_COUNT) ? BISCUIT_MCR_MAX_COUNT : u4Cnt;
+	} else if (sscanf(acBuf, "%x %x", &u4Off, &u4Val) == 2) {
+		if (!g_prGlueInfo_mcr)
+			return -ENODEV;
+		kalMemZero(&rMcrInfo, sizeof(rMcrInfo));
+		rMcrInfo.u4McrOffset = u4Off;
+		rMcrInfo.u4McrData = u4Val;
+		kalIoctl(g_prGlueInfo_mcr,
+			 wlanoidSetMcrWrite,
+			 (PVOID) &rMcrInfo, sizeof(rMcrInfo), FALSE, FALSE, TRUE, FALSE, &u4BufLen);
+		g_u4BiscuitMcrOffset = u4Off;
+		g_u4BiscuitMcrCount = 1;
+	} else if (sscanf(acBuf, "%x", &u4Off) == 1) {
+		g_u4BiscuitMcrOffset = u4Off;
+		g_u4BiscuitMcrCount = 1;
+	}
+
+	return count;
+}
+
+static const struct proc_ops biscuit_mcr_ops = {
+	.proc_read = procBiscuitMcrRead,
+	.proc_write = procBiscuitMcrWrite,
+};
+
+static ssize_t procBiscuitAteRead(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
+{
+	char acBuf[96];
+	int len;
+
+	if (*f_pos > 0)
+		return 0;
+
+	len = snprintf(acBuf, sizeof(acBuf), "idx=%u data=0x%08x (%u) status=0x%08x\n",
+		       (unsigned int)g_u4AteIdx, (unsigned int)g_u4AteVal,
+		       (unsigned int)g_u4AteVal, (unsigned int)g_u4AteStatus);
+
+	if ((size_t) len > count)
+		len = (int)count;
+	if (copy_to_user(buf, acBuf, len))
+		return -EFAULT;
+
+	*f_pos += len;
+	return len;
+}
+
+static ssize_t procBiscuitAteWrite(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
+{
+	char acBuf[64];
+	unsigned int u4Idx = 0, u4Val = 0, u4Mode = 0;
+	PARAM_MTK_WIFI_TEST_STRUCT_T rAtInfo;
+	UINT_32 u4BufLen = 0;
+	size_t len;
+
+	if (!g_prGlueInfo_mcr)
+		return -ENODEV;
+
+	len = (count < (sizeof(acBuf) - 1)) ? count : (sizeof(acBuf) - 1);
+	if (copy_from_user(acBuf, buf, len))
+		return -EFAULT;
+	acBuf[len] = '\0';
+
+	if (sscanf(acBuf, "mode %u", &u4Mode) == 1) {
+		/* Both OIDs take a zero-length set buffer but still ASSERT() on a
+		 * non-NULL pointer, so pass the scratch struct with length 0.
+		 */
+		g_u4AteStatus = kalIoctl(g_prGlueInfo_mcr,
+					 u4Mode ? wlanoidRftestSetTestMode : wlanoidRftestSetAbortTestMode,
+					 (PVOID) &rAtInfo, 0, FALSE, FALSE, TRUE, FALSE, &u4BufLen);
+		g_u4AteIdx = 0;
+		g_u4AteVal = u4Mode;
+	} else if (sscanf(acBuf, "s %u %u", &u4Idx, &u4Val) == 2) {
+		rAtInfo.u4FuncIndex = u4Idx;
+		rAtInfo.u4FuncData = u4Val;
+		g_u4AteStatus = kalIoctl(g_prGlueInfo_mcr,
+					 wlanoidRftestSetAutoTest,
+					 (PVOID) &rAtInfo, sizeof(rAtInfo),
+					 FALSE, FALSE, TRUE, FALSE, &u4BufLen);
+		g_u4AteIdx = u4Idx;
+		g_u4AteVal = u4Val;
+	} else if (sscanf(acBuf, "q %u", &u4Idx) == 1) {
+		rAtInfo.u4FuncIndex = u4Idx;
+		rAtInfo.u4FuncData = 0;
+		g_u4AteStatus = kalIoctl(g_prGlueInfo_mcr,
+					 wlanoidRftestQueryAutoTest,
+					 (PVOID) &rAtInfo, sizeof(rAtInfo),
+					 TRUE, TRUE, TRUE, FALSE, &u4BufLen);
+		g_u4AteIdx = u4Idx;
+		g_u4AteVal = rAtInfo.u4FuncData;
+	}
+
+	return count;
+}
+
+static const struct proc_ops biscuit_ate_ops = {
+	.proc_read = procBiscuitAteRead,
+	.proc_write = procBiscuitAteWrite,
+};
+
 INT_32 procInitFs(VOID)
 {
 	struct proc_dir_entry *prEntry;
@@ -998,6 +1225,9 @@ INT_32 procRemoveProcfs(VOID)
 	/* remove_proc_entry(pucDevName, init_net.proc_net); */
 	remove_proc_entry(PROC_WLAN_THERMO, gprProcRoot);
 	remove_proc_entry(PROC_CMD_DEBUG_NAME, gprProcRoot);
+	remove_proc_entry(PROC_BISCUIT_MCR, gprProcRoot);
+	remove_proc_entry(PROC_BISCUIT_ATE, gprProcRoot);
+	g_prGlueInfo_mcr = NULL;
 #if CFG_SUPPORT_THERMO_THROTTLING
 	g_prGlueInfo_proc = NULL;
 #endif
@@ -1028,6 +1258,20 @@ INT_32 procCreateFsEntry(P_GLUE_INFO_T prGlueInfo)
 		return -1;
 	}
 	proc_set_user(prEntry, KUIDT_INIT(PROC_UID_SHELL), KGIDT_INIT(PROC_GID_WIFI));
+
+	g_prGlueInfo_mcr = prGlueInfo;
+	prEntry = proc_create(PROC_BISCUIT_MCR, 0664, gprProcRoot, &biscuit_mcr_ops);
+	if (prEntry == NULL) {
+		kalPrint("Unable to create /proc entry biscuit_mcr\n\r");
+		return -1;
+	}
+
+	prEntry = proc_create(PROC_BISCUIT_ATE, 0664, gprProcRoot, &biscuit_ate_ops);
+	if (prEntry == NULL) {
+		kalPrint("Unable to create /proc entry biscuit_ate\n\r");
+		return -1;
+	}
+
 	return 0;
 }
 
