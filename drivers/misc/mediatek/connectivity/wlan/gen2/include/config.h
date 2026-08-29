@@ -1149,7 +1149,7 @@
 							   or wmm will fail when queue is full */
 
 /*! Maximum number of SW TX CMD packet buffer */
-#define CFG_TX_MAX_CMD_PKT_NUM                  32
+#define CFG_TX_MAX_CMD_PKT_NUM                  64
 
 /*! Maximum number of associated STAs */
 #define CFG_NUM_OF_STA_RECORD                   20
