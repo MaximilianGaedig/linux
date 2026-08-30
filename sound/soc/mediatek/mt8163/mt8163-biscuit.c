@@ -35,6 +35,11 @@ SND_SOC_DAILINK_DEFS(playback_fe,
 	DAILINK_COMP_ARRAY(COMP_DUMMY()),
 	DAILINK_COMP_ARRAY(COMP_EMPTY()));
 
+SND_SOC_DAILINK_DEFS(mic_capture,
+	DAILINK_COMP_ARRAY(COMP_EMPTY()),
+	DAILINK_COMP_ARRAY(COMP_DUMMY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY()));
+
 SND_SOC_DAILINK_DEFS(playback_be,
 	DAILINK_COMP_ARRAY(COMP_EMPTY()),
 	DAILINK_COMP_ARRAY(COMP_EMPTY()),
@@ -122,6 +127,27 @@ static struct snd_soc_dai_link biscuit_dai_links[] = {
 		.ops = &biscuit_be_ops,
 		SND_SOC_DAILINK_REG(playback_be),
 	},
+	/*
+	 * Mic array. This one does not touch the AFE at all.
+	 *
+	 * The four aic3x mic codecs feed I2S into the "dough" FPGA rather than
+	 * into the SoC; the FPGA packs all channels and hands finished frames
+	 * back over SPI0, so the capture path is a single self-contained
+	 * component that is CPU DAI and PCM platform at once - which is
+	 * exactly how Amazon's own machine driver wires it ("AMZN_SPI_Capture",
+	 * cpu_dai_name = platform_name = AMZN_MT_SPI_PCM).
+	 *
+	 * This link used to be absent because the FPGA never configured and
+	 * would have registered a capture device that could only ever return
+	 * silence.  It configures now (it reports revision 34), so the link
+	 * comes back.
+	 */
+	{
+		.name = "MIC_SPI",
+		.stream_name = "Mic Capture",
+		.capture_only = 1,
+		SND_SOC_DAILINK_REG(mic_capture),
+	},
 };
 
 static struct snd_soc_card biscuit_card = {
@@ -139,7 +165,7 @@ static struct snd_soc_card biscuit_card = {
 static int biscuit_snd_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = &biscuit_card;
-	struct device_node *platform, *codec, *fe_cpu, *be_cpu;
+	struct device_node *platform, *codec, *fe_cpu, *be_cpu, *mic;
 	struct snd_soc_dai_link *link;
 	int i;
 
@@ -166,8 +192,21 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 	fe_cpu = platform;
 	be_cpu = platform;
 
+	/*
+	 * The mic FPGA is optional: if its node is absent or its driver has
+	 * not probed, drop that link rather than failing the whole card and
+	 * taking the speaker down with it.
+	 */
+	mic = of_parse_phandle(pdev->dev.of_node, "amazon,mic-fpga", 0);
+	if (!mic)
+		card->num_links = ARRAY_SIZE(biscuit_dai_links) - 1;
+
 	for_each_card_prelinks(card, i, link) {
-		if (!strcmp(link->name, "DL1_FE")) {
+		if (!strcmp(link->name, "MIC_SPI")) {
+			link->cpus->of_node = mic;
+			link->cpus->dai_name = "biscuit-spi-pcm";
+			link->platforms->of_node = mic;
+		} else if (!strcmp(link->name, "DL1_FE")) {
 			link->cpus->of_node = fe_cpu;
 			link->cpus->dai_name = "DL1";
 			link->platforms->of_node = platform;
@@ -179,8 +218,8 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 		}
 	}
 
-	dev_info(&pdev->dev, "biscuit-audio: FE=DL1 BE=I2S1 platform=%pOF codec=%pOF\n",
-		 platform, codec);
+	dev_info(&pdev->dev, "biscuit-audio: FE=DL1 BE=I2S1 platform=%pOF codec=%pOF mic=%pOF\n",
+		 platform, codec, mic);
 
 	return devm_snd_soc_register_card(&pdev->dev, card);
 }
