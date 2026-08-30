@@ -711,6 +711,19 @@ static int mt8163_afe_pcm_dev_probe(struct platform_device *pdev)
 		goto err_pm_disable;
 	}
 
+	/* biscuit-dbg: dump the combined DAI array so DT "sound-dai = <&afe N>"
+	 * indices can be matched to real DAI names without guesswork. */
+	{
+		int di;
+
+		for (di = 0; di < afe->num_dai_drivers; di++)
+			dev_err(dev, "biscuit-dai[%d]: name=%s id=%d pb=%d cap=%d\n",
+				di, afe->dai_drivers[di].name,
+				afe->dai_drivers[di].id,
+				afe->dai_drivers[di].playback.channels_max,
+				afe->dai_drivers[di].capture.channels_max);
+	}
+
 	afe->mtk_afe_hardware = &mt8163_afe_hardware;
 	afe->memif_fs = mt8163_memif_fs;
 	afe->irq_fs = mt8163_irq_fs;
