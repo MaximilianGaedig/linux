@@ -213,33 +213,23 @@
  */
 / {
 	sound: sound {
-		compatible = "simple-audio-card";
-		simple-audio-card,name = "biscuit-audio";
-
-		simple-audio-card,dai-link@0 {
-			format = "i2s";
-			cpu {
-				sound-dai = <&afe 0>;  /* DL1: front-end playback memif */
-			};
-			codec {
-				sound-dai = <&aic32x4_codec>;
-			};
-		};
-
+		compatible = "amazon,biscuit-audio";
+		mediatek,platform = <&afe>;
 		/*
-		 * Mic-array capture link (AFE <- SPI-FPGA <- aic3x mics) is
-		 * omitted for now: it is doubly blocked - the proprietary FPGA
-		 * bitstream (i2s_to_spi_v34.bin) is not extracted, and the
-		 * "dough" FPGA reads back revision 0 (no SPI response) on this
-		 * board even with firmware present. Keeping the link in the card
-		 * made asoc-simple-card fail snd_soc_dai_set_fmt() on the aic3x
-		 * codec, which took the whole card down - speaker included. Wire
-		 * it back once the FPGA capture path is actually working:
-		 *   simple-audio-card,dai-link@1 {
-		 *       cpu   { sound-dai = <&spi_pcm_fpga>; };
-		 *       codec { sound-dai = <&mic0_codec>; };
-		 *   };
+		 * MT8163's AFE splits playback into a front-end memif (DL1)
+		 * and a separate I2S back-end DAI; only a DPCM card can bind
+		 * them. simple-audio-card built a plain DL1<->codec link, which
+		 * left the I2S port unconfigured so nothing was ever clocked
+		 * out of the SoC pins and the speaker stayed silent.
+		 *
+		 * I2S DAIs here are unidirectional: I2S0/I2S2 capture,
+		 * I2S1/I2S3 playback - so the speaker back-end is I2S1.
+		 * Combined DAI indices: DL1=0 DL2=1 VUL=2 AWB=3
+		 *                       I2S0=4 I2S1=5 I2S2=6 I2S3=7
 		 */
+		mediatek,fe-dai = <&afe 0>;    /* DL1 front-end memif */
+		mediatek,be-dai = <&afe 5>;    /* I2S1 playback back-end */
+		mediatek,audio-codec = <&aic32x4_codec>;
 	};
 };
 
