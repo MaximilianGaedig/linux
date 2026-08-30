@@ -22,12 +22,37 @@
 
 static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	SND_SOC_DAPM_SPK("Ext Spk", NULL),
+	SND_SOC_DAPM_MIC("Mic Array", NULL),
 };
 
 /* The aic32x4's line outputs drive the on-board amplifier. */
+/*
+ * Feed every ADC input from the mic-array widget.
+ *
+ * The card is fully_routed, so a widget with no route to an endpoint stays
+ * powered down forever - which is what kept the ADCs silent even once they
+ * were bound to the right driver and their PLL locked. Inside each ADC the
+ * path is IN_xL -> "IN_xL Capture Switch" -> Left Input -> Left PGA ->
+ * Left ADC, and those mixer switches default to off, so userspace still has
+ * to close one; declaring all six inputs on each part lets DAPM complete a
+ * path for whichever one this board actually wires without needing the
+ * schematic first.
+ */
+#define BISCUIT_MIC_ROUTES(prefix)					\
+	{ prefix " IN_1L", NULL, "Mic Array" },				\
+	{ prefix " IN_1R", NULL, "Mic Array" },				\
+	{ prefix " IN_2L", NULL, "Mic Array" },				\
+	{ prefix " IN_2R", NULL, "Mic Array" },				\
+	{ prefix " IN_3L", NULL, "Mic Array" },				\
+	{ prefix " IN_3R", NULL, "Mic Array" }
+
 static const struct snd_soc_dapm_route biscuit_routes[] = {
 	{ "Ext Spk", NULL, "Speaker LOL" },
 	{ "Ext Spk", NULL, "Speaker LOR" },
+	BISCUIT_MIC_ROUTES("Mic0"),
+	BISCUIT_MIC_ROUTES("Mic1"),
+	BISCUIT_MIC_ROUTES("Mic2"),
+	BISCUIT_MIC_ROUTES("Mic3"),
 };
 
 SND_SOC_DAILINK_DEFS(playback_fe,
@@ -35,10 +60,112 @@ SND_SOC_DAILINK_DEFS(playback_fe,
 	DAILINK_COMP_ARRAY(COMP_DUMMY()),
 	DAILINK_COMP_ARRAY(COMP_EMPTY()));
 
+#define BISCUIT_N_MICS	4
+
+/*
+ * All four ADCs are named, not just the clock master.
+ *
+ * Naming only the master (which is what Amazon's own link does) makes ASoC
+ * intersect the CPU DAI's 9 channels with one ADC's 2, producing an empty
+ * range and -EINVAL from the very open() - snd_soc_runtime_calc_hw() only
+ * defers to the CPU side once a link has more than one CODEC. Listing all
+ * four is also simply truthful: they all sit on this TDM bus and they all
+ * need configuring.
+ */
 SND_SOC_DAILINK_DEFS(mic_capture,
 	DAILINK_COMP_ARRAY(COMP_EMPTY()),
-	DAILINK_COMP_ARRAY(COMP_DUMMY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY(), COMP_EMPTY(),
+			   COMP_EMPTY(), COMP_EMPTY()),
 	DAILINK_COMP_ARRAY(COMP_EMPTY()));
+
+/*
+ * Mic-array clocking, straight from Amazon's tlv3101_hw_params().
+ *
+ * The ADC is the bit- and frame-clock master and the bus is TDM (DSP_B),
+ * not plain I2S - so the codec, not the FPGA, generates the clocks the
+ * FPGA is waiting for. Until this ran, the FPGA sat with i2s_inactive=1.
+ *
+ * Note mainline's ADC3101 driver only accepts DSP_B together with IB_NF,
+ * while Amazon passes NB_NF; the two drivers program the bit-clock
+ * polarity bit from opposite defaults, so IB_NF here is the same wire
+ * behaviour their NB_NF produced.
+ */
+#define BISCUIT_MIC_MCLK_HZ	9600000
+
+static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
+				 struct snd_pcm_hw_params *params)
+{
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *codec_dai;
+	int i, ret;
+
+	/*
+	 * Exactly one ADC drives the bus.
+	 *
+	 * The link cannot express this through .dai_fmt, which is applied
+	 * identically to every CODEC on it - and four bit-clock masters on one
+	 * TDM bus is a short, not an audio path. So set the format per CODEC
+	 * here: the first is the bit- and frame-clock provider, the rest are
+	 * consumers, which is how Amazon wires the array (only
+	 * tlv320aic3101.0-0018 is named in their link, as the master).
+	 */
+	for_each_rtd_codec_dais(rtd, i, codec_dai) {
+		unsigned int fmt = SND_SOC_DAIFMT_DSP_B |
+				   SND_SOC_DAIFMT_IB_NF |
+				   (i == 0 ? SND_SOC_DAIFMT_CBP_CFP
+					   : SND_SOC_DAIFMT_CBC_CFC);
+
+		ret = snd_soc_dai_set_fmt(codec_dai, fmt);
+		if (ret && ret != -ENOTSUPP) {
+			dev_err(rtd->dev, "biscuit: mic%d set_fmt failed: %d\n",
+				i, ret);
+			return ret;
+		}
+
+		ret = snd_soc_dai_set_sysclk(codec_dai, 0, BISCUIT_MIC_MCLK_HZ,
+					     SND_SOC_CLOCK_IN);
+		if (ret && ret != -ENOTSUPP) {
+			dev_err(rtd->dev, "biscuit: mic%d set_sysclk(%u) failed: %d\n",
+				i, BISCUIT_MIC_MCLK_HZ, ret);
+			return ret;
+		}
+
+		/*
+		 * Give each ADC its own pair of slots on the shared bus.
+		 *
+		 * This is not optional bookkeeping: on a multi-CODEC link ASoC
+		 * narrows the params it hands each CODEC with
+		 * soc_pcm_codec_params_fixup(), driven by that DAI's rx_mask.
+		 * With no mask set the mask is zero, the fixup asks the ADC for
+		 * a zero-channel stream and hw_params comes straight back as
+		 * -EINVAL - which is what the capture tool saw while the
+		 * machine-level hw_params above appeared to succeed.
+		 *
+		 * snd_soc_dai_set_tdm_slot() stores the masks in the DAI before
+		 * it dispatches to the CODEC op, so this does its job even
+		 * though mainline's ADC3101 driver implements no .set_tdm_slot
+		 * and answers -ENOTSUPP.
+		 */
+		ret = snd_soc_dai_set_tdm_slot(codec_dai, 0,
+					       0x3 << (2 * i),
+					       params_channels(params),
+					       snd_pcm_format_width(params_format(params)));
+		if (ret && ret != -ENOTSUPP) {
+			dev_err(rtd->dev, "biscuit: mic%d set_tdm_slot failed: %d\n",
+				i, ret);
+			return ret;
+		}
+	}
+
+	dev_info(rtd->dev, "biscuit: mic hw_params rate=%u ch=%u width=%d\n",
+		 params_rate(params), params_channels(params),
+		 snd_pcm_format_width(params_format(params)));
+	return 0;
+}
+
+static const struct snd_soc_ops biscuit_mic_ops = {
+	.hw_params = biscuit_mic_hw_params,
+};
 
 SND_SOC_DAILINK_DEFS(playback_be,
 	DAILINK_COMP_ARRAY(COMP_EMPTY()),
@@ -146,6 +273,7 @@ static struct snd_soc_dai_link biscuit_dai_links[] = {
 		.name = "MIC_SPI",
 		.stream_name = "Mic Capture",
 		.capture_only = 1,
+		.ops = &biscuit_mic_ops,
 		SND_SOC_DAILINK_REG(mic_capture),
 	},
 };
@@ -166,8 +294,9 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = &biscuit_card;
 	struct device_node *platform, *codec, *fe_cpu, *be_cpu, *mic;
+	struct device_node *mic_codec[BISCUIT_N_MICS];
 	struct snd_soc_dai_link *link;
-	int i;
+	int i, j;
 
 	card->dev = &pdev->dev;
 
@@ -198,7 +327,10 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 	 * taking the speaker down with it.
 	 */
 	mic = of_parse_phandle(pdev->dev.of_node, "amazon,mic-fpga", 0);
-	if (!mic)
+	for (i = 0; i < BISCUIT_N_MICS; i++)
+		mic_codec[i] = of_parse_phandle(pdev->dev.of_node,
+						"amazon,mic-codec", i);
+	if (!mic || !mic_codec[0])
 		card->num_links = ARRAY_SIZE(biscuit_dai_links) - 1;
 
 	for_each_card_prelinks(card, i, link) {
@@ -206,6 +338,10 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 			link->cpus->of_node = mic;
 			link->cpus->dai_name = "biscuit-spi-pcm";
 			link->platforms->of_node = mic;
+			for (j = 0; j < BISCUIT_N_MICS; j++) {
+				link->codecs[j].of_node = mic_codec[j];
+				link->codecs[j].dai_name = "tlv320adc3xxx-hifi";
+			}
 		} else if (!strcmp(link->name, "DL1_FE")) {
 			link->cpus->of_node = fe_cpu;
 			link->cpus->dai_name = "DL1";
