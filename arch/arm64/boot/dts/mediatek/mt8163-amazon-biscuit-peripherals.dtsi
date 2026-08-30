@@ -400,6 +400,26 @@
 	 * (idle vs active) dance during firmware load are taken directly from
 	 * biscuit.dtsi's aud_pins_i2s1_mode0/1.
 	 */
+	/*
+	 * Speaker I2S port. The AFE's "I2S1" playback back-end reaches the
+	 * aic32x4 on pins 46/47/48 (+ MCLK on 15) - Amazon's DTB names these
+	 * i2s1dat/i2s1ws/i2s1clk/i2s1mclk-gpio. Without this group the AFE
+	 * happily enables I2S1 internally (AFE_I2S_CON1 bit0 set, DL1 routed
+	 * through AFE_CONN1) but the signals never leave the SoC because the
+	 * pads stay in GPIO mode - which is exactly the "PCM streams fine, no
+	 * audio" symptom. Note the aud_pins_i2s1_* groups below are a DIFFERENT
+	 * port (pins 72-74) belonging to the mic-array FPGA, not the speaker.
+	 */
+	aud_pins_spk_i2s: audspki2s {
+		pins {
+			pinmux = <MT8163_PIN_46_EINT14__FUNC_I2S1_DO>,
+				 <MT8163_PIN_47_EINT15__FUNC_I2S1_LRCK>,
+				 <MT8163_PIN_48_EINT16__FUNC_I2S1_BCK>,
+				 <MT8163_PIN_15_UTXD2__FUNC_I2S1_MCK>;
+			drive-strength = <MTK_DRIVE_4mA>;
+		};
+	};
+
 	aud_pins_i2s1_idle: audi2s1idle {
 		pins {
 			pinmux = <MT8163_PIN_72_I2S_DATA_IN__FUNC_GPIO72>,
