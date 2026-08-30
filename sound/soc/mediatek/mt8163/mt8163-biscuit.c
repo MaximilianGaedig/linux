@@ -163,8 +163,39 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
+/*
+ * Read back what actually landed in each ADC after the whole chain has been
+ * configured and powered. INTERFACE_CTRL_1 bits 3/2 are BCLK/WCLK master;
+ * PLL_PROG_PR bit7 is PLL power; ADC_DIGITAL bits 7/6 power the L/R ADCs.
+ * If master is not set or the ADCs are unpowered, the part cannot be
+ * clocking the FPGA - which is what "i2s_inactive=1, nframes=0" says.
+ */
+static int biscuit_mic_prepare(struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_dai *codec_dai;
+	int i;
+
+	for_each_rtd_codec_dais(rtd, i, codec_dai) {
+		struct snd_soc_component *c = codec_dai->component;
+		int ifc = snd_soc_component_read(c, 27);   /* INTERFACE_CTRL_1 */
+		int pll = snd_soc_component_read(c, 5);     /* PLL_PROG_PR */
+		int nadc = snd_soc_component_read(c, 18);   /* ADC_NADC */
+		int madc = snd_soc_component_read(c, 19);   /* ADC_MADC */
+		int adcd = snd_soc_component_read(c, 81);   /* ADC_DIGITAL */
+
+		dev_info(rtd->dev,
+			 "biscuit-micreg mic%d: IFACE1=0x%02x(master=%d) PLL_PR=0x%02x(on=%d) NADC=0x%02x MADC=0x%02x ADC_DIG=0x%02x(L=%d R=%d)\n",
+			 i, ifc & 0xff, !!(ifc & 0x0c), pll & 0xff, !!(pll & 0x80),
+			 nadc & 0xff, madc & 0xff, adcd & 0xff,
+			 !!(adcd & 0x80), !!(adcd & 0x40));
+	}
+	return 0;
+}
+
 static const struct snd_soc_ops biscuit_mic_ops = {
 	.hw_params = biscuit_mic_hw_params,
+	.prepare = biscuit_mic_prepare,
 };
 
 SND_SOC_DAILINK_DEFS(playback_be,
