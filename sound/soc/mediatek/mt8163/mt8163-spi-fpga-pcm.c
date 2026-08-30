@@ -117,6 +117,7 @@ struct biscuit_spi_pcm {
 
 	struct snd_pcm_substream *substream;
 	struct task_struct *capture_thread;
+	bool running;
 	spinlock_t lock;
 	size_t write_offset;
 	size_t elapsed_since_period;
@@ -214,6 +215,20 @@ static int biscuit_spi_capture_thread(void *data)
 		size_t n_bytes, copied = 0;
 		int ret;
 
+		/*
+		 * Idle until trigger says go.  The thread now outlives a
+		 * single start/stop so that trigger - which ASoC calls with
+		 * the PCM group lock held and interrupts disabled - never has
+		 * to create or destroy it.
+		 */
+		if (!READ_ONCE(priv->running)) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			if (!READ_ONCE(priv->running) && !kthread_should_stop())
+				schedule_timeout(msecs_to_jiffies(20));
+			__set_current_state(TASK_RUNNING);
+			continue;
+		}
+
 		ret = dough_spi_txrx(priv->spi, tx_df, priv->rx_buf, sizeof(*priv->rx_buf));
 		if (ret < 0) {
 			dev_err(&priv->spi->dev, "SPI capture xfer failed: %d\n", ret);
@@ -284,6 +299,8 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	struct biscuit_spi_pcm *priv = snd_soc_component_get_drvdata(component);
 	int ret;
 
+	dev_err(&priv->spi->dev, "biscuit-dbg: pcm open, stream=%d\n",
+		substream->stream);
 	if (substream->stream != SNDRV_PCM_STREAM_CAPTURE)
 		return -EINVAL;
 
@@ -296,7 +313,45 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	priv->substream = substream;
 	priv->write_offset = 0;
 	priv->elapsed_since_period = 0;
+	priv->running = false;
 	spin_lock_init(&priv->lock);
+
+	/*
+	 * Start the SPI reader here rather than in trigger().
+	 *
+	 * trigger() is called from snd_pcm_action_lock_irq() with the stream
+	 * group lock held and interrupts disabled, so it may not sleep - and
+	 * kthread_run() does.  Creating the thread there produced a
+	 * "sleeping function called from invalid context" splat, the creation
+	 * failed, and the very first read returned -EIO with zero frames
+	 * captured.  open() is allowed to sleep, so the thread is created
+	 * once here and simply parked until trigger flips priv->running.
+	 */
+	priv->capture_thread = kthread_run(biscuit_spi_capture_thread, priv,
+					   "biscuit-spi-pcm");
+	dev_err(&priv->spi->dev, "biscuit-dbg: kthread_run -> %ld\n",
+		IS_ERR(priv->capture_thread) ? PTR_ERR(priv->capture_thread) : 0L);
+	if (IS_ERR(priv->capture_thread)) {
+		int ret2 = PTR_ERR(priv->capture_thread);
+
+		priv->capture_thread = NULL;
+		return ret2;
+	}
+
+	return 0;
+}
+
+static int biscuit_spi_pcm_close(struct snd_soc_component *component,
+				 struct snd_pcm_substream *substream)
+{
+	struct biscuit_spi_pcm *priv = snd_soc_component_get_drvdata(component);
+
+	WRITE_ONCE(priv->running, false);
+	if (priv->capture_thread) {
+		kthread_stop(priv->capture_thread);
+		priv->capture_thread = NULL;
+	}
+	priv->substream = NULL;
 
 	return 0;
 }
@@ -306,22 +361,21 @@ static int biscuit_spi_pcm_trigger(struct snd_soc_component *component,
 {
 	struct biscuit_spi_pcm *priv = snd_soc_component_get_drvdata(component);
 
+	/* Atomic context: flip a flag and wake the reader, nothing more. */
+	pr_err("biscuit-dbg: trigger cmd=%d thread=%p\n", cmd, priv->capture_thread);
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-		priv->capture_thread = kthread_run(biscuit_spi_capture_thread, priv,
-						    "biscuit-spi-pcm");
-		if (IS_ERR(priv->capture_thread)) {
-			int ret = PTR_ERR(priv->capture_thread);
-
-			priv->capture_thread = NULL;
-			return ret;
-		}
+	case SNDRV_PCM_TRIGGER_RESUME:
+	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+		if (!priv->capture_thread)
+			return -EIO;
+		WRITE_ONCE(priv->running, true);
+		wake_up_process(priv->capture_thread);
 		return 0;
 	case SNDRV_PCM_TRIGGER_STOP:
-		if (priv->capture_thread) {
-			kthread_stop(priv->capture_thread);
-			priv->capture_thread = NULL;
-		}
+	case SNDRV_PCM_TRIGGER_SUSPEND:
+	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+		WRITE_ONCE(priv->running, false);
 		return 0;
 	default:
 		return -EINVAL;
@@ -365,6 +419,7 @@ static int biscuit_spi_pcm_construct(struct snd_soc_component *component,
 static const struct snd_soc_component_driver biscuit_spi_pcm_component = {
 	.name		= "biscuit-spi-pcm",
 	.open		= biscuit_spi_pcm_open,
+	.close		= biscuit_spi_pcm_close,
 	.trigger	= biscuit_spi_pcm_trigger,
 	.pointer	= biscuit_spi_pcm_pointer,
 	.copy		= biscuit_spi_pcm_copy,

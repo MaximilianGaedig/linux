@@ -258,6 +258,12 @@
 		mediatek,fe-dai = <&afe 0>;    /* DL1 front-end memif */
 		mediatek,be-dai = <&afe 5>;    /* I2S1 playback back-end */
 		mediatek,audio-codec = <&aic32x4_codec>;
+		/*
+		 * Mic array: a self-contained capture component (CPU DAI and
+		 * PCM platform in one), not an AFE back end - see the comment
+		 * above and mt8163-spi-fpga-pcm.c.
+		 */
+		amazon,mic-fpga = <&spi_pcm_fpga>;
 	};
 };
 
