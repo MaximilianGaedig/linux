@@ -878,6 +878,20 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 	} else {
 
+		/*
+		 * Put the CONNSYS MCU back into reset FIRST.
+		 *
+		 * The power-up path holds this reset asserted across the whole
+		 * sequence and deasserts it at the very end (step 16), but the
+		 * power-down path never asserted it again - so the MCU was left
+		 * running while its bus clock was unprepared and its rails were
+		 * dropped underneath it.  Stopping the core before removing what
+		 * it runs on is the ordinary inverse of the power-up sequence,
+		 * and it is what makes an off/on cycle repeatable.
+		 */
+		reset_control_assert(rstc);
+		udelay(100);
+
 		clk_disable_unprepare(clk_infra_conn_main);
 		WMT_PLAT_DBG_FUNC("[CCF] clk_disable_unprepare(clk_infra_conn_main) calling\n");
 		mtk_wcn_consys_power_off();
@@ -899,14 +913,39 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			}
 		}
 
-		/*AP power off MT6625L VCN_1V8 LDO */
-		regulator_set_mode(reg_VCN18, REGULATOR_MODE_STANDBY);
+		/*
+		 * AP power off MT6625L VCN_1V8 LDO.
+		 *
+		 * The regulator_set_mode(REGULATOR_MODE_STANDBY) that used to
+		 * sit here is gone.  It dereferenced reg_VCN18 outside the NULL
+		 * check immediately below it, MT6323's regulator driver has no
+		 * .set_mode so the call could only ever fail, and STANDBY is the
+		 * inverse of what the vendor driver does to this rail anyway
+		 * (see the LP-mode comment in the power-up path above).
+		 */
 		if (reg_VCN18) {
 			if (regulator_disable(reg_VCN18))
 				WMT_PLAT_ERR_FUNC("disable VCN_1V8 fail!\n");
 			else
 				WMT_PLAT_DBG_FUNC("disable VCN_1V8 ok\n");
 		}
+
+		/*
+		 * Report what the rails actually did, and give them time to
+		 * discharge before anyone powers the chip back up.
+		 *
+		 * These two lines are the whole point of the change: while the
+		 * rails carried "regulator-always-on" in the device tree, every
+		 * regulator_disable() above returned success and left the rail
+		 * up, so a "power cycle" was nothing of the sort.  Print the
+		 * post-disable state so that is visible rather than assumed.
+		 */
+		WMT_PLAT_INFO_FUNC("biscuit-pwr: after off: VCN18=%d VCN28=%d VCN33_BT=%d VCN33_WIFI=%d (1 = still enabled)\n",
+				   reg_VCN18 ? regulator_is_enabled(reg_VCN18) : -1,
+				   reg_VCN28 ? regulator_is_enabled(reg_VCN28) : -1,
+				   reg_VCN33_BT ? regulator_is_enabled(reg_VCN33_BT) : -1,
+				   reg_VCN33_WIFI ? regulator_is_enabled(reg_VCN33_WIFI) : -1);
+		msleep(100);
 
 	}
 	WMT_PLAT_DBG_FUNC("CONSYS-HW-REG-CTRL(0x%08x),finish\n", on);
