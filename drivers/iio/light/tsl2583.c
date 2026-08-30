@@ -805,6 +805,7 @@ static const struct iio_info tsl2583_info = {
 
 static int tsl2583_probe(struct i2c_client *clientp)
 {
+	int i;
 	int ret;
 	struct tsl2583_chip *chip;
 	struct iio_dev *indio_dev;
@@ -826,8 +827,23 @@ static int tsl2583_probe(struct i2c_client *clientp)
 
 	mutex_init(&chip->als_mutex);
 
-	ret = i2c_smbus_read_byte_data(clientp,
-				       TSL2583_CMD_REG | TSL2583_CHIPID);
+	/*
+	 * Retry the ID read briefly.
+	 *
+	 * On some boards (Amazon Echo Dot 2, i2c0 shared with an LED
+	 * controller and four audio ADCs) this first transfer fails at probe
+	 * time while the very same register reads back correctly moments
+	 * later - binding the driver by hand after boot always succeeds. That
+	 * is a settle/contention problem, not a missing device, and failing
+	 * the probe outright leaves the sensor permanently unbound.
+	 */
+	for (i = 0; i < 5; i++) {
+		ret = i2c_smbus_read_byte_data(clientp,
+					       TSL2583_CMD_REG | TSL2583_CHIPID);
+		if (ret >= 0)
+			break;
+		usleep_range(1000, 2000);
+	}
 	if (ret < 0) {
 		dev_err(&clientp->dev,
 			"%s: failed to read the chip ID register\n", __func__);
