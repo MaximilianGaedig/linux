@@ -386,3 +386,9 @@ extern UINT_8 aucDebugModule[];
 */
 
 #endif /* _PRECOMP_H */
+
+/* biscuit: management-frame monitor interface (radiotap0), see gl_init.c */
+VOID biscuitMonRegister(VOID);
+VOID biscuitMonUnregister(VOID);
+VOID biscuitMonRxFrame(const void *pvFrame, UINT_16 u2Len, UINT_8 ucChannel,
+		       BOOLEAN fgIs5G, INT_8 cRssiDbm);
