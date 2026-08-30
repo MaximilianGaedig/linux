@@ -381,7 +381,13 @@
 	 */
 	spi_pins_default: spi-pins {
 		pins {
-			pinmux = <MT8163_PIN_53_SPI_CS__FUNC_SPI_CSB>,
+			/* CS is driven as a GPIO (cs-gpios on &spi) so it stays
+			 * asserted for the whole SPI message. The controller's
+			 * hardware CS can drop between internal FIFO/DMA chunks
+			 * of a large transfer, which corrupts the FPGA's
+			 * configuration stream (the bitstream must be clocked in
+			 * as one continuous CS-low sequence). */
+			pinmux = <MT8163_PIN_53_SPI_CS__FUNC_GPIO53>,
 				 <MT8163_PIN_54_SPI_CK__FUNC_SPI_CLK>,
 				 <MT8163_PIN_55_SPI_MI__FUNC_SPI_MI>,
 				 <MT8163_PIN_56_SPI_MO__FUNC_SPI_MO>;
