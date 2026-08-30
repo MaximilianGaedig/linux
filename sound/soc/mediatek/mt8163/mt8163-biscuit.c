@@ -19,6 +19,20 @@
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
+#include <sound/jack.h>
+#include <linux/gpio/consumer.h>
+
+static struct snd_soc_jack biscuit_hp_jack;
+static struct snd_soc_jack_gpio biscuit_hp_gpio = {
+	.name = "hp-det",
+	.report = SND_JACK_LINEOUT,
+	.debounce_time = 200,
+	/*
+	 * ACTIVE_LOW in DT means "inserted = pin low"; invert so the ASoC
+	 * jack reports LINEOUT present when the plug is in.
+	 */
+	.invert = 1,
+};
 
 static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	SND_SOC_DAPM_SPK("Ext Spk", NULL),
@@ -309,6 +323,61 @@ static struct snd_soc_dai_link biscuit_dai_links[] = {
 	},
 };
 
+/*
+ * Force the mic-array capture chain on once the card exists.
+ *
+ * The register readback proved the four ADCs get correctly configured
+ * (mic0 becomes TDM master, the PLL divider is written) but their PLL and
+ * ADC-digital blocks never power up - power on this codec is entirely
+ * DAPM-gated, and the capture stream was not pulling the AIF_OUT ->
+ * ADC -> PGA -> Input chain up. The mic array is an always-listening
+ * device with no user-facing routing choice, so pin every input and every
+ * ADC path on explicitly and sync, which powers PLL_CLK/ADC_CLK and the
+ * ADCs and gets the codec clocking the FPGA.
+ */
+static int biscuit_late_probe(struct snd_soc_card *card)
+{
+	struct snd_soc_dapm_context *dapm = card->dapm;
+	static const char * const pins[] = {
+		"Mic Array",
+		"Mic0 IN_2L", "Mic0 IN_2R", "Mic1 IN_2L", "Mic1 IN_2R",
+		"Mic2 IN_2L", "Mic2 IN_2R", "Mic3 IN_2L", "Mic3 IN_2R",
+	};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pins); i++)
+		snd_soc_dapm_force_enable_pin(dapm, pins[i]);
+	snd_soc_dapm_sync(dapm);
+	dev_info(card->dev, "biscuit: forced mic capture pins on\n");
+
+	/*
+	 * 3.5mm line-out presence. The detect line is a GPIO the sound node
+	 * names as amazon,hp-det-gpios; hand it to the ASoC jack-gpio helper
+	 * so plug in/out shows up as SND_JACK_LINEOUT on a "Line Out Jack"
+	 * input device. Best-effort: a board without the pin populated should
+	 * still bring the card up.
+	 */
+	biscuit_hp_gpio.gpiod_dev = card->dev;
+	biscuit_hp_gpio.idx = 0;
+	if (of_property_present(card->dev->of_node, "amazon,hp-det-gpios")) {
+		int ret = snd_soc_card_jack_new(card, "Line Out Jack",
+						SND_JACK_LINEOUT, &biscuit_hp_jack);
+		if (ret) {
+			dev_warn(card->dev, "biscuit: jack_new failed: %d\n", ret);
+		} else {
+			/* the DT property is "amazon,hp-det-gpios" */
+			biscuit_hp_gpio.name = "amazon,hp-det";
+			ret = snd_soc_jack_add_gpios(&biscuit_hp_jack, 1,
+						     &biscuit_hp_gpio);
+			if (ret)
+				dev_warn(card->dev, "biscuit: add jack gpio: %d\n", ret);
+			else
+				dev_info(card->dev, "biscuit: line-out jack detect on\n");
+		}
+	}
+	return 0;
+}
+
 static struct snd_soc_card biscuit_card = {
 	.name		= "biscuit-audio",
 	.owner		= THIS_MODULE,
@@ -319,6 +388,7 @@ static struct snd_soc_card biscuit_card = {
 	.dapm_routes	= biscuit_routes,
 	.num_dapm_routes = ARRAY_SIZE(biscuit_routes),
 	.fully_routed	= true,
+	.late_probe	= biscuit_late_probe,
 };
 
 static int biscuit_snd_probe(struct platform_device *pdev)
