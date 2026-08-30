@@ -153,10 +153,32 @@
  * probe has already given up on an unpowered chip. Force them up from
  * boot so the chip is actually alive by the time mmc core probes it.
  */
-&mt6323_vcn18_reg     { regulator-always-on; };
-&mt6323_vcn28_reg     { regulator-always-on; };
-&mt6323_vcn33_bt_reg  { regulator-always-on; };
-&mt6323_vcn33_wifi_reg { regulator-always-on; };
+/*
+ * The four connectivity rails are NOT always-on.
+ *
+ * They used to be, from the very first bring-up commit, on the theory
+ * that the combo chip simply needed power present.  But the WMT platform
+ * driver enable/disable-manages all four itself (reg_VCN18/reg_VCN28 in
+ * mtk_wcn_consys_hw_reg_ctrl(), reg_VCN33_BT/reg_VCN33_WIFI in the BT and
+ * WiFi func paths), so "always-on" added nothing on the way up and broke
+ * the way down: the regulator core refuses to drop an always-on rail, so
+ * regulator_disable() in the power-off path silently did nothing.
+ *
+ * The consequence is that CONSYS was never actually power-cycled - not by
+ * a WMT func off/on, and not by a warm reboot either, since the PMIC keeps
+ * its state across an AP restart.  Only physically unplugging the device
+ * ever dropped these rails.  That is why a soft re-init wedges the chip
+ * after a few cycles (each "power off" leaves the MCU running on live
+ * rails with its clock pulled out from under it) and why cold and warm
+ * boots behave differently at all.
+ *
+ * regulator-boot-on records that the bootloader leaves them enabled, so
+ * the core does not glitch them off before the driver claims them.
+ */
+&mt6323_vcn18_reg      { regulator-boot-on; };
+&mt6323_vcn28_reg      { regulator-boot-on; };
+&mt6323_vcn33_bt_reg   { regulator-boot-on; };
+&mt6323_vcn33_wifi_reg { regulator-boot-on; };
 
 /*
  * MT6625L combo WiFi/BT/GPS. The CONSYS subsystem block is described in

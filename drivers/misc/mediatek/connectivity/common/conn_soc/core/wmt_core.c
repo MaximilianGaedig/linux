@@ -1082,6 +1082,33 @@ static INT32 opfunc_func_on(P_WMT_OP pWmtOp)
 			WMT_INFO_FUNC("WMT-CORE:Fun(%d) [POWER_OFF] and power down chip\n", drvType);
 			mtk_wcn_wmt_system_state_reset();
 
+			/*
+			 * Re-arm the power-off permission before using it.
+			 *
+			 * wlanProbe() clears g_pwr_off_flag when it fails (see
+			 * gl_init.c), so that the chip stays powered and a core
+			 * dump can be pulled out of it.  On a platform that
+			 * actually collects that dump the flag is put back by
+			 * the dump path; here nothing ever collects it, so the
+			 * clear is permanent - and from that moment on EVERY
+			 * opfunc_pwr_off() returns -2 without touching the
+			 * hardware.
+			 *
+			 * The visible symptom is a chip that survives about
+			 * three off/on cycles and is then dead until a reboot:
+			 * the first failed bring-up latches the flag, and every
+			 * subsequent "power off" silently leaves the chip
+			 * powered in its half-initialised state, so the next
+			 * power-on has nothing clean to start from and wlan0
+			 * never re-registers.
+			 *
+			 * We are already on the failure path with every
+			 * subsystem marked off, so there is no dump to protect
+			 * here - leaving the chip powered up buys nothing and
+			 * costs us the next bring-up.  Power it down.
+			 */
+			mtk_wcn_set_connsys_power_off_flag(MTK_WCN_BOOL_TRUE);
+
 			iPwrOffRet = opfunc_pwr_off(pWmtOp);
 			if (iPwrOffRet) {
 				WMT_ERR_FUNC("WMT-CORE: wmt_pwr_off fail(%d) when turn off func(%d)\n", iPwrOffRet,
@@ -1159,6 +1186,13 @@ static INT32 opfunc_func_off(P_WMT_OP pWmtOp)
 	    (DRV_STS_POWER_OFF == gMtkWmtCtx.eDrvStatus[WMTDRV_TYPE_LPBK]) &&
 	    (DRV_STS_POWER_OFF == gMtkWmtCtx.eDrvStatus[WMTDRV_TYPE_COREDUMP])) {
 		WMT_INFO_FUNC("WMT-CORE:Fun(%d) [POWER_OFF] and power down chip\n", drvType);
+
+		/*
+		 * Same re-arm as in the func-on failure path above: a normal,
+		 * deliberate func off must not be vetoed by a g_pwr_off_flag
+		 * left cleared by some earlier failed probe.
+		 */
+		mtk_wcn_set_connsys_power_off_flag(MTK_WCN_BOOL_TRUE);
 
 		iRet = opfunc_pwr_off(pWmtOp);
 		if (iRet) {
