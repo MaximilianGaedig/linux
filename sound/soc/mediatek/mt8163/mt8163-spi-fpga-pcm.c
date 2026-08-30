@@ -49,6 +49,14 @@
  */
 #define SENINF_PHYS_BASE	0x15008000
 #define SENINF_MAP_SIZE		0x210
+/*
+ * iCE40 configuration timings, from the same source as the sequence in
+ * probe(): >200ns with CRESET_B and SS_B both low, then >=1200us for the
+ * FPGA to clear its configuration memory before it will accept a bitstream.
+ */
+#define FPGA_CRESET_DELAY_US		1
+#define FPGA_HOUSEKEEPING_DELAY_US	1200
+
 #define SENINF_TOP_CTRL		0x000
 #define SENINF1_CTRL		0x100
 #define SENINF1_MUX_CTRL	0x120
@@ -500,16 +508,78 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 		return dev_err_probe(dev, ret, "failed to send FPGA off command\n");
 	}
 
-	/* Reset pulse: assert (physical low, since reset-gpios is ACTIVE_LOW), then release. */
+	/*
+	 * Put the FPGA into slave-SPI configuration mode.
+	 *
+	 * This part is a Lattice iCE40UL1K-SWG16 - the bitstream says so in
+	 * plain ASCII ("Part: iCE40UL1K-SWG16", iCEcube2, May 2016) ahead of
+	 * the 7E AA 99 7E preamble at offset 106.  An iCE40 samples its
+	 * configuration mode from SPI_SS_B at the moment CRESET_B is released:
+	 * SS_B low selects slave SPI, where the host clocks the bitstream in;
+	 * SS_B high selects master SPI, where the FPGA tries to boot itself
+	 * from an external configuration flash.  There is no such flash on this
+	 * board.
+	 *
+	 * What this code did before was toggle CRESET_B on its own.  The SPI
+	 * core only asserts chip-select around an actual transfer, so SS_B was
+	 * high for the entire reset pulse and the FPGA came up every time in
+	 * master mode, looking for a flash that does not exist.  It then
+	 * ignored the bitstream we clocked at it and answered every register
+	 * read with zeros - exactly the "revision 0" we have been chasing,
+	 * with a bitstream that was correct all along.
+	 *
+	 * The sequence below is the one mainline's own iCE40 FPGA manager uses
+	 * (drivers/fpga/ice40-spi.c): take the bus, drop CRESET_B, run a
+	 * zero-length transfer whose cs_change keeps SS_B asserted afterwards,
+	 * release CRESET_B while SS_B is still low, then a second transfer
+	 * whose completion releases SS_B once the FPGA has finished clearing
+	 * its configuration memory.
+	 */
 	dev_err(dev, "biscuit-dbg: pre-reset gpio logical=%d\n",
 		gpiod_get_value_cansleep(priv->reset_gpio));
-	gpiod_set_value_cansleep(priv->reset_gpio, 1);
-	dev_err(dev, "biscuit-dbg: reset asserted, gpio logical=%d\n",
-		gpiod_get_value_cansleep(priv->reset_gpio));
-	msleep(FPGA_RESET_MS);
-	gpiod_set_value_cansleep(priv->reset_gpio, 0);
-	dev_err(dev, "biscuit-dbg: reset released, gpio logical=%d\n",
-		gpiod_get_value_cansleep(priv->reset_gpio));
+	{
+		struct spi_message msg;
+		struct spi_transfer assert_cs_then_reset_delay = {
+			.cs_change = 1,
+			.delay = {
+				.value = FPGA_CRESET_DELAY_US,
+				.unit = SPI_DELAY_UNIT_USECS,
+			},
+		};
+		struct spi_transfer housekeeping_delay_then_release_cs = {
+			.delay = {
+				.value = FPGA_HOUSEKEEPING_DELAY_US,
+				.unit = SPI_DELAY_UNIT_USECS,
+			},
+		};
+		int cret;
+
+		spi_bus_lock(spi->controller);
+
+		/* CRESET_B low (reset-gpios is ACTIVE_LOW, so logical 1). */
+		gpiod_set_value_cansleep(priv->reset_gpio, 1);
+
+		spi_message_init(&msg);
+		spi_message_add_tail(&assert_cs_then_reset_delay, &msg);
+		cret = spi_sync_locked(spi, &msg);
+
+		/* Release CRESET_B with SS_B still asserted - this is the bit
+		 * that selects slave SPI rather than master SPI.
+		 */
+		gpiod_set_value_cansleep(priv->reset_gpio, 0);
+
+		if (!cret) {
+			spi_message_init(&msg);
+			spi_message_add_tail(&housekeeping_delay_then_release_cs,
+					     &msg);
+			cret = spi_sync_locked(spi, &msg);
+		}
+
+		spi_bus_unlock(spi->controller);
+
+		dev_err(dev, "biscuit-dbg: slave-SPI entry ret=%d, gpio logical=%d\n",
+			cret, gpiod_get_value_cansleep(priv->reset_gpio));
+	}
 	msleep(FPGA_RESET_MS);
 
 	/*
