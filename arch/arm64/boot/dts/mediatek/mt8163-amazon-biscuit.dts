@@ -240,6 +240,24 @@
  * since audio samples never actually cross I2C.
  */
 / {
+	/*
+	 * The mic array's master clock.
+	 *
+	 * Physically this is the CMMCLK pad, driven by the camera SENINF timing
+	 * generator and divided down to 9.6MHz (see mt8163-spi-fpga-pcm.c,
+	 * which programs SENINF_TG1_*). There is no Linux clock provider for
+	 * it, so model it as a fixed clock at the frequency that block is
+	 * programmed to produce - the ADC3101s need a truthful rate to compute
+	 * their PLL dividers from. The old nodes claimed clk26m, which is not
+	 * what the pin carries.
+	 */
+	mic_mclk: mic-mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <9600000>;
+		clock-output-names = "mic_mclk";
+	};
+
 	sound: sound {
 		compatible = "amazon,biscuit-audio";
 		mediatek,platform = <&afe>;
@@ -264,6 +282,15 @@
 		 * above and mt8163-spi-fpga-pcm.c.
 		 */
 		amazon,mic-fpga = <&spi_pcm_fpga>;
+		/*
+		 * Only the first ADC is named here. It is the TDM bit- and
+		 * frame-clock master for the whole array; the other three are
+		 * slaves on the same bus, exactly as Amazon's own machine
+		 * driver wires it (their "AMZN_SPI_Capture" link names only
+		 * tlv320aic3101.0-0018).
+		 */
+		amazon,mic-codec = <&mic0_codec>, <&mic1_codec>,
+				   <&mic2_codec>, <&mic3_codec>;
 	};
 };
 

@@ -243,81 +243,67 @@
 		reg = <0x39>;
 	};
 
-	mic0_codec: tlv320aic3x@18 {
-		compatible = "ti,tlv320aic3x";
+	/*
+	 * Mic array: four TLV320ADC3101 stereo ADCs on a shared TDM bus.
+	 *
+	 * These were previously described as "ti,tlv320aic3x", which binds
+	 * mainline's AIC3x driver - a completely different register map. The
+	 * parts are ADC31xx-family: Amazon's own driver for them
+	 * (tlv320aic3101.c in their GPL kernel) is written entirely against
+	 * AIC31XX_* registers and registers itself with i2c id "tlv320adc3101".
+	 * Every register write the AIC3x driver made therefore landed at the
+	 * wrong address; the codecs "bound" only because their I2C probe ACKed,
+	 * and they never clocked any I2S into the FPGA (which reported
+	 * i2s_inactive=1 forever).
+	 *
+	 * Only the first codec carries the enable line and the clock, matching
+	 * Amazon's biscuit.dtsi exactly - the other three share both.
+	 */
+	mic0_codec: tlv320adc3101@18 {
+		compatible = "ti,tlv320adc3101";
 		reg = <0x18>;
 		#sound-dai-cells = <0>;
 		sound-name-prefix = "Mic0";
-		enable-gpio = <&pio 35 GPIO_ACTIVE_HIGH>;
-		clocks = <&clk26m>;
+		/*
+		 * Amazon calls pin 35 "enable-gpio" active-high; as a reset
+		 * line that is the same pin with inverted sense, so declare it
+		 * ACTIVE_LOW and the driver's "assert reset" drives it low =
+		 * array disabled.
+		 */
+		reset-gpios = <&pio 35 GPIO_ACTIVE_LOW>;
+		clocks = <&mic_mclk>;
 		clock-names = "mclk";
 
-		/*
-		 * Mainline's tlv320aic3x driver requires all four supplies and
-		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
-		 * Amazon's downstream driver ignored them entirely - so their
-		 * DTS has none and probe fails here with "Invalid supply
-		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
-		 * The codecs sit on the always-on PMIC rails.
-		 */
-		IOVDD-supply = <&mt6323_vio18_reg>;
-		DVDD-supply  = <&mt6323_vio18_reg>;
-		AVDD-supply  = <&mt6323_vio28_reg>;
-		DRVDD-supply = <&mt6323_vio28_reg>;
 	};
 
-	tlv320aic3x@19 {
-		compatible = "ti,tlv320aic3x";
+	mic1_codec: tlv320adc3101@19 {
+		compatible = "ti,tlv320adc3101";
 		reg = <0x19>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic1";
+		clocks = <&mic_mclk>;
+		clock-names = "mclk";
 
-		/*
-		 * Mainline's tlv320aic3x driver requires all four supplies and
-		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
-		 * Amazon's downstream driver ignored them entirely - so their
-		 * DTS has none and probe fails here with "Invalid supply
-		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
-		 * The codecs sit on the always-on PMIC rails.
-		 */
-		IOVDD-supply = <&mt6323_vio18_reg>;
-		DVDD-supply  = <&mt6323_vio18_reg>;
-		AVDD-supply  = <&mt6323_vio28_reg>;
-		DRVDD-supply = <&mt6323_vio28_reg>;
 	};
 
-	tlv320aic3x@1a {
-		compatible = "ti,tlv320aic3x";
+	mic2_codec: tlv320adc3101@1a {
+		compatible = "ti,tlv320adc3101";
 		reg = <0x1a>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic2";
+		clocks = <&mic_mclk>;
+		clock-names = "mclk";
 
-		/*
-		 * Mainline's tlv320aic3x driver requires all four supplies and
-		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
-		 * Amazon's downstream driver ignored them entirely - so their
-		 * DTS has none and probe fails here with "Invalid supply
-		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
-		 * The codecs sit on the always-on PMIC rails.
-		 */
-		IOVDD-supply = <&mt6323_vio18_reg>;
-		DVDD-supply  = <&mt6323_vio18_reg>;
-		AVDD-supply  = <&mt6323_vio28_reg>;
-		DRVDD-supply = <&mt6323_vio28_reg>;
 	};
 
-	tlv320aic3x@1b {
-		compatible = "ti,tlv320aic3x";
+	mic3_codec: tlv320adc3101@1b {
+		compatible = "ti,tlv320adc3101";
 		reg = <0x1b>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic3";
+		clocks = <&mic_mclk>;
+		clock-names = "mclk";
 
-		/*
-		 * Mainline's tlv320aic3x driver requires all four supplies and
-		 * validates their voltages (AVDD >= 2.7V, DVDD >= 1.65V), where
-		 * Amazon's downstream driver ignored them entirely - so their
-		 * DTS has none and probe fails here with "Invalid supply
-		 * voltage(s) AVDD: -22, DVDD: -22" against dummy regulators.
-		 * The codecs sit on the always-on PMIC rails.
-		 */
-		IOVDD-supply = <&mt6323_vio18_reg>;
-		DVDD-supply  = <&mt6323_vio18_reg>;
-		AVDD-supply  = <&mt6323_vio28_reg>;
-		DRVDD-supply = <&mt6323_vio28_reg>;
 	};
 };
 
