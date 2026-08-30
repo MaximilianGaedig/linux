@@ -21,10 +21,12 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/gpio/consumer.h>
+#include <linux/io.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/pm_runtime.h>
 #include <linux/sched.h>
 #include <linux/spi/spi.h>
 #include <sound/pcm.h>
@@ -38,6 +40,23 @@
 #define SPI_READ_WAIT_MIN_USEC	6000
 #define SPI_READ_WAIT_MAX_USEC	7000
 #define FPGA_RESET_MS		100
+
+/*
+ * FPGA reference-clock (CMMCLK pad) bring-up via the camera SENINF timing
+ * generator, ported 1:1 from Amazon's stock mt_amzn_mclk.c. The SENINF block
+ * lives in the ISP register space: ispsys reg[0] = 0x15004000, and the SENINF
+ * registers are at ISP_ADDR + 0x4000, i.e. physical 0x15008000. Map that.
+ */
+#define SENINF_PHYS_BASE	0x15008000
+#define SENINF_MAP_SIZE		0x210
+#define SENINF_TOP_CTRL		0x000
+#define SENINF1_CTRL		0x100
+#define SENINF1_MUX_CTRL	0x120
+#define SENINF_TG1_PH_CNT	0x200
+#define SENINF_TG1_SEN_CK	0x204
+#define FPGA_MCLK_SRC_HZ	48000000	/* CAMTG_SEL -> UNIVPLL_D26 */
+#define FPGA_MCLK_OUT_HZ	9600000		/* SENINF divider output */
+#define SENINF_TG1_MCLK_EN	0x20000000	/* mclk_enable_reg bit */
 
 #define SAMPLING_RATE		16000
 #define DOUGH_N_CHANNELS	9
@@ -78,6 +97,11 @@ struct biscuit_spi_pcm {
 	struct spi_device *spi;
 	struct gpio_desc *reset_gpio;
 	struct clk *mclk;
+	struct clk *sen_tg;
+	struct clk *sen_cam;
+	struct clk *larb2_smi;
+	struct clk *cam_smi;
+	void __iomem *seninf;
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *state_idle;
 	struct pinctrl_state *state_active;
@@ -108,6 +132,60 @@ static int dough_spi_txrx(struct spi_device *spi, void *tx, void *rx, size_t len
 	};
 
 	return spi_sync_transfer(spi, &xfer, 1);
+}
+
+/* val = rd; val &= ~mask; val |= (v << shift); wr  (matches Amazon isp_wr32_mask) */
+static void seninf_wr_mask(void __iomem *base, u32 off, u32 mask, u32 shift, u32 v)
+{
+	u32 t = readl(base + off);
+
+	t &= ~mask;
+	t |= (v << shift);
+	writel(t, base + off);
+}
+
+/*
+ * Program the camera SENINF timing generator to emit FPGA_MCLK_OUT_HZ on the
+ * CMMCLK pad, ported 1:1 from Amazon's mt_amzn_mclk.c (mclk_enable_reg +
+ * mclk_divider_reg). Requires the ISP power domain on and the imgsys clocks
+ * enabled (register space is otherwise inaccessible), and CAMTG_SEL at 48 MHz.
+ */
+static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
+{
+	void __iomem *b = priv->seninf;
+	u32 clkcnt, clkf_pol, clkf_edge, v;
+
+	/* mclk_enable_reg(1): TG1_PH_CNT |= 0x20000000 */
+	v = readl(b + SENINF_TG1_PH_CNT);
+	v |= SENINF_TG1_MCLK_EN;
+	writel(v, b + SENINF_TG1_PH_CNT);
+
+	/* mclk_divider_reg(9.6 MHz): clkcnt = 48M/9.6M - 1 = 4 */
+	clkcnt = (FPGA_MCLK_SRC_HZ / FPGA_MCLK_OUT_HZ) - 1;
+	clkf_pol = !(clkcnt & 0x1);
+	clkf_edge = clkcnt > 1 ? ((clkcnt + 1) >> 1) : 1;
+
+	/* PCEN = 1 */
+	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 31), 31, 1);
+	/* clear top clock gating (clear 0xc00, set 0x300) */
+	seninf_wr_mask(b, SENINF_TOP_CTRL, 0xc00, 0, 0x300);
+	/* SEN_CK divider: CLKFL=clkf_edge, CLKRS=0, CLKCNT=clkcnt */
+	seninf_wr_mask(b, SENINF_TG1_SEN_CK, 0x3f, 0, clkf_edge);
+	seninf_wr_mask(b, SENINF_TG1_SEN_CK, 0x3f00, 8, 0);
+	seninf_wr_mask(b, SENINF_TG1_SEN_CK, 0x3f0000, 16, clkcnt);
+	/* PH_CNT: TGCLK_SEL=1, CLKFL_POL, PADCLK_INV=0, CLK_POL=0 */
+	seninf_wr_mask(b, SENINF_TG1_PH_CNT, 0x3, 0, 1);
+	seninf_wr_mask(b, SENINF_TG1_PH_CNT, 0x4, 2, clkf_pol);
+	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 6), 6, 0);
+	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 28), 28, 0);
+	/* enable SENINF1 mux + block */
+	seninf_wr_mask(b, SENINF1_MUX_CTRL, (1u << 31), 31, 1);
+	seninf_wr_mask(b, SENINF1_CTRL, 0x1, 0, 1);
+
+	dev_err(&priv->spi->dev,
+		"biscuit-dbg: seninf programmed clkcnt=%u pol=%u edge=%u TG1_PH_CNT=0x%08x SEN_CK=0x%08x\n",
+		clkcnt, clkf_pol, clkf_edge,
+		readl(b + SENINF_TG1_PH_CNT), readl(b + SENINF_TG1_SEN_CK));
 }
 
 static int biscuit_spi_capture_thread(void *data)
@@ -326,10 +404,14 @@ static int biscuit_spi_pcm_load_firmware(struct biscuit_spi_pcm *priv)
 	}
 
 	memcpy(fw_buf, fw->data, fw->size);
+	dev_err(dev, "biscuit-dbg: fw size=%zu padded=%zu head=%02x %02x %02x %02x\n",
+		fw->size, bytes, ((u8 *)fw_buf)[0], ((u8 *)fw_buf)[1],
+		((u8 *)fw_buf)[2], ((u8 *)fw_buf)[3]);
 	release_firmware(fw);
 
 	ret = dough_spi_txrx(priv->spi, fw_buf, NULL, bytes);
 	kfree(fw_buf);
+	dev_err(dev, "biscuit-dbg: bitstream SPI send ret=%d (%zu bytes)\n", ret, bytes);
 	if (ret < 0)
 		dev_err(dev, "FPGA firmware SPI load failed: %d\n", ret);
 
@@ -384,6 +466,22 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	priv->mclk = devm_clk_get(dev, "mclk");
 	if (IS_ERR(priv->mclk))
 		return dev_err_probe(dev, PTR_ERR(priv->mclk), "failed to get mclk\n");
+	priv->sen_tg = devm_clk_get(dev, "sen_tg");
+	if (IS_ERR(priv->sen_tg))
+		return dev_err_probe(dev, PTR_ERR(priv->sen_tg), "failed to get sen_tg\n");
+	priv->sen_cam = devm_clk_get(dev, "sen_cam");
+	if (IS_ERR(priv->sen_cam))
+		return dev_err_probe(dev, PTR_ERR(priv->sen_cam), "failed to get sen_cam\n");
+	priv->larb2_smi = devm_clk_get(dev, "larb2_smi");
+	if (IS_ERR(priv->larb2_smi))
+		return dev_err_probe(dev, PTR_ERR(priv->larb2_smi), "failed to get larb2_smi\n");
+	priv->cam_smi = devm_clk_get(dev, "cam_smi");
+	if (IS_ERR(priv->cam_smi))
+		return dev_err_probe(dev, PTR_ERR(priv->cam_smi), "failed to get cam_smi\n");
+
+	priv->seninf = devm_ioremap(dev, SENINF_PHYS_BASE, SENINF_MAP_SIZE);
+	if (!priv->seninf)
+		return dev_err_probe(dev, -ENOMEM, "failed to map SENINF\n");
 
 	spi->mode = SPI_MODE_3;
 	spi->bits_per_word = 8;
@@ -397,37 +495,35 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to select idle pinctrl state\n");
 
-	/*
-	 * The FPGA needs its master clock running before it can do anything
-	 * at all over SPI - confirmed on real hardware: with mclk enabled
-	 * only after the off/reset/firmware-load/revision-read sequence (as
-	 * this originally did), every one of those SPI transactions reaches
-	 * an unclocked, inert FPGA, and the revision read back is all
-	 * zeroes ("unrecognized FPGA revision 0"). Enable the clock and mux
-	 * it out to the pin first; state_idle above only concerns the I2S1
-	 * data pins; mclk is a separate pin/function.
-	 */
-	ret = clk_prepare_enable(priv->mclk);
-	if (ret)
-		return dev_err_probe(dev, ret, "failed to enable mclk\n");
-
-	ret = pinctrl_select_state(priv->pinctrl, priv->state_mclk);
-	if (ret) {
-		clk_disable_unprepare(priv->mclk);
-		return dev_err_probe(dev, ret, "failed to select mclk pinctrl state\n");
-	}
-
 	ret = dough_spi_txrx(spi, off_cmd, NULL, sizeof(off_cmd));
 	if (ret < 0) {
-		clk_disable_unprepare(priv->mclk);
 		return dev_err_probe(dev, ret, "failed to send FPGA off command\n");
 	}
 
 	/* Reset pulse: assert (physical low, since reset-gpios is ACTIVE_LOW), then release. */
+	dev_err(dev, "biscuit-dbg: pre-reset gpio logical=%d\n",
+		gpiod_get_value_cansleep(priv->reset_gpio));
 	gpiod_set_value_cansleep(priv->reset_gpio, 1);
+	dev_err(dev, "biscuit-dbg: reset asserted, gpio logical=%d\n",
+		gpiod_get_value_cansleep(priv->reset_gpio));
 	msleep(FPGA_RESET_MS);
 	gpiod_set_value_cansleep(priv->reset_gpio, 0);
+	dev_err(dev, "biscuit-dbg: reset released, gpio logical=%d\n",
+		gpiod_get_value_cansleep(priv->reset_gpio));
 	msleep(FPGA_RESET_MS);
+
+	/*
+	 * biscuit-dbg: is the FPGA alive BEFORE any bitstream load? If it boots
+	 * a base design from NVCM it should answer here; all-zero means it needs
+	 * an external config. Also re-read SENINF to confirm the clock config
+	 * survived the reset.
+	 */
+	ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
+	dev_err(dev, "biscuit-dbg: PRE-config revread ret=%d rev=%u; SENINF TG1_PH_CNT=0x%08x SEN_CK=0x%08x\n",
+		ret, rx_df->dsf.fpga_rev,
+		readl(priv->seninf + SENINF_TG1_PH_CNT),
+		readl(priv->seninf + SENINF_TG1_SEN_CK));
+	print_hex_dump(KERN_ERR, "biscuit-dbg pre raw: ", DUMP_PREFIX_NONE, 16, 1, rx_df, 32, false);
 
 	/*
 	 * Firmware-missing must NOT be fatal. This FPGA only carries the
@@ -442,6 +538,7 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	 * dropped in and the device re-probed.
 	 */
 	ret = biscuit_spi_pcm_load_firmware(priv);
+	dev_err(dev, "biscuit-dbg: load_firmware ret=%d\n", ret);
 	if (ret < 0) {
 		dev_warn(dev,
 			 "FPGA firmware unavailable (%d); registering component anyway - mic-array capture is non-functional until /lib/firmware/%s is present, speaker playback is unaffected\n",
@@ -450,6 +547,24 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	}
 
 	msleep(FPGA_RESET_MS);
+
+	/* biscuit-dbg: retry the rev-read many times with full dumps to see if
+	 * the FPGA ever responds, and whether MISO is consistently idle-0. */
+	{
+		int att;
+
+		for (att = 0; att < 15; att++) {
+			ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
+			dev_err(dev, "biscuit-dbg: revread att=%d ret=%d rev=%u nframes=%u\n",
+				att, ret, rx_df->dsf.fpga_rev,
+				le16_to_cpu(rx_df->dsf.num_audio_frames));
+			print_hex_dump(KERN_ERR, "biscuit-dbg raw: ", DUMP_PREFIX_NONE,
+				       16, 1, rx_df, 32, false);
+			if (dough_rev_ok(rx_df->dsf.fpga_rev))
+				break;
+			msleep(25);
+		}
+	}
 
 	/*
 	 * Every FPGA bring-up step below is best-effort for the same reason as
@@ -477,6 +592,69 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 
 	dev_info(dev, "FPGA revision %u\n", rx_df->dsf.fpga_rev);
 
+	/*
+	 * MCLK comes up only NOW, matching Amazon's stock probe order exactly
+	 * (amzn-mt-spi-pcm.c): the off command, reset pulse, bitstream load and
+	 * revision read all happen with the CMMCLK pad still unmuxed, and only
+	 * after the revision verifies does the stock driver call
+	 * AudDrv_GPIO_MCLK_Select() / restore I2S. The FPGA therefore does NOT
+	 * need its reference clock to answer on SPI - that clock is for the I2S
+	 * audio path. Bringing it up earlier (as this driver used to) deviates
+	 * from stock, so do it here.
+	 */
+	/*
+	 * Power on the ISP power domain so the imgsys/SENINF register space is
+	 * accessible (power-domains = ISP in DT; the SPI core attached genpd).
+	 */
+	pm_runtime_enable(dev);
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		pm_runtime_disable(dev);
+		return dev_err_probe(dev, ret, "failed to power on ISP domain\n");
+	}
+
+	/*
+	 * Full FPGA reference-clock bring-up, matching Amazon's stock
+	 * mt_amzn_mclk.c. The CMMCLK pad is driven by the camera SENINF timing
+	 * generator, not CAMTG_SEL alone: enable the imgsys sensor clocks, set
+	 * CAMTG_SEL to 48 MHz (UNIVPLL_D26), then program the SENINF divider to
+	 * emit 9.6 MHz. Without this the FPGA has no clock and reads revision 0.
+	 */
+	ret = clk_prepare_enable(priv->sen_tg);
+	if (ret)
+		dev_warn(dev, "enable sen_tg failed: %d\n", ret);
+	ret = clk_prepare_enable(priv->sen_cam);
+	if (ret)
+		dev_warn(dev, "enable sen_cam failed: %d\n", ret);
+	ret = clk_prepare_enable(priv->larb2_smi);
+	if (ret)
+		dev_warn(dev, "enable larb2_smi failed: %d\n", ret);
+	ret = clk_prepare_enable(priv->cam_smi);
+	if (ret)
+		dev_warn(dev, "enable cam_smi failed: %d\n", ret);
+
+	ret = clk_set_rate(priv->mclk, FPGA_MCLK_SRC_HZ);
+	if (ret)
+		dev_warn(dev, "failed to set mclk to 48MHz: %d\n", ret);
+	ret = clk_prepare_enable(priv->mclk);
+	if (ret)
+		return dev_err_probe(dev, ret, "failed to enable mclk\n");
+
+	dev_err(dev, "biscuit-dbg: rates mclk=%lu sen_tg=%lu sen_cam=%lu larb2=%lu cam_smi=%lu\n",
+		clk_get_rate(priv->mclk), clk_get_rate(priv->sen_tg),
+		clk_get_rate(priv->sen_cam), clk_get_rate(priv->larb2_smi),
+		clk_get_rate(priv->cam_smi));
+
+	ret = pinctrl_select_state(priv->pinctrl, priv->state_mclk);
+	if (ret) {
+		clk_disable_unprepare(priv->mclk);
+		return dev_err_probe(dev, ret, "failed to select mclk pinctrl state\n");
+	}
+
+	/* Route/divide the 48 MHz reference to 9.6 MHz out the CMMCLK pad. */
+	biscuit_fpga_seninf_program(priv);
+
+
 	/* Restore I2S1 to its FPGA-facing function now the codecs can drive it. */
 	ret = pinctrl_select_state(priv->pinctrl, priv->state_active);
 	if (ret) {
@@ -487,6 +665,23 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	ret = dough_spi_txrx(spi, i2s_cmd, NULL, sizeof(i2s_cmd));
 	if (ret < 0)
 		dev_warn(dev, "failed to put FPGA in I2S mode (%d); mic capture non-functional\n", ret);
+
+	/* biscuit-dbg: does the FPGA answer once MCLK + I2S are up? */
+	{
+		int a;
+
+		for (a = 0; a < 5; a++) {
+			msleep(20);
+			ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
+			dev_err(dev, "biscuit-dbg: POST-mclk revread a=%d ret=%d rev=%u mode=%u nframes=%u\n",
+				a, ret, rx_df->dsf.fpga_rev, rx_df->dsf.mode,
+				le16_to_cpu(rx_df->dsf.num_audio_frames));
+			print_hex_dump(KERN_ERR, "biscuit-dbg post raw: ", DUMP_PREFIX_NONE,
+				       16, 1, rx_df, 32, false);
+			if (dough_rev_ok(rx_df->dsf.fpga_rev))
+				break;
+		}
+	}
 
 register_component:
 	ret = devm_snd_soc_register_component(dev, &biscuit_spi_pcm_component,
