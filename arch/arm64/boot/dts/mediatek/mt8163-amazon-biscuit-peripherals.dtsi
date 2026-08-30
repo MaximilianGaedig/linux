@@ -232,10 +232,17 @@
 		};
 	};
 
-	tsl2584tsv@29 {
-		compatible = "ams,tsl2584tsv";
+	/*
+	 * Ambient light sensor. The part is a TAOS/AMS TSL2584TSV, which is
+	 * register-compatible with the TSL258x family - its ID register (0x12)
+	 * reads back 0x9x on this board - so mainline's tsl2583 driver binds
+	 * it. The downstream-only "ams,tsl2584tsv" compatible and
+	 * autozero-period-ms property have no mainline driver and left the
+	 * device (i2c0 0x29) sitting unbound.
+	 */
+	light_sensor: tsl2583@29 {
+		compatible = "amstaos,tsl2583";
 		reg = <0x29>;
-		autozero-period-ms = <300000>;
 	};
 
 	tsl2540@39 {

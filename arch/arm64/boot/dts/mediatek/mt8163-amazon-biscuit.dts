@@ -17,6 +17,51 @@
 	compatible = "amazon,biscuit", "mediatek,mt8163";
 	chassis-type = "embedded";
 
+	/*
+	 * The 12-LED RGB light ring, grouped.
+	 *
+	 * The IS31FL3236 driver exposes the ring as 36 independent single-colour
+	 * channels (biscuit:ringN:{red,green,blue}); those are labelled in
+	 * mt8163-amazon-biscuit-peripherals.dtsi. leds-group-multicolor fuses each
+	 * ring's three channels into one LED_COLOR_ID_MULTI device so userspace
+	 * can set an RGB colour and a single brightness per physical LED, which
+	 * is how the ring is meant to be driven.
+	 *
+	 * This grouping layer was dropped once before because the appended DTB
+	 * grew past the stock bootloader's IDME/FDT-injection size limit and was
+	 * silently discarded. We no longer boot that way: u-boot loads the DTB
+	 * from raw sectors of the recovery partition, so that limit does not
+	 * apply and the grouping can come back.
+	 */
+	led-ring-mc {
+		compatible = "simple-bus";
+
+		led-ring1 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring1";
+			leds = <&ring1_red>, <&ring1_green>, <&ring1_blue>; };
+		led-ring2 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring2";
+			leds = <&ring2_red>, <&ring2_green>, <&ring2_blue>; };
+		led-ring3 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring3";
+			leds = <&ring3_red>, <&ring3_green>, <&ring3_blue>; };
+		led-ring4 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring4";
+			leds = <&ring4_red>, <&ring4_green>, <&ring4_blue>; };
+		led-ring5 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring5";
+			leds = <&ring5_red>, <&ring5_green>, <&ring5_blue>; };
+		led-ring6 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring6";
+			leds = <&ring6_red>, <&ring6_green>, <&ring6_blue>; };
+		led-ring7 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring7";
+			leds = <&ring7_red>, <&ring7_green>, <&ring7_blue>; };
+		led-ring8 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring8";
+			leds = <&ring8_red>, <&ring8_green>, <&ring8_blue>; };
+		led-ring9 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring9";
+			leds = <&ring9_red>, <&ring9_green>, <&ring9_blue>; };
+		led-ring10 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring10";
+			leds = <&ring10_red>, <&ring10_green>, <&ring10_blue>; };
+		led-ring11 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring11";
+			leds = <&ring11_red>, <&ring11_green>, <&ring11_blue>; };
+		led-ring12 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring12";
+			leds = <&ring12_red>, <&ring12_green>, <&ring12_blue>; };
+	};
+
 	/* Needed by stock bootloader */
 	version = "evt";
 
