@@ -442,6 +442,14 @@
 	 * the driver takes the "cmmclk-mclk" path, not the dedicated
 	 * i2s-mclk one) - there is no camera on this board, the pin is free.
 	 */
+	hp_det_pins: hp-det-pins {
+		pins {
+			pinmux = <MT8163_PIN_26_EINT4__FUNC_GPIO26>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
+
 	aud_pins_fpga_mclk: audfpgamclk {
 		pins {
 			pinmux = <MT8163_PIN_119_CMMCLK__FUNC_CMMCLK>;

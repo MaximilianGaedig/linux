@@ -16,22 +16,23 @@
 	model = "Amazon Echo Dot (2016)";
 	compatible = "amazon,biscuit", "mediatek,mt8163";
 	chassis-type = "embedded";
+	/* Needed by stock bootloader */
+	version = "evt";
 
 	/*
 	 * The 12-LED RGB light ring, grouped.
 	 *
-	 * The IS31FL3236 driver exposes the ring as 36 independent single-colour
-	 * channels (biscuit:ringN:{red,green,blue}); those are labelled in
-	 * mt8163-amazon-biscuit-peripherals.dtsi. leds-group-multicolor fuses each
-	 * ring's three channels into one LED_COLOR_ID_MULTI device so userspace
-	 * can set an RGB colour and a single brightness per physical LED, which
-	 * is how the ring is meant to be driven.
+	 * The IS31FL3236 driver exposes the ring as 36 independent
+	 * single-colour channels (biscuit:ringN:{red,green,blue}), labelled in
+	 * mt8163-amazon-biscuit-peripherals.dtsi. leds-group-multicolor fuses
+	 * each ring's three channels into one LED_COLOR_ID_MULTI device so a
+	 * colour and a single brightness can be set per physical LED, which is
+	 * how the ring is meant to be driven.
 	 *
-	 * This grouping layer was dropped once before because the appended DTB
-	 * grew past the stock bootloader's IDME/FDT-injection size limit and was
-	 * silently discarded. We no longer boot that way: u-boot loads the DTB
-	 * from raw sectors of the recovery partition, so that limit does not
-	 * apply and the grouping can come back.
+	 * This grouping was dropped once before because the appended DTB grew
+	 * past the stock bootloader's IDME/FDT-injection size limit and was
+	 * silently discarded. We no longer boot that way - u-boot loads the DTB
+	 * from raw sectors of the recovery partition - so it can come back.
 	 */
 	led-ring-mc {
 		compatible = "simple-bus";
@@ -62,10 +63,44 @@
 			leds = <&ring12_red>, <&ring12_green>, <&ring12_blue>; };
 	};
 
-	/* Needed by stock bootloader */
-	version = "evt";
+	/*
+	 * Board thermistors. Amazon's downstream driver models these as a
+	 * proprietary "virtual_sensor_thermistor", but the hardware is plain:
+	 * three 10k NTCs, each pulled up to 1.8V through 10k into an AUXADC
+	 * input (their mtk_ts_board_biscuit.h: pull_up_R=10000,
+	 * pull_up_voltage=1800, channels AUX_IN 0/14/15).
+	 *
+	 * Their comments claim "100K" but the parts are 10k: the same header
+	 * gives 195652 ohm as the -40C reference, and 195652 is exactly the
+	 * first entry of mainline's ncpXXxh103 table (a 100k part is ~4M at
+	 * -40C). Measured, the three channels sit at 611-646mV, which through
+	 * R = pullup_ohm * V / (pullup_uv - V) - the very formula their
+	 * mtk_ts_bts.c used - is ~5.4k, i.e. ~37C on a 10k curve and a
+	 * nonsensical ~105C on a 100k one. So: murata,ncp15xh103.
+	 */
+	thermistor0: thermistor-0 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 0>;
+	};
 
+	thermistor1: thermistor-1 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 14>;
+	};
 
+	thermistor2: thermistor-2 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 15>;
+	};
 	/*
 	 * External speaker amplifier enable. Amazon's stock audio driver
 	 * asserts this by selecting the "extamp-pullhigh" pinctrl state
@@ -336,6 +371,17 @@
 		 */
 		amazon,mic-codec = <&mic0_codec>, <&mic1_codec>,
 				   <&mic2_codec>, <&mic3_codec>;
+		/*
+		 * 3.5mm line-out insertion detect. Amazon's downstream "accdet"
+		 * is a full MediaTek headset block (mic-bias comparator + 3
+		 * button ADC decode via the MT6323 PMIC), which mainline has no
+		 * mt8163 driver for - but the part that matters on a line-OUT
+		 * jack is just presence, and that is a plain GPIO (their
+		 * accdet-gpio = <&pio 26 0>, EINT4). Wire it as an ASoC jack.
+		 */
+		amazon,hp-det-gpios = <&pio 26 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&hp_det_pins>;
 	};
 };
 
@@ -434,4 +480,8 @@
 		gpio_combo_rst_pin = <&pio 60 0>;
 		gpio_combo_pmu_en_pin = <&pio 65 0>;
 	};
+};
+
+&auxadc {
+	status = "okay";
 };
