@@ -1286,6 +1286,7 @@ static int mtk_spi_probe(struct platform_device *pdev)
 	}
 
 	mdata->spi_clk_hz = clk_get_rate(mdata->spi_clk);
+	dev_err(dev, "biscuit-spiclk: spi_clk_hz=%u\n", mdata->spi_clk_hz);
 
 	if (mdata->dev_comp->no_need_unprepare) {
 		clk_disable(mdata->spi_clk);

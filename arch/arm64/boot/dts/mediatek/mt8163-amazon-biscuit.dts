@@ -21,6 +21,28 @@
 	version = "evt";
 
 
+	/*
+	 * External speaker amplifier enable. Amazon's stock audio driver
+	 * asserts this by selecting the "extamp-pullhigh" pinctrl state
+	 * (AudDrv_GPIO_EXTAMP_Select(1)), which drives GPIO 124 output-high;
+	 * the "extamp-pulllow" state drives it low to mute. Mainline's mt8163
+	 * pinctrl (pinctrl-mtk-common) does not implement PIN_CONFIG_OUTPUT, so
+	 * an output-high pinctrl group would be silently ignored here - drive
+	 * the same pin through a fixed regulator instead, which requests the
+	 * GPIO after the gpiochip is up (a gpio-hog fails with -EPROBE_DEFER
+	 * during gpiochip_add and takes the whole pinctrl driver down with it).
+	 * Without this the aic32x4 codec plays but the amp stays muted, so
+	 * nothing is audible.
+	 */
+	ext_spk_amp: regulator-ext-spk-amp {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-amp";
+		gpio = <&pio 124 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
 	gpio-keys {
 		compatible = "gpio-keys";
 		pinctrl-names = "default";
@@ -243,16 +265,27 @@
 		pinctrl-2 = <&aud_pins_fpga_mclk>;
 
 		/*
-		 * "cmmclk" (the camera clock generator, repurposed here - this
-		 * board has no camera) feeding the FPGA's reference clock.
-		 * Amazon's downstream driver never calls clk_set_rate() on it,
-		 * only pinctrl_select_state(), which suggests it may already
-		 * free-run at whatever CAMTG's default parent rate is. Rate is
-		 * a guess (26MHz, matching clk26m used elsewhere) pending
-		 * on-device verification.
+		 * FPGA reference clock = the CMMCLK pad, which on MT8163 is
+		 * driven by the camera SENINF (sensor interface) timing
+		 * generator, NOT by CAMTG_SEL alone. Matching Amazon's stock
+		 * mt_amzn_mclk.c (GPL kernel source): the driver must power the
+		 * ISP domain, enable the imgsys sensor clocks, set CAMTG_SEL to
+		 * UNIVPLL_D26 (48 MHz), and program the SENINF TG1 divider to
+		 * emit 9.6 MHz on the pad. Without the SENINF programming the
+		 * FPGA gets no clock and reads back revision 0.
+		 *
+		 * mclk      = CAMTG_SEL (set to 48 MHz in the driver)
+		 * sen_tg    = the SENINF timing generator that drives the pad
+		 * sen_cam/larb2_smi/cam_smi = imgsys register-bus/sensor clocks
+		 *             needed to reach the SENINF registers (ISP domain)
 		 */
-		clocks = <&topckgen CLK_TOP_CAMTG_SEL>;
-		clock-names = "mclk";
+		clocks = <&topckgen CLK_TOP_CAMTG_SEL>,
+			 <&imgsys CLK_IMG_SEN_TG>,
+			 <&imgsys CLK_IMG_SEN_CAM>,
+			 <&imgsys CLK_IMG_LARB2_SMI>,
+			 <&imgsys CLK_IMG_CAM_SMI>;
+		clock-names = "mclk", "sen_tg", "sen_cam", "larb2_smi", "cam_smi";
+		power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
 	};
 };
 
