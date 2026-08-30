@@ -86,6 +86,16 @@ config SND_SOC_MT8163
 	  Select Y if you have such device.
 	  Ex: MT8163
 
+config SND_SOC_MT8163_BISCUIT
+	tristate "ASoC machine driver for the Amazon Echo Dot 2 (biscuit)"
+	depends on SND_SOC_MT8163
+	select SND_SOC_TLV320AIC32X4_I2C
+	help
+	  DPCM machine driver binding the MT8163 AFE's DL1 front-end to an I2S
+	  playback back-end and the on-board TLV320AIC32X4 codec. Needed because
+	  simple-audio-card cannot express the FE/BE split, leaving the I2S port
+	  unconfigured and the speaker silent.
+
 config SND_SOC_MT8163_SPI_FPGA
 	tristate "ASoC support for the Amazon Echo Dot 2 (biscuit) mic-array FPGA"
 	depends on SPI_MASTER
