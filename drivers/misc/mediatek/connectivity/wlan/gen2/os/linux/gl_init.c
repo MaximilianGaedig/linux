@@ -2275,6 +2275,162 @@ VOID wlanUpdateChannelTable(P_GLUE_INFO_T prGlueInfo)
 	}
 }
 
+
+/*
+ * biscuit: management-frame monitor interface ("radiotap0").
+ *
+ * This chip's N9 firmware converts data frames to 802.3 in-chip and never hands
+ * the host the PHY RX vectors a full radiotap header needs, so real monitor mode
+ * is not available. Management and control frames, however, do arrive as raw
+ * 802.11 (see nicRxProcessMgmtPacket), so we can still export those: create an
+ * ARPHRD_IEEE80211_RADIOTAP netdev and push each management frame to it behind a
+ * minimal radiotap header (no PHY fields advertised - it_present = 0, which is a
+ * valid radiotap header). tcpdump/wireshark/airodump can then see beacons,
+ * probe req/resp, auth/assoc and deauth. Data frames are NOT visible, so this
+ * cannot capture a WPA handshake payload.
+ *
+ * Enable with: insmod/boot param biscuit_monitor=1 (default off).
+ */
+int biscuit_monitor;
+module_param(biscuit_monitor, int, 0644);
+MODULE_PARM_DESC(biscuit_monitor, "expose received 802.11 management frames on radiotap0");
+
+static struct net_device *g_prBiscuitMonDev;
+
+/*
+ * Radiotap header we can actually fill honestly. The HIF RX header gives us the
+ * real channel/band and RCPI for every management frame, so we advertise
+ * TSFT-less CHANNEL + ANTSIGNAL and nothing else - the PHY-layer fields (MCS,
+ * bandwidth, short-GI) would need the RX vectors this chip does not provide, so
+ * they are simply not advertised rather than filled with invented values.
+ */
+#define BISCUIT_RT_PRESENT ((1 << 3) /* CHANNEL */ | (1 << 5) /* ANTSIGNAL */)
+
+struct biscuit_radiotap_hdr {
+	u8 it_version;
+	u8 it_pad;
+	__le16 it_len;
+	__le32 it_present;
+	__le16 channel_freq;
+	__le16 channel_flags;
+	s8 antsignal;
+	u8 pad;
+} __packed;
+
+static int biscuitMonOpen(struct net_device *prDev)
+{
+	netif_start_queue(prDev);
+	return 0;
+}
+
+static int biscuitMonStop(struct net_device *prDev)
+{
+	netif_stop_queue(prDev);
+	return 0;
+}
+
+static netdev_tx_t biscuitMonTx(struct sk_buff *prSkb, struct net_device *prDev)
+{
+	/* TX on the monitor interface is not supported; mgmt-frame injection goes
+	 * through cfg80211's mgmt_tx on wlan0 instead. */
+	dev_kfree_skb(prSkb);
+	prDev->stats.tx_dropped++;
+	return NETDEV_TX_OK;
+}
+
+static const struct net_device_ops biscuit_mon_netdev_ops = {
+	.ndo_open = biscuitMonOpen,
+	.ndo_stop = biscuitMonStop,
+	.ndo_start_xmit = biscuitMonTx,
+};
+
+VOID biscuitMonRegister(VOID)
+{
+	struct net_device *prDev;
+
+	if (!biscuit_monitor || g_prBiscuitMonDev)
+		return;
+
+	prDev = alloc_netdev(0, "radiotap%d", NET_NAME_UNKNOWN, ether_setup);
+	if (!prDev) {
+		DBGLOG(INIT, ERROR, "biscuit-mon: alloc_netdev failed\n");
+		return;
+	}
+
+	prDev->type = ARPHRD_IEEE80211_RADIOTAP;
+	prDev->netdev_ops = &biscuit_mon_netdev_ops;
+	prDev->flags |= IFF_NOARP;
+	netif_carrier_off(prDev);
+
+	if (register_netdev(prDev) < 0) {
+		DBGLOG(INIT, ERROR, "biscuit-mon: register_netdev failed\n");
+		free_netdev(prDev);
+		return;
+	}
+
+	g_prBiscuitMonDev = prDev;
+	DBGLOG(INIT, ERROR, "biscuit-mon: %s up (mgmt/control frames only)\n", prDev->name);
+}
+
+VOID biscuitMonUnregister(VOID)
+{
+	if (!g_prBiscuitMonDev)
+		return;
+	unregister_netdev(g_prBiscuitMonDev);
+	g_prBiscuitMonDev = NULL;
+}
+
+/* Called from nicRxProcessMgmtPacket for every raw 802.11 management frame. */
+VOID biscuitMonRxFrame(const void *pvFrame, UINT_16 u2Len, UINT_8 ucChannel,
+		       BOOLEAN fgIs5G, INT_8 cRssiDbm)
+{
+	struct net_device *prDev = g_prBiscuitMonDev;
+	struct biscuit_radiotap_hdr *prRt;
+	struct sk_buff *prSkb;
+	UINT_16 u2Freq;
+
+	if (!prDev || !pvFrame || !u2Len)
+		return;
+	if (!(prDev->flags & IFF_UP))
+		return;
+
+	prSkb = dev_alloc_skb(sizeof(*prRt) + u2Len);
+	if (!prSkb)
+		return;
+
+	if (fgIs5G)
+		u2Freq = 5000 + ucChannel * 5;
+	else if (ucChannel == 14)
+		u2Freq = 2484;
+	else
+		u2Freq = 2407 + ucChannel * 5;
+
+	prRt = skb_put(prSkb, sizeof(*prRt));
+	prRt->it_version = 0;
+	prRt->it_pad = 0;
+	prRt->it_len = cpu_to_le16(sizeof(*prRt));
+	prRt->it_present = cpu_to_le32(BISCUIT_RT_PRESENT);
+	prRt->channel_freq = cpu_to_le16(u2Freq);
+	prRt->channel_flags = cpu_to_le16(fgIs5G ? 0x0140 : 0x00a0);
+	prRt->antsignal = cRssiDbm;
+	prRt->pad = 0;
+
+	skb_put_data(prSkb, pvFrame, u2Len);
+
+	prSkb->dev = prDev;
+	skb_reset_mac_header(prSkb);
+	prSkb->ip_summed = CHECKSUM_UNNECESSARY;
+	prSkb->pkt_type = PACKET_OTHERHOST;
+	prSkb->protocol = htons(ETH_P_802_2);
+
+	prDev->stats.rx_packets++;
+	prDev->stats.rx_bytes += prSkb->len;
+
+	netif_rx(prSkb);
+}
+
+
+
 /*----------------------------------------------------------------------------*/
 /*!
 * \brief Register the device to the kernel and return the index.
@@ -2314,6 +2470,9 @@ static INT_32 wlanNetRegister(struct wireless_dev *prWdev)
 #endif
 		if (i4DevIdx != -1)
 			prGlueInfo->fgIsRegistered = TRUE;
+
+		if (i4DevIdx != -1)
+			biscuitMonRegister();
 
 	} while (FALSE);
 
