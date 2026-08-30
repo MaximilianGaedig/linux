@@ -495,6 +495,40 @@ static const struct adc3xxx_rate_divs adc3xxx_divs[] = {
 	/* 16k rate */
 	{ 12000000, 16000, 1, 1, 7, 1680, 21, 2, 128 },
 	{ 12288000, 16000, 1, 1, 7, 0000, 21, 2, 128 },
+	/*
+	 * 9.6MHz MCLK, as fed to the four-ADC mic array on the Amazon Echo
+	 * Dot 2: there the master clock is the SoC's CMMCLK pad, driven by the
+	 * camera SENINF timing generator and divided down from 48MHz, so none
+	 * of the usual audio-crystal rates above apply and hw_params failed
+	 * with "Master clock rate 9600000 and sample rate 16000 is not
+	 * supported".
+	 *
+	 * Same PLL output and same dividers as the 12MHz/16k entry above,
+	 * reached with a different multiplier:
+	 *   PLL = MCLK * R * J.D / P = 9.6MHz * 1 * 8.9600 / 1 = 86.016MHz
+	 *   fs  = PLL / (NADC * MADC * AOSR) = 86.016MHz / (21 * 2 * 128)
+	 *       = 16000Hz
+	 * P=1 leaves the PLL input at 9.6MHz and the output at 86.016MHz,
+	 * both inside the part's documented ranges.
+	 */
+	{  9600000, 16000, 1, 1, 8, 9600, 21, 2, 128 },
+	/*
+	 * 9.6MHz MCLK, as fed to the four-ADC mic array on the Amazon Echo
+	 * Dot 2: there the master clock is the SoC's CMMCLK pad, driven by the
+	 * camera SENINF timing generator and divided from 48MHz, so none of
+	 * the usual audio-crystal rates above apply and hw_params was failing
+	 * with "Master clock rate 9600000 and sample rate 16000 is not
+	 * supported".
+	 *
+	 * Same PLL output and same dividers as the 12MHz/16k entry, reached
+	 * with a different multiplier:
+	 *   PLL = MCLK * R * J.D / P = 9.6MHz * 1 * 8.9600 / 1 = 86.016MHz
+	 *   fs  = PLL / (NADC * MADC * AOSR) = 86.016MHz / (21 * 2 * 128)
+	 *       = 16000Hz
+	 * P=1 keeps the PLL input at 9.6MHz and the output at 86.016MHz, both
+	 * inside the part's documented ranges.
+	 */
+	{  9600000, 16000, 1, 1, 8, 9600, 21, 2, 128 },
 	/* 22.05k rate */
 	{ 12000000, 22050, 1, 1, 7, 560, 15, 2, 128 },
 	/* 32k rate */
@@ -1408,7 +1442,17 @@ static int adc3xxx_i2c_probe(struct i2c_client *i2c)
 		return -ENOMEM;
 	adc3xxx->dev = dev;
 
-	adc3xxx->rst_pin = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	/*
+	 * Optional, not mandatory.
+	 *
+	 * On this board (Amazon Echo Dot 2 mic array) four ADC3101s share a
+	 * single enable line and a single MCLK, exactly as Amazon's own device
+	 * tree describes them: only the first codec carries the gpio, the other
+	 * three carry nothing but their I2C address. A Linux gpiod is an
+	 * exclusive resource, so the three slaves cannot each claim the same
+	 * pin - and making this mandatory would fail their probe outright.
+	 */
+	adc3xxx->rst_pin = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(adc3xxx->rst_pin)) {
 		return dev_err_probe(dev, PTR_ERR(adc3xxx->rst_pin),
 				     "Failed to request rst_pin\n");
