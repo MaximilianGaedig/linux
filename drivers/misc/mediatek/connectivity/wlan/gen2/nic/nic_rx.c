@@ -2500,6 +2500,22 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 
 	ucSubtype = (*(PUINT_8) (prSwRfb->pvHeader) & MASK_FC_SUBTYPE) >> OFFSET_OF_FC_SUBTYPE;
 
+	/* biscuit: log every received mgmt frame's subtype + src, to see what the
+	 * radio actually delivers during a connection (subtype 11 = AUTH).
+	 */
+	{
+		PUINT_8 pucFr = (PUINT_8) prSwRfb->pvHeader;
+
+		DBGLOG(RX, ERROR, "biscuit-rxmgmt: subtype=%u src=%02x:%02x:%02x:%02x:%02x:%02x\n",
+		       ucSubtype, pucFr[10], pucFr[11], pucFr[12], pucFr[13], pucFr[14], pucFr[15]);
+
+		/* Export the raw 802.11 frame on radiotap0 when monitoring. */
+		biscuitMonRxFrame(prSwRfb->pvHeader, prSwRfb->u2PacketLen,
+				  HIF_RX_HDR_GET_CHNL_NUM(prSwRfb->prHifRxHdr),
+				  HIF_RX_HDR_GET_RF_BAND(prSwRfb->prHifRxHdr) == BAND_5G,
+				  (INT_8) RCPI_TO_dBm(prSwRfb->prHifRxHdr->ucRcpi));
+	}
+
 #if 0				/* CFG_RX_PKTS_DUMP */
 	{
 		P_HIF_RX_HEADER_T prHifRxHdr;

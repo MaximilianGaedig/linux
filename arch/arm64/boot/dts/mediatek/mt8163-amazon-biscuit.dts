@@ -245,6 +245,9 @@
 &spi {
 	pinctrl-names = "default";
 	pinctrl-0 = <&spi_pins_default>;
+	/* Software chip-select: keeps CS low across the entire bitstream
+	 * transfer while the FPGA is being configured (see spi-pins comment). */
+	cs-gpios = <&pio 53 GPIO_ACTIVE_LOW>;
 	status = "okay";
 
 	spi_pcm_fpga: audio-fpga@0 {
