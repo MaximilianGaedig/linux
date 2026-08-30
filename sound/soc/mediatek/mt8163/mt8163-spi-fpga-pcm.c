@@ -429,27 +429,50 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	gpiod_set_value_cansleep(priv->reset_gpio, 0);
 	msleep(FPGA_RESET_MS);
 
+	/*
+	 * Firmware-missing must NOT be fatal. This FPGA only carries the
+	 * mic-array capture path; the speaker playback path (AFE DL1 -> I2S0 ->
+	 * aic32x4) is entirely independent of it. If we returned an error here
+	 * when /lib/firmware/i2s_to_spi_v34.bin is absent, this component's DAI
+	 * would never register, the simple-audio-card that references it would
+	 * fail to parse, and the whole sound card - speaker included - would
+	 * disappear. So on firmware failure we warn, skip the FPGA bring-up
+	 * (revision read / I2S mode), and still register the component; the mic
+	 * capture DAI then exists but is non-functional until the firmware is
+	 * dropped in and the device re-probed.
+	 */
 	ret = biscuit_spi_pcm_load_firmware(priv);
 	if (ret < 0) {
-		clk_disable_unprepare(priv->mclk);
-		return ret;
+		dev_warn(dev,
+			 "FPGA firmware unavailable (%d); registering component anyway - mic-array capture is non-functional until /lib/firmware/%s is present, speaker playback is unaffected\n",
+			 ret, FPGA_FIRMWARE_NAME);
+		goto register_component;
 	}
 
 	msleep(FPGA_RESET_MS);
 
+	/*
+	 * Every FPGA bring-up step below is best-effort for the same reason as
+	 * the firmware load above: a failure here only costs mic-array capture,
+	 * so warn and still register the component rather than taking the whole
+	 * sound card (speaker included) down with a fatal probe error. Observed
+	 * on this board: the "dough" FPGA reads back revision 0 (no response on
+	 * SPI0) even with the firmware present, so without this the card never
+	 * forms.
+	 */
 	ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
 	if (ret < 0) {
-		clk_disable_unprepare(priv->mclk);
-		return dev_err_probe(dev, ret, "failed to read FPGA revision\n");
+		dev_warn(dev, "FPGA revision read failed (%d); mic capture non-functional\n", ret);
+		goto register_component;
 	}
 
 	print_hex_dump(KERN_INFO, "biscuit-spi-pcm: rev-read raw: ", DUMP_PREFIX_NONE,
 		       16, 1, rx_df, 32, false);
 
 	if (!dough_rev_ok(rx_df->dsf.fpga_rev)) {
-		clk_disable_unprepare(priv->mclk);
-		return dev_err_probe(dev, -EINVAL, "unrecognized FPGA revision %u\n",
-				      rx_df->dsf.fpga_rev);
+		dev_warn(dev, "unrecognized FPGA revision %u (mic capture non-functional); speaker unaffected\n",
+			 rx_df->dsf.fpga_rev);
+		goto register_component;
 	}
 
 	dev_info(dev, "FPGA revision %u\n", rx_df->dsf.fpga_rev);
@@ -457,16 +480,15 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	/* Restore I2S1 to its FPGA-facing function now the codecs can drive it. */
 	ret = pinctrl_select_state(priv->pinctrl, priv->state_active);
 	if (ret) {
-		clk_disable_unprepare(priv->mclk);
-		return dev_err_probe(dev, ret, "failed to select active pinctrl state\n");
+		dev_warn(dev, "failed to select active pinctrl state (%d); mic capture non-functional\n", ret);
+		goto register_component;
 	}
 
 	ret = dough_spi_txrx(spi, i2s_cmd, NULL, sizeof(i2s_cmd));
-	if (ret < 0) {
-		clk_disable_unprepare(priv->mclk);
-		return dev_err_probe(dev, ret, "failed to put FPGA in I2S mode\n");
-	}
+	if (ret < 0)
+		dev_warn(dev, "failed to put FPGA in I2S mode (%d); mic capture non-functional\n", ret);
 
+register_component:
 	ret = devm_snd_soc_register_component(dev, &biscuit_spi_pcm_component,
 					       &biscuit_spi_pcm_dai, 1);
 	if (ret) {
