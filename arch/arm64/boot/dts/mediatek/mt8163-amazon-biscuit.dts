@@ -186,6 +186,12 @@
 &afe {
 	status = "okay";
 	#sound-dai-cells = <1>;
+
+	/* Mux the speaker I2S port (I2S1: pins 46/47/48 + MCLK 15) out to the
+	 * aic32x4; without this the AFE clocks I2S1 internally but the pads
+	 * stay GPIOs and no audio reaches the codec. */
+	pinctrl-names = "default";
+	pinctrl-0 = <&aud_pins_spk_i2s>;
 };
 
 /*
