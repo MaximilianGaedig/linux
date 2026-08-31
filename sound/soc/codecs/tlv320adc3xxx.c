@@ -106,6 +106,10 @@
 #define ADC3XXX_ADC_FLAG			ADC3XXX_REG(0, 36)
 #define ADC3XXX_CH_OFFSET_2			ADC3XXX_REG(0, 37)
 #define ADC3XXX_I2S_TDM_CTRL			ADC3XXX_REG(0, 38)
+/* I2S_TDM_CTRL bits */
+#define ADC3XXX_TDM_EARLY_3STATE		0x02
+#define ADC3XXX_TDM_CHANNEL_DIS_SHIFT		2
+#define ADC3XXX_TDM_CHANNEL_MASK		0x3
 /* 39-41 Reserved */
 #define ADC3XXX_INTR_FLAG_1			ADC3XXX_REG(0, 42)
 #define ADC3XXX_INTR_FLAG_2			ADC3XXX_REG(0, 43)
@@ -1416,7 +1420,8 @@ static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
 {
 	struct snd_soc_component *component = dai->component;
 	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
-	unsigned int offset;
+	unsigned int offset, first, unused;
+	int ret;
 
 	/* No slots claimed: leave the part where it is. */
 	if (!rx_mask)
@@ -1428,15 +1433,39 @@ static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
 	adc3xxx->tdm_slots = slots;
 	adc3xxx->tdm_slot_width = slot_width;
 
-	offset = __ffs(rx_mask) * slot_width;
+	first = __ffs(rx_mask);
+	offset = first * slot_width;
 	if (offset > 255) {
 		dev_err(component->dev,
 			"TDM offset %u out of range (slot %u, width %d)\n",
-			offset, __ffs(rx_mask), slot_width);
+			offset, first, slot_width);
 		return -EINVAL;
 	}
 
-	dev_dbg(component->dev, "TDM slot offset %u BCLKs\n", offset);
+	/*
+	 * Release the data line outside our own slots.
+	 *
+	 * Without early 3-state every part on the bus drives DOUT for the
+	 * whole frame instead of just its own slots, so they fight each other
+	 * continuously and the receiver reads a dead line - clocks present,
+	 * frames arriving, every sample zero.
+	 *
+	 * The same register disables channels this part is not meant to
+	 * supply: the mask's two bits say which of this ADC's own left/right
+	 * slots are claimed, and the register wants the complement. A part
+	 * that keeps driving an unclaimed slot collides with whatever else
+	 * owns it.
+	 */
+	unused = (~(rx_mask >> first)) & ADC3XXX_TDM_CHANNEL_MASK;
+
+	dev_dbg(component->dev, "TDM slot offset %u BCLKs, disabled channels 0x%x\n",
+		offset, unused);
+
+	ret = snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
+				      (unused << ADC3XXX_TDM_CHANNEL_DIS_SHIFT) |
+				      ADC3XXX_TDM_EARLY_3STATE);
+	if (ret)
+		return ret;
 
 	return snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1, offset);
 }
