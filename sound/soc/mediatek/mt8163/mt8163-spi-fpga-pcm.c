@@ -131,6 +131,8 @@ struct biscuit_spi_pcm {
 	struct task_struct *capture_thread;
 	bool running;
 	unsigned int dbg_reads;
+	/* have we armed the FPGA while its I2S input was actually clocking? */
+	bool armed_live;
 	unsigned int dbg_ptr;
 	spinlock_t lock;
 	size_t write_offset;
@@ -265,6 +267,31 @@ static int biscuit_spi_capture_thread(void *data)
 			continue;
 		}
 
+		/*
+		 * Arm the part once its I2S input is genuinely clocking.
+		 *
+		 * Both existing arming points are too early: probe runs before
+		 * any codec is configured, and .open runs before hw_params, so
+		 * in both the status frame still reports i2s_inactive=1. The
+		 * part latches "no I2S" when the command arrives and never
+		 * starts framing, which is how it ends up reporting frames
+		 * ready while handing back an entirely zero payload. The first
+		 * read where i2s_inactive clears is the earliest moment the
+		 * command can mean anything, so send it there.
+		 */
+		if (!priv->armed_live && !priv->rx_buf->dsf.i2s_inactive) {
+			u8 cmd[32] = { biscuit_fpga_tpg ? DOUGH_FW_TPG
+						       : DOUGH_FW_I2S };
+
+			priv->armed_live = true;
+			dev_err(&priv->spi->dev,
+				"biscuit-dbg: FPGA %s mode armed with I2S live -> %d\n",
+				biscuit_fpga_tpg ? "TPG" : "I2S",
+				dough_spi_txrx(priv->spi, cmd, NULL, sizeof(cmd)));
+			usleep_range(SPI_READ_WAIT_MIN_USEC, SPI_READ_WAIT_MAX_USEC);
+			continue;
+		}
+
 		n_bytes = min_t(u16, le16_to_cpu(priv->rx_buf->dsf.num_audio_frames),
 				 DOUGH_AUDIO_FRAME_BUF) * DOUGH_FRAME_BYTES;
 
@@ -388,6 +415,7 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	priv->running = false;
 	priv->dbg_reads = 0;
 	priv->dbg_ptr = 0;
+	priv->armed_live = false;
 	spin_lock_init(&priv->lock);
 
 	/*
