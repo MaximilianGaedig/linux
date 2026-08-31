@@ -21,6 +21,10 @@
 #ifndef _WMT_CORE_H_
 #define _WMT_CORE_H_
 
+/* CONSYS antenna switch selection, written at the end of SoC init. */
+#define ANTENNA_SELECTION_REG 0x81060010
+#define DEFAULT_ANT 0x1
+
 #include "osal.h"
 #include "wmt_ctrl.h"
 #include "wmt_exp.h"

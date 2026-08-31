@@ -1125,32 +1125,25 @@ INT32 mtk_wcn_consys_hw_bt_paldo_ctrl(UINT32 enable)
 
 INT32 mtk_wcn_consys_hw_wifi_paldo_ctrl(UINT32 enable)
 {
-
-	if (enable) {
-		/*do WIFI PMIC on,depenency PMIC API ready */
-		/*switch WIFI PALDO control from SW mode to HW mode:0x418[14]-->0x1 */
-		if (reg_VCN33_WIFI) {
-			regulator_set_voltage(reg_VCN33_WIFI, 3300000, 3300000);
-			if (regulator_enable(reg_VCN33_WIFI))
-				WMT_PLAT_ERR_FUNC("WMT do WIFI PMIC on fail!\n");
-			else
-				WMT_PLAT_INFO_FUNC("WMT do WIFI PMIC on !\n");
-		}
-		if (pmic_regmap)
-			regmap_update_bits(pmic_regmap, 0x418, 0x1 << 14, 0x1 << 14);/*WIFI*/
-		WMT_PLAT_INFO_FUNC("WMT do WIFI PMIC on\n");
-	} else {
-		/*do WIFI PMIC off */
-		/*switch WIFI PALDO control from HW mode to SW mode:0x418[14]-->0x0 */
-		if (pmic_regmap)
-			regmap_update_bits(pmic_regmap, 0x418, 0x1 << 14, 0x0 << 14);/*WIFI*/
-		if (reg_VCN33_WIFI)
-			if (regulator_disable(reg_VCN33_WIFI))
-				WMT_PLAT_ERR_FUNC("WMT do WIFI PMIC off fail!\n");
-		WMT_PLAT_INFO_FUNC("WMT do WIFI PMIC off\n");
-	}
-
-	return 0;
+	/*
+	 * On this board BT and WiFi share one physical 3.3V net.
+	 *
+	 * Amazon builds with CONSYS_BT_WIFI_SHARE_V33=1, where this function is
+	 * nothing but a call into the BT one - a single rail, refcounted by two
+	 * consumers, which is why its own log strings read "BT/WIFI v3.3".
+	 * reg_VCN33_WIFI and PMIC 0x418[14] are never touched on this hardware.
+	 *
+	 * Driving them anyway raises a rail the 2.4GHz front end is not on,
+	 * while the one it is on comes up only if Bluetooth happens to be
+	 * running - and goes away again when BT stops. 5GHz is fed from a
+	 * different domain and is unaffected, which is exactly the observed
+	 * failure: perfect 5GHz, no 2.4GHz reception at all, varying from boot
+	 * to boot with whatever BT did first.
+	 *
+	 * Take the shared path without the compile-time switch, which would
+	 * pull in the legacy MediaTek PMIC API that is not ported here.
+	 */
+	return mtk_wcn_consys_hw_bt_paldo_ctrl(enable);
 }
 EXPORT_SYMBOL(mtk_wcn_consys_hw_wifi_paldo_ctrl);
 

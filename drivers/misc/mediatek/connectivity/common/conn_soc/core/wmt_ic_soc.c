@@ -1374,6 +1374,27 @@ static INT32 mtk_wcn_soc_sw_init(P_WMT_HIF_CONF pWmtHifConf)
 	}
 #endif
 
+	/*
+	 * Select an antenna.
+	 *
+	 * This board's init script sets coex_custom_feature_manual_ant_ctrl=1,
+	 * which tells the firmware that the host will drive the antenna switch
+	 * itself. Stock then does exactly that, here, at the end of SoC init.
+	 * Leaving it out is worse than never claiming manual control at all:
+	 * the firmware stops choosing and nothing else ever chooses either, so
+	 * which antenna the 2.4GHz front end is looking at depends on whatever
+	 * the register happened to contain.
+	 */
+	{
+		UINT32 u4AntVal = DEFAULT_ANT;
+		INT32 iAntRet;
+
+		iAntRet = wmt_core_reg_rw_raw(1, ANTENNA_SELECTION_REG,
+					      &u4AntVal, 0x1);
+		WMT_INFO_FUNC("biscuit-ant: select default antenna -> %d\n",
+			      iAntRet);
+	}
+
 	return 0;
 }
 
