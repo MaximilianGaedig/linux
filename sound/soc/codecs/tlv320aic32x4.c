@@ -794,11 +794,46 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 					dac_clock_rate = ndac * mdac * dosr *
 							sample_rate;
 					if (dac_clock_rate == adc_clock_rate) {
+						/*
+						 * CODEC_CLKIN comes from the
+						 * PLL here, so a rate below
+						 * its minimum is not one the
+						 * hardware can be given.
+						 */
+						if (dac_clock_rate < AIC32X4_MIN_PLL_CLKOUT)
+							continue;
 						if (clk_round_rate(clocks[0].clk, dac_clock_rate) == 0)
 							continue;
 
-						clk_set_rate(clocks[0].clk,
-							dac_clock_rate);
+						/*
+						 * Only accept a CODEC_CLKIN the
+						 * PLL can really produce.
+						 *
+						 * clk_round_rate() on this mux
+						 * answers for the mux, not for
+						 * the PLL behind it, so a rate
+						 * the PLL has to refuse still
+						 * looks available here. The
+						 * set then quietly fails, the
+						 * PLL keeps whatever it had
+						 * from probe, and the whole
+						 * divider chain below is
+						 * computed for a frequency the
+						 * part is not running at.
+						 * Check what actually stuck.
+						 */
+						if (clk_set_rate(clocks[0].clk,
+								 dac_clock_rate))
+							continue;
+						if (clk_get_rate(clocks[0].clk) !=
+						    dac_clock_rate)
+							continue;
+
+						dev_info(component->dev,
+							 "biscuit-clk: fs=%u codec_clkin=%u nadc=%u madc=%u ndac=%u mdac=%u dosr=%u aosr=%u\n",
+							 sample_rate, dac_clock_rate,
+							 nadc, madc, ndac, mdac,
+							 dosr, aosr);
 
 						clk_set_rate(clocks[1].clk,
 							sample_rate * aosr *
