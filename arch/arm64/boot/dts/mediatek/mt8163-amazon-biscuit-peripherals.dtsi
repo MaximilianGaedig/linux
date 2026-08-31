@@ -330,7 +330,7 @@
 		compatible = "ti,tlv320aic32x4";
 		reg = <0x18>;
 		reset-gpios = <&pio 51 GPIO_ACTIVE_LOW>;
-		clocks = <&clk26m>;
+		clocks = <&spk_mclk>;
 		clock-names = "mclk";
 	};
 };
@@ -409,15 +409,7 @@
 	 * audio" symptom. Note the aud_pins_i2s1_* groups below are a DIFFERENT
 	 * port (pins 72-74) belonging to the mic-array FPGA, not the speaker.
 	 */
-	aud_pins_spk_i2s: audspki2s {
-		pins {
-			pinmux = <MT8163_PIN_46_EINT14__FUNC_I2S1_DO>,
-				 <MT8163_PIN_47_EINT15__FUNC_I2S1_LRCK>,
-				 <MT8163_PIN_48_EINT16__FUNC_I2S1_BCK>,
-				 <MT8163_PIN_15_UTXD2__FUNC_I2S1_MCK>;
-			drive-strength = <MTK_DRIVE_4mA>;
-		};
-	};
+
 
 	aud_pins_i2s1_idle: audi2s1idle {
 		pins {
