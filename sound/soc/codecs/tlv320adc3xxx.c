@@ -123,6 +123,9 @@
 #define ADC3XXX_GPIO2_CTRL			ADC3XXX_REG(0, 51)
 #define ADC3XXX_GPIO1_CTRL			ADC3XXX_REG(0, 52)
 #define ADC3XXX_DOUT_CTRL			ADC3XXX_REG(0, 53)
+/* DOUT_CTRL bits */
+#define ADC3XXX_DOUT_PRIMARY			(0x1 << 1)
+#define ADC3XXX_DOUT_BUS_KEEPER_DIS		BIT(4)
 /* 54-56 Reserved */
 #define ADC3XXX_SYNC_CTRL_1			ADC3XXX_REG(0, 57)
 #define ADC3XXX_SYNC_CTRL_2			ADC3XXX_REG(0, 58)
@@ -1460,6 +1463,23 @@ static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
 
 	dev_dbg(component->dev, "TDM slot offset %u BCLKs, disabled channels 0x%x\n",
 		offset, unused);
+
+	/*
+	 * Turn the bus keeper off and keep DOUT as the primary data output.
+	 *
+	 * The keeper holds the line at its last level whenever nothing is
+	 * driving it, which is exactly the situation early 3-state creates on
+	 * a shared bus. With four parts each keeping the line, the slots they
+	 * have released are held rather than left free for whoever owns them,
+	 * and the receiver reads a constant value - zero, here - no matter how
+	 * correct the clocks, slots and gains are. The two settings only make
+	 * sense together.
+	 */
+	ret = snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				      ADC3XXX_DOUT_BUS_KEEPER_DIS |
+				      ADC3XXX_DOUT_PRIMARY);
+	if (ret)
+		return ret;
 
 	ret = snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
 				      (unused << ADC3XXX_TDM_CHANNEL_DIS_SHIFT) |
