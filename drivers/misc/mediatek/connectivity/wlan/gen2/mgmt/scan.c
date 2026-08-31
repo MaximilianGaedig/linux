@@ -1904,19 +1904,39 @@ P_BSS_DESC_T scanAddToBssDesc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 	}
 
 	/*
-	 * biscuit: a BSS whose rate set stays 0 cannot be associated with - the
-	 * firmware builds an empty WTBL entry and every unicast frame to it
-	 * fails to transmit. Report the packet geometry for those so it is
-	 * possible to tell a truncated RX from a frame that genuinely carried
-	 * no Supported-Rates IE.
+	 * biscuit: a BSS whose rate set stays 0 cannot be associated with. The
+	 * firmware builds an empty WTBL rate entry for it and every unicast
+	 * frame - Auth1, AssocReq - fails to transmit, while broadcast probe
+	 * requests still go out fine.
+	 *
+	 * Report the packet geometry so the cause is not guessed at. This
+	 * descriptor is only ever built from a real beacon or probe response,
+	 * so a missing Supported-Rates IE is not simply "the firmware sent a
+	 * summary": the IE window is derived as
+	 *   (u2PacketLen - u2HeaderLen) - offsetof(body, aucInfoElem)
+	 * and if the lengths disagree that subtraction underflows, ie comes
+	 * back huge, gets clamped to CFG_IE_BUFFER_SIZE and the parse walks
+	 * whatever follows the frame. Printing pkt/hdr/ie for both the working
+	 * and the broken band tells those apart in one capture.
+	 *
+	 * Strictly bounded: a DBGLOG that fired per frame in this path once
+	 * broke association timing all by itself.
 	 */
-	if (prBssDesc->u2OperationalRateSet == 0) {
-		DBGLOG(SCN, WARN,
-		       "biscuit-norate: %pM ch=%u pkt=%u hdr=%u ie=%u ovf=%u sup=%p ext=%p\n",
-		       prBssDesc->aucBSSID, prBssDesc->ucChannelNum,
-		       prSwRfb->u2PacketLen, prSwRfb->u2HeaderLen,
-		       prBssDesc->u2IELength, prBssDesc->fgIsIEOverflow,
-		       prIeSupportedRate, prIeExtSupportedRate);
+	{
+		static unsigned int u4BiscuitIeDbg;
+
+		if (u4BiscuitIeDbg < 24) {
+			u4BiscuitIeDbg++;
+			DBGLOG(SCN, WARN,
+			       "biscuit-ie[%u]: %pM ch=%u %s pkt=%u hdr=%u ie=%u ovf=%u sup=%d ext=%d rate=0x%04x\n",
+			       u4BiscuitIeDbg, prBssDesc->aucBSSID,
+			       prBssDesc->ucChannelNum,
+			       prBssDesc->u2OperationalRateSet ? "OK" : "NORATE",
+			       prSwRfb->u2PacketLen, prSwRfb->u2HeaderLen,
+			       prBssDesc->u2IELength, prBssDesc->fgIsIEOverflow,
+			       !!prIeSupportedRate, !!prIeExtSupportedRate,
+			       prBssDesc->u2OperationalRateSet);
+		}
 	}
 	/* 4 <4> Update information from HIF RX Header */
 	{
