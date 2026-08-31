@@ -1396,10 +1396,51 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	return 0;
 }
 
+/*
+ * Place this part's channels in a shared TDM frame.
+ *
+ * Several of these parts can sit on one data line, each driving its own pair
+ * of slots; register 28 says how many BCLK cycles after the frame sync this
+ * one should start driving. It defaults to zero, so without this every part
+ * on the bus answers in slot 0 at once and drives the line against its
+ * neighbours - the clocks look perfectly healthy on a scope while the
+ * receiver never recovers a valid frame.
+ *
+ * The mask is the DAI's rx_mask, so the first set bit is this part's first
+ * slot; the offset is that slot index times the slot width, in bits.
+ */
+static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
+				    unsigned int tx_mask, unsigned int rx_mask,
+				    int slots, int slot_width)
+{
+	struct snd_soc_component *component = dai->component;
+	unsigned int offset;
+
+	/* No slots claimed: leave the part where it is. */
+	if (!rx_mask)
+		return 0;
+
+	if (slot_width <= 0)
+		return -EINVAL;
+
+	offset = __ffs(rx_mask) * slot_width;
+	if (offset > 255) {
+		dev_err(component->dev,
+			"TDM offset %u out of range (slot %u, width %d)\n",
+			offset, __ffs(rx_mask), slot_width);
+		return -EINVAL;
+	}
+
+	dev_dbg(component->dev, "TDM slot offset %u BCLKs\n", offset);
+
+	return snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1, offset);
+}
+
 static const struct snd_soc_dai_ops adc3xxx_dai_ops = {
 	.hw_params	= adc3xxx_hw_params,
 	.set_sysclk	= adc3xxx_set_dai_sysclk,
 	.set_fmt	= adc3xxx_set_dai_fmt,
+	.set_tdm_slot	= adc3xxx_set_dai_tdm_slot,
 };
 
 static struct snd_soc_dai_driver adc3xxx_dai = {
