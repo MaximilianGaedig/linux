@@ -1142,7 +1142,20 @@ INT32 mtk_wcn_consys_hw_wifi_paldo_ctrl(UINT32 enable)
 	 *
 	 * Take the shared path without the compile-time switch, which would
 	 * pull in the legacy MediaTek PMIC API that is not ported here.
+	 *
+	 * Only ever raise it. SoC init turns the WiFi PALDO on before RF
+	 * calibration and straight back off afterwards, which is harmless when
+	 * that call drives a rail nothing else uses - but on the shared net it
+	 * pulls the supply out from under the chip mid-initialisation and the
+	 * WiFi function-on then times out with no wlan0 at all. Bluetooth owns
+	 * the matching disable; leaving the rail up costs an idle LDO and
+	 * keeps the 2.4GHz front end supplied for as long as WiFi is loaded.
 	 */
+	if (!enable) {
+		WMT_PLAT_INFO_FUNC("WMT WIFI PALDO off ignored (shared with BT)\n");
+		return 0;
+	}
+
 	return mtk_wcn_consys_hw_bt_paldo_ctrl(enable);
 }
 EXPORT_SYMBOL(mtk_wcn_consys_hw_wifi_paldo_ctrl);
