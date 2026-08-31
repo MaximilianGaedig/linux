@@ -430,29 +430,8 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
  * inaudible while AFE_I2S_CON1 reads 0, no clock or data is leaving the SoC
  * and the codec is not the problem.
  */
-static int biscuit_be_trigger(struct snd_pcm_substream *substream, int cmd)
-{
-	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
-	void __iomem *afe;
-
-	if (cmd != SNDRV_PCM_TRIGGER_START)
-		return 0;
-
-	afe = ioremap(0x11220000, 0x1000);
-	if (afe) {
-		dev_info(rtd->dev,
-			 "biscuit-afe@trigger: I2S_CON=0x%08x CON1=0x%08x CON2=0x%08x CON3=0x%08x DAC_CON0=0x%08x\n",
-			 readl(afe + 0x0018), readl(afe + 0x0034),
-			 readl(afe + 0x0038), readl(afe + 0x004c),
-			 readl(afe + 0x0010));
-		iounmap(afe);
-	}
-	return 0;
-}
-
 static const struct snd_soc_ops biscuit_be_ops = {
 	.hw_params = biscuit_be_hw_params,
-	.trigger = biscuit_be_trigger,
 };
 
 static struct snd_soc_dai_link biscuit_dai_links[] = {
