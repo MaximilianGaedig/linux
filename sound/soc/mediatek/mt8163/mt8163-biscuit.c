@@ -14,14 +14,17 @@
  */
 
 #include <linux/module.h>
+#include <linux/io.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
+#include <sound/soc-card.h>
 #include <sound/jack.h>
 #include <linux/gpio/consumer.h>
 
+static bool biscuit_mixers_done;
 static struct snd_soc_jack biscuit_hp_jack;
 static struct snd_soc_jack_gpio biscuit_hp_gpio = {
 	.name = "hp-det",
@@ -61,6 +64,23 @@ static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	{ prefix " IN_3R", NULL, "Mic Array" }
 
 static const struct snd_soc_dapm_route biscuit_routes[] = {
+	/*
+	 * The speaker hangs off the HEADPHONE outputs, not the line outputs.
+	 *
+	 * Amazon's own /etc/audio_init.sh closes exactly two playback
+	 * switches - "HPL Output Mixer L_DAC Switch" and "HPR Output Mixer
+	 * R_DAC Switch" - and nothing on the LO path, so HPL/HPR is what
+	 * reaches the amplifier on this board. Without a route from them to
+	 * an endpoint the HP drivers can never power up (OUTPWRCTL keeps its
+	 * HP bits clear and the widgets read "Off in 1 out 0"), which is why
+	 * driving the LO path produced a perfectly configured, completely
+	 * silent codec.
+	 *
+	 * The LO routes stay as well: they cost nothing, and keeping both
+	 * described means whichever pair is populated can be driven.
+	 */
+	{ "Ext Spk", NULL, "Speaker HPL" },
+	{ "Ext Spk", NULL, "Speaker HPR" },
 	{ "Ext Spk", NULL, "Speaker LOL" },
 	{ "Ext Spk", NULL, "Speaker LOR" },
 	BISCUIT_MIC_ROUTES("Mic0"),
@@ -104,7 +124,7 @@ SND_SOC_DAILINK_DEFS(mic_capture,
  * polarity bit from opposite defaults, so IB_NF here is the same wire
  * behaviour their NB_NF produced.
  */
-#define BISCUIT_MIC_MCLK_HZ	9600000
+#define BISCUIT_MIC_MCLK_HZ	12000000
 
 static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params)
@@ -240,21 +260,78 @@ SND_SOC_DAILINK_DEFS(playback_be,
  * exactly, which mtk_dai_i2s_set_sysclk() insists on (it rejects any freq
  * that does not divide the APLL rate).
  */
+/*
+ * Close every mixer the playback chain needs, once.
+ *
+ * These cannot be set from the card's late_probe: a CODEC's DAPM mixer
+ * controls are only created later, in snd_soc_dapm_new_widgets(), so the
+ * lookups there fail with "no control" for exactly the ones that matter.
+ * By the time a stream configures its back end they all exist.
+ *
+ * All of them default to off, and each one silently breaks the chain:
+ *  - the AFE's DL1 -> I2S1 routing mixers: without them there is no DAPM
+ *    path from the front end to the back end at all, so dpcm_path_get()
+ *    finds no back end and opening the PCM fails with a bare -EINVAL and
+ *    no kernel message whatsoever.
+ *  - the CODEC's DAC -> output-mixer switches: with these open the DAC has
+ *    no outgoing path, DAPM leaves the chain powered down, and because the
+ *    I2S port is only enabled as part of that power-up AFE_I2S_CON1 keeps
+ *    its enable bit clear (0xa08 instead of 0xa09) - a perfectly
+ *    configured codec that never receives a single clock edge.
+ *
+ * The speaker is on the HEADPHONE outputs: Amazon's own /etc/audio_init.sh
+ * closes "HPL/HPR Output Mixer L_DAC/R_DAC Switch" and nothing on the LO
+ * path. The LO switches are closed too, harmlessly, so either wiring works.
+ */
+static void biscuit_close_mixers(struct snd_soc_card *card,
+				 const char * const *mixers, int n)
+{
+	struct snd_ctl_elem_value uval;
+	struct snd_kcontrol *kctl;
+	int i;
+
+	for (i = 0; i < n; i++) {
+		kctl = snd_soc_card_get_kcontrol(card, mixers[i]);
+		if (!kctl || !kctl->put) {
+			dev_warn(card->dev, "biscuit: no control '%s'\n",
+				 mixers[i]);
+			continue;
+		}
+		memset(&uval, 0, sizeof(uval));
+		uval.value.integer.value[0] = 1;
+		uval.value.integer.value[1] = 1;
+		kctl->put(kctl, &uval);
+		dev_info(card->dev, "biscuit: closed '%s'\n", mixers[i]);
+	}
+	snd_soc_dapm_sync(card->dapm);
+}
+
 static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
-	unsigned int mclk = params_rate(params) * 256;
+	/*
+	 * 9.6MHz, not rate*256: the codec's clock is the CMMCLK pad shared
+	 * with the mic ADCs, which the SENINF divider drives at a fixed
+	 * 9.6MHz. Amazon passes the same constant (AIC31XX_FREQ_9600000) to
+	 * this codec and to the ADCs.
+	 */
+	unsigned int mclk = 12000000;
 	int ret;
 
-	ret = snd_soc_dai_set_sysclk(cpu_dai, 0, mclk, SND_SOC_CLOCK_OUT);
-	if (ret && ret != -ENOTSUPP) {
-		dev_err(rtd->dev, "biscuit: AFE set_sysclk(%u) failed: %d\n",
-			mclk, ret);
-		return ret;
-	}
+	/*
+	 * Deliberately no set_sysclk on the AFE side.
+	 *
+	 * The codec's master clock does not come from the AFE at all - it is
+	 * the CMMCLK pad, driven by the camera SENINF divider (the same clock
+	 * the mic ADCs and the FPGA use). Asking the AFE for it fails anyway:
+	 * mtk_dai_i2s_set_sysclk() rejects any rate that does not divide the
+	 * APLL exactly, so 12MHz returns -EINVAL and takes hw_params, and
+	 * therefore the whole stream, down with it. The AFE still supplies
+	 * BCK and LRCK as the I2S clock provider; only MCLK is external.
+	 */
 
 	/*
 	 * The codec side is best-effort on purpose.  aic32x4_set_dai_sysclk()
@@ -271,11 +348,75 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 
 	dev_info(rtd->dev, "biscuit: BE hw_params rate=%u mclk=%u\n",
 		 params_rate(params), mclk);
+
+	if (!biscuit_mixers_done) {
+		static const char * const codec_routes[] = {
+			"Speaker HP DAC Playback Switch",
+			"Speaker HPL Output Mixer L_DAC Switch",
+			"Speaker HPR Output Mixer R_DAC Switch",
+			"Speaker LO DAC Playback Switch",
+			"Speaker LOL Output Mixer L_DAC Switch",
+			"Speaker LOR Output Mixer R_DAC Switch",
+		};
+
+		biscuit_mixers_done = true;
+		biscuit_close_mixers(rtd->card, codec_routes,
+				     ARRAY_SIZE(codec_routes));
+	}
+
+	/*
+	 * Unmute the external amplifier.
+	 *
+	 * Its mute line is not a SoC GPIO - it hangs off the CODEC's MFP2 pin,
+	 * driven through AIC32X4_DOUTCTL (register 53). Amazon's own aic32x4
+	 * driver writes MFP2_GPIO_ENABLE|MFP2_GPIO_HI (0x05) at probe to mute
+	 * the amp, and MFP2_GPIO_ENABLE alone (0x04) to unmute it. Mainline's
+	 * driver never touches that register at all, so nothing ever unmutes
+	 * the amplifier and the board stays silent no matter how correct the
+	 * digital path is.
+	 */
+	{
+		struct snd_soc_component *cmp = snd_soc_rtd_to_codec(rtd, 0)->component;
+		int wret = snd_soc_component_write(cmp, 53, 0x04);
+
+		dev_info(rtd->dev, "biscuit: amp unmute via MFP2 (reg53=0x04) -> %d\n",
+			 wret);
+	}
+
+	return 0;
+}
+
+/*
+ * Dump the AFE's I2S1 control registers once the port should be live.
+ *
+ * hw_params is too early - DAPM only enables the port at trigger - so a
+ * zero here is meaningful where a zero in hw_params is not. If playback is
+ * inaudible while AFE_I2S_CON1 reads 0, no clock or data is leaving the SoC
+ * and the codec is not the problem.
+ */
+static int biscuit_be_trigger(struct snd_pcm_substream *substream, int cmd)
+{
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	void __iomem *afe;
+
+	if (cmd != SNDRV_PCM_TRIGGER_START)
+		return 0;
+
+	afe = ioremap(0x11220000, 0x1000);
+	if (afe) {
+		dev_info(rtd->dev,
+			 "biscuit-afe@trigger: I2S_CON=0x%08x CON1=0x%08x CON2=0x%08x CON3=0x%08x DAC_CON0=0x%08x\n",
+			 readl(afe + 0x0018), readl(afe + 0x0034),
+			 readl(afe + 0x0038), readl(afe + 0x004c),
+			 readl(afe + 0x0010));
+		iounmap(afe);
+	}
 	return 0;
 }
 
 static const struct snd_soc_ops biscuit_be_ops = {
 	.hw_params = biscuit_be_hw_params,
+	.trigger = biscuit_be_trigger,
 };
 
 static struct snd_soc_dai_link biscuit_dai_links[] = {
@@ -348,7 +489,34 @@ static int biscuit_late_probe(struct snd_soc_card *card)
 	for (i = 0; i < ARRAY_SIZE(pins); i++)
 		snd_soc_dapm_force_enable_pin(dapm, pins[i]);
 	snd_soc_dapm_sync(dapm);
+
+	/*
+	 * Close the AFE's DL1 -> I2S1 routing mixers.
+	 *
+	 * MediaTek's AFE connects a memif to an I2S port through DAPM mixer
+	 * controls ("I2S1_CH1 DL1_CH1"), and they default to off. With them
+	 * open there is no DAPM path from the DL1 front end to the I2S1 back
+	 * end at all, so dpcm_path_get() finds no back end and opening the
+	 * playback device fails with a bare -EINVAL and no kernel message -
+	 * which is exactly how this presented. There is only one playback
+	 * route on this board, so close them here rather than making every
+	 * user discover the mixer names.
+	 */
 	dev_info(card->dev, "biscuit: forced mic capture pins on\n");
+
+	/*
+	 * The AFE routing mixers have to be closed here, not at hw_params:
+	 * dpcm_path_get() walks DAPM at open() time, so without them the very
+	 * first open fails with -EINVAL and hw_params never runs at all.
+	 * These controls exist by now; the CODEC's own DAPM mixers do not,
+	 * which is why they are handled later.
+	 */
+	{
+		static const char * const afe_routes[] = {
+			"I2S1_CH1 DL1_CH1", "I2S1_CH2 DL1_CH2",
+		};
+		biscuit_close_mixers(card, afe_routes, ARRAY_SIZE(afe_routes));
+	}
 
 	/*
 	 * 3.5mm line-out presence. The detect line is a GPIO the sound node
@@ -400,6 +568,25 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 	int i, j;
 
 	card->dev = &pdev->dev;
+
+	/*
+	 * Drive the amplifier gain-select pins high.
+	 *
+	 * These cannot come from pinctrl: mainline's pinctrl-mtk-common has
+	 * no PIN_CONFIG_OUTPUT, so an output-high group just fails.
+	 */
+	{
+		struct gpio_descs *gains;
+
+		gains = devm_gpiod_get_array_optional(&pdev->dev, "extamp-gain",
+						      GPIOD_OUT_HIGH);
+		if (IS_ERR(gains))
+			dev_warn(&pdev->dev, "biscuit: extamp-gain gpios: %ld\n",
+				 PTR_ERR(gains));
+		else if (gains)
+			dev_info(&pdev->dev, "biscuit: %u amp gain pins driven high\n",
+				 gains->ndescs);
+	}
 
 	platform = of_parse_phandle(pdev->dev.of_node, "mediatek,platform", 0);
 	if (!platform)
@@ -457,6 +644,15 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "biscuit-audio: FE=DL1 BE=I2S1 platform=%pOF codec=%pOF mic=%pOF\n",
 		 platform, codec, mic);
+	for_each_card_prelinks(card, i, link)
+		dev_info(&pdev->dev,
+			 "biscuit-link[%d] %-8s cpu=%s codec=%s plat=%s dyn=%d no_pcm=%d play=%d cap=%d\n",
+			 i, link->name,
+			 link->cpus ? (link->cpus->dai_name ?: "?") : "-",
+			 link->codecs ? (link->codecs->dai_name ?: "?") : "-",
+			 link->platforms ? (link->platforms->name ?: "of") : "-",
+			 link->dynamic, link->no_pcm,
+			 link->playback_only, link->capture_only);
 
 	return devm_snd_soc_register_card(&pdev->dev, card);
 }
