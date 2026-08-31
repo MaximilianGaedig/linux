@@ -12,6 +12,7 @@
 
 #include <dt-bindings/pinctrl/mt65xx.h>
 #include <dt-bindings/leds/common.h>
+#include <dt-bindings/sound/tlv320adc3xxx.h>
 
 /*
  * A leds-group-multicolor grouping layer (one node per physical LED,
@@ -272,6 +273,16 @@
 		#sound-dai-cells = <0>;
 		sound-name-prefix = "Mic0";
 		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
+		/*
 		 * Amazon calls pin 35 "enable-gpio" active-high; as a reset
 		 * line that is the same pin with inverted sense, so declare it
 		 * ACTIVE_LOW and the driver's "assert reset" drives it low =
@@ -288,6 +299,16 @@
 		reg = <0x19>;
 		#sound-dai-cells = <0>;
 		sound-name-prefix = "Mic1";
+		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
 		clocks = <&mic_mclk>;
 		clock-names = "mclk";
 
@@ -298,6 +319,16 @@
 		reg = <0x1a>;
 		#sound-dai-cells = <0>;
 		sound-name-prefix = "Mic2";
+		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
 		clocks = <&mic_mclk>;
 		clock-names = "mclk";
 
@@ -308,6 +339,16 @@
 		reg = <0x1b>;
 		#sound-dai-cells = <0>;
 		sound-name-prefix = "Mic3";
+		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
 		clocks = <&mic_mclk>;
 		clock-names = "mclk";
 
