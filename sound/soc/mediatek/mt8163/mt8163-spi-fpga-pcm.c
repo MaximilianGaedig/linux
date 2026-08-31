@@ -67,7 +67,7 @@ MODULE_PARM_DESC(biscuit_fpga_tpg, "put the FPGA in test-pattern mode instead of
 #define SENINF_TG1_PH_CNT	0x200
 #define SENINF_TG1_SEN_CK	0x204
 #define FPGA_MCLK_SRC_HZ	48000000	/* CAMTG_SEL -> UNIVPLL_D26 */
-#define FPGA_MCLK_OUT_HZ	12000000  /* 48MHz/4; see comment below */		/* SENINF divider output */
+#define FPGA_MCLK_OUT_HZ	9600000	/* SENINF divider output, matches stock */
 #define SENINF_TG1_MCLK_EN	0x20000000	/* mclk_enable_reg bit */
 
 #define SAMPLING_RATE		16000
