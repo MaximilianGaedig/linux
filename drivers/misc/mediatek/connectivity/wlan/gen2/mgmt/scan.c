@@ -1902,6 +1902,22 @@ P_BSS_DESC_T scanAddToBssDesc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 				      &prBssDesc->u2OperationalRateSet,
 				      &prBssDesc->u2BSSBasicRateSet, &prBssDesc->fgIsUnknownBssBasicRate);
 	}
+
+	/*
+	 * biscuit: a BSS whose rate set stays 0 cannot be associated with - the
+	 * firmware builds an empty WTBL entry and every unicast frame to it
+	 * fails to transmit. Report the packet geometry for those so it is
+	 * possible to tell a truncated RX from a frame that genuinely carried
+	 * no Supported-Rates IE.
+	 */
+	if (prBssDesc->u2OperationalRateSet == 0) {
+		DBGLOG(SCN, WARN,
+		       "biscuit-norate: %pM ch=%u pkt=%u hdr=%u ie=%u ovf=%u sup=%p ext=%p\n",
+		       prBssDesc->aucBSSID, prBssDesc->ucChannelNum,
+		       prSwRfb->u2PacketLen, prSwRfb->u2HeaderLen,
+		       prBssDesc->u2IELength, prBssDesc->fgIsIEOverflow,
+		       prIeSupportedRate, prIeExtSupportedRate);
+	}
 	/* 4 <4> Update information from HIF RX Header */
 	{
 		prHifRxHdr = prSwRfb->prHifRxHdr;
