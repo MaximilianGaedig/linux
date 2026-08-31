@@ -101,7 +101,13 @@
 #define HIF_RX_HDR_DO_REORDER            BIT(1)
 #define HIF_RX_HDR_PAL                   BIT(2)
 #define HIF_RX_HDR_TCL                   BIT(3)
-#define HIF_RX_HDR_NETWORK_IDX_MASK      BITS(4, 7)
+#define HIF_RX_HDR_NETWORK_IDX_MASK         BITS(4, 6)
+/*
+ * Bit 7 is the firmware's retransmission marker, not part of the network
+ * index. Folding it in makes every retried frame decode as network 8|idx,
+ * which fails the AIS comparisons and indexes arBssInfo[] out of bounds.
+ */
+#define HIF_RX_HDR_FLAG_RETRY               BIT(7)
 #define HIF_RX_HDR_NETWORK_IDX_OFFSET    4
 
 /* DW 1, Byte 2, 3 */
