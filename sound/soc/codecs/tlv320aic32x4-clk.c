@@ -187,6 +187,16 @@ static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 	settings->j = (u32) multiplier / 10000;
 	settings->d = (u32) multiplier % 10000;
 
+	/*
+	 * The PLL only accepts an input below 10MHz in integer mode. With a
+	 * fractional D the datasheet requires 10MHz <= PLL_CLKIN/P <= 20MHz,
+	 * and a part clocked outside that range does not lock: the interface
+	 * still clocks, hw_params still succeeds, and the converters produce
+	 * nothing at all. Reject those rather than program them.
+	 */
+	if (settings->d && parent_rate / settings->p < 10000000)
+		return -1;
+
 	return 0;
 }
 
