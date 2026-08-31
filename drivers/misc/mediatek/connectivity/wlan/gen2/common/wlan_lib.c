@@ -3008,6 +3008,44 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		wlanLoadManufactureData(prAdapter, prRegInfo);
 #endif
 
+		/*
+		 * Select the default antenna.
+		 *
+		 * The vendor driver does this here, immediately after the
+		 * manufacture data, as "set default ant to ANT1": a
+		 * CMD_ID_SW_DBG_CTRL carrying 0xa0340000 | mode. It matters on
+		 * this board because the WMT init script claims manual antenna
+		 * control on the host's behalf, so nothing in the firmware
+		 * picks one - whichever the 2.4GHz front end ends up looking at
+		 * is then whatever the register happened to contain.
+		 *
+		 * 5GHz has always worked regardless, so if this is the missing
+		 * piece the effect will be visible only on 2.4GHz.
+		 */
+		{
+			CMD_SW_DBG_CTRL_T rCmdSwCtrl;
+
+			memset(&rCmdSwCtrl, 0, sizeof(rCmdSwCtrl));
+			rCmdSwCtrl.u4Id = 0xa0340000;	/* | 0 == ANT1 */
+			rCmdSwCtrl.u4Data = 0;
+
+			DBGLOG(INIT, WARN,
+			       "biscuit-ant: default antenna select 0x%x\n",
+			       rCmdSwCtrl.u4Id);
+
+			wlanSendSetQueryCmd(prAdapter,
+					    CMD_ID_SW_DBG_CTRL,
+					    TRUE,
+					    FALSE,
+					    FALSE,
+					    nicCmdEventSetCommon,
+					    nicOidCmdTimeoutCommon,
+					    sizeof(CMD_SW_DBG_CTRL_T),
+					    (PUINT_8)(&rCmdSwCtrl),
+					    NULL,
+					    0);
+		}
+
 #ifdef CONFIG_MTK_TC1_FEATURE	/* 1 //keep alive packet time change from default 30secs to 20secs. //TC01// */
 		{
 			CMD_SW_DBG_CTRL_T rCmdSwCtrl;
