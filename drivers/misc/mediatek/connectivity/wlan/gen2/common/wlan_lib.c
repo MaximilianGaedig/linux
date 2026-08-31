@@ -5949,6 +5949,37 @@ static VOID wlanChangeNvram6620to6628(PUINT_8 pucEFUSE)
 *         WLAN_STATUS_FAILURE
 */
 /*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief Pick the band-edge certification profile from the active regulatory
+*        domain: a 2.4GHz subband starting at channel 1 with 13 channels is
+*        KCC, anything else FCC. Ported from the vendor driver.
+*/
+/*----------------------------------------------------------------------------*/
+static ENUM_BAND_EDGE_CERT_T getBandEdgeCert(P_ADAPTER_T prAdapter)
+{
+	P_DOMAIN_INFO_ENTRY prDomainInfo;
+	P_DOMAIN_SUBBAND_INFO prSubband;
+	UINT_32 i;
+
+	prDomainInfo = rlmDomainGetDomainInfo(prAdapter);
+	if (!prDomainInfo)
+		return BAND_EDGE_CERT_FCC;
+
+	for (i = 0; i < MAX_SUBBAND_NUM; i++) {
+		prSubband = &prDomainInfo->rSubBand[i];
+
+		if (prSubband->ucBand == BAND_2G4 &&
+		    prSubband->ucFirstChannelNum == 1) {
+			if (prSubband->ucNumChannels == 13)
+				return BAND_EDGE_CERT_KCC;
+			return BAND_EDGE_CERT_FCC;
+		}
+	}
+
+	return BAND_EDGE_CERT_FCC;
+}
+
 WLAN_STATUS wlanLoadManufactureData(IN P_ADAPTER_T prAdapter, IN P_REG_INFO_T prRegInfo)
 {
 #if CFG_SUPPORT_RDD_TEST_MODE
@@ -6093,6 +6124,15 @@ WLAN_STATUS wlanLoadManufactureData(IN P_ADAPTER_T prAdapter, IN P_REG_INFO_T pr
 		rCmdEdgeTxPwrLimit.cBandEdgeMaxPwrCCK = prRegInfo->cBandEdgeMaxPwrCCK;
 		rCmdEdgeTxPwrLimit.cBandEdgeMaxPwrOFDM20 = prRegInfo->cBandEdgeMaxPwrOFDM20;
 		rCmdEdgeTxPwrLimit.cBandEdgeMaxPwrOFDM40 = prRegInfo->cBandEdgeMaxPwrOFDM40;
+		/*
+		 * Which band-edge certification profile the firmware should
+		 * apply. This field was previously named cReserved and left
+		 * unset, so whatever happened to be on the stack was sent to
+		 * the firmware as part of a 2.4GHz power-limit command - and
+		 * this command is only sent when fg2G4BandEdgePwrUsed is set,
+		 * which it is on this board.
+		 */
+		rCmdEdgeTxPwrLimit.cBandEdgeCert = getBandEdgeCert(prAdapter);
 
 		DBGLOG(INIT, TRACE, "NVRAM 2G Bandedge CCK(%d) HT20(%d)HT40(%d)\n",
 		       rCmdEdgeTxPwrLimit.cBandEdgeMaxPwrCCK,

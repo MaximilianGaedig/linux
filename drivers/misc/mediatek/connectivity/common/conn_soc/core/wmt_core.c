@@ -599,6 +599,20 @@ INT32 wmt_core_init_script(struct init_script *script, INT32 count)
 	for (i = 0; i < count; i++) {
 		pr_info("biscuit-initscript: [%d/%d] %s start (cmdSz=%u evtSz=%u)\n",
 			i, count, script[i].str, script[i].cmdSz, script[i].evtSz);
+
+		/*
+		 * A table entry with no command is a placeholder that was
+		 * never populated - coex_custom_feature is left empty when the
+		 * config file does not enable manual antenna control. Stock
+		 * skips those. Running one transmits nothing and then blocks
+		 * waiting for an event that never arrives, which fails the
+		 * whole init script instead of one entry.
+		 */
+		if (!script[i].cmd) {
+			pr_info("biscuit-initscript: [%d/%d] %s has no command, skipped\n",
+				i, count, script[i].str);
+			continue;
+		}
 		/* CMD */
 		/* iRet = (*kal_stp_tx)(script[i].cmd, script[i].cmdSz, &u4Res); */
 		iRet = wmt_core_tx(script[i].cmd, script[i].cmdSz, &u4Res, MTK_WCN_BOOL_FALSE);

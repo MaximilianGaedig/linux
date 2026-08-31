@@ -998,4 +998,10 @@ VOID wlanCfgApply(IN P_ADAPTER_T prAdapter);
 
 extern VOID mtk_wcn_wmt_set_wifi_ver(UINT_32 Value);
 
+typedef enum _ENUM_BAND_EDGE_CERT_T {
+	BAND_EDGE_CERT_FCC = 0,
+	BAND_EDGE_CERT_KCC = 1,
+	BAND_EDGE_CERT_NUM = 2
+} ENUM_BAND_EDGE_CERT_T, *P_ENUM_BAND_EDGE_CERT_T;
+
 #endif /* _WLAN_LIB_H */
