@@ -601,6 +601,8 @@ Add per station flow control when STA is in PS
 #ifndef _ADAPTER_H
 #define _ADAPTER_H
 
+#include "ant_select.h"
+
 /*******************************************************************************
 *                         C O M P I L E R   F L A G S
 ********************************************************************************
@@ -1011,6 +1013,9 @@ typedef struct _WIFI_VAR_T {
 	ROAMING_INFO_T rRoamingInfo;
 #endif				/* CFG_SUPPORT_ROAMING */
 
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+	struct antenna_select_info ant_select_info;
+#endif
 	AIS_FSM_INFO_T rAisFsmInfo;
 
 	ENUM_PWR_STATE_T aePwrState[NETWORK_TYPE_INDEX_NUM];

@@ -1275,3 +1275,33 @@ INT_32 procCreateFsEntry(P_GLUE_INFO_T prGlueInfo)
 	return 0;
 }
 
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+/*
+ * Tell the firmware which antenna to use.
+ *
+ * mode is ANT1/ANT2/ANT_AUTO; the firmware takes it as a software debug
+ * control carrying 0xa0340000 | mode. This board's WMT init script claims
+ * manual antenna control on the host's behalf, so if nothing ever calls this
+ * the firmware stops choosing an antenna and no one else starts.
+ */
+WLAN_STATUS antennaSwitch(P_ADAPTER_T prAdapter, UINT_32 mode, bool is_oid)
+{
+	CMD_SW_DBG_CTRL_T rCmdSwCtrl;
+
+	rCmdSwCtrl.u4Id = 0xa0340000 | mode;
+	rCmdSwCtrl.u4Data = 0x0;
+	DBGLOG(INIT, TRACE, "antennaSwitch 0x%x, %d\n",
+	       rCmdSwCtrl.u4Id, rCmdSwCtrl.u4Data);
+	return wlanSendSetQueryCmd(prAdapter,
+				   CMD_ID_SW_DBG_CTRL,
+				   TRUE,
+				   FALSE,
+				   is_oid,
+				   nicCmdEventSetCommon,
+				   nicOidCmdTimeoutCommon,
+				   sizeof(CMD_SW_DBG_CTRL_T),
+				   (PUINT_8) (&rCmdSwCtrl),
+				   NULL,
+				   0);
+}
+#endif

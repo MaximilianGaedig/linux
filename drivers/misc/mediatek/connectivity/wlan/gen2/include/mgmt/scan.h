@@ -485,6 +485,7 @@ struct _BSS_DESC_T {
 	UINT_8 aucIEBuf[CFG_IE_BUFFER_SIZE];
 	UINT_8 ucJoinFailureCount;
 	OS_SYSTIME rJoinFailTime;
+	UINT_8 ucAvgRCPI;
 };
 
 typedef struct _SCAN_PARAM_T {	/* Used by SCAN FSM */

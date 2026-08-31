@@ -1277,4 +1277,14 @@ VOID wlanUpdateChannelTable(P_GLUE_INFO_T prGlueInfo);
 ********************************************************************************
 */
 
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+enum {
+	ANT1 = 0,	/* Antenna 1 */
+	ANT2,		/* Antenna 2 */
+	ANT_AUTO	/* Automatically antenna switch */
+};
+
+WLAN_STATUS antennaSwitch(P_ADAPTER_T prAdapter, UINT_32 mode, bool is_oid);
+#endif
+
 #endif /* _GL_OS_H */

@@ -309,6 +309,8 @@
 
 #include "ais_fsm.h"
 
+#include "ant_select.h"
+
 #include "adapter.h"
 
 #include "que_mgt.h"

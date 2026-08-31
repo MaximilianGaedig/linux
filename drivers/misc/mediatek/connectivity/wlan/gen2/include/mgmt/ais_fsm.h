@@ -307,6 +307,7 @@ typedef enum _ENUM_AIS_REQUEST_TYPE_T {
 	AIS_REQUEST_ROAMING_SEARCH,
 	AIS_REQUEST_ROAMING_CONNECT,
 	AIS_REQUEST_REMAIN_ON_CHANNEL,
+	AIS_REQUEST_ANTENNA_QUERY,
 	AIS_REQUEST_NUM
 } ENUM_AIS_REQUEST_TYPE_T;
 
@@ -570,5 +571,10 @@ VOID aisTest(VOID);
 *                              F U N C T I O N S
 ********************************************************************************
 */
+
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+VOID aisFsmRunEventAntSelectQuery(IN P_ADAPTER_T prAdapter);
+ENUM_AIS_STATE_T aisFsmAntSelectScanResultsUpdate(IN P_ADAPTER_T prAdapter);
+#endif
 
 #endif /* _AIS_FSM_H */

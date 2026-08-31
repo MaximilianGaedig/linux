@@ -2,6 +2,7 @@
 # Compile Options
 # ---------------------------------------------------
 ccflags-y += -DLINUX -DMT6628
+ccflags-y += -DCONFIG_MTK_WIFI_ANTENNA_SELECT
 
 ccflags-y += -DCFG_SUPPORT_AGPS_ASSIST=1
 ccflags-y += -DCFG_SUPPORT_TSF_USING_BOOTTIME=1
@@ -148,7 +149,8 @@ OS_OBJS :=	$(OS_DIR)gl_init.o \
 			$(OS_DIR)platform.o		\
 			$(OS_DIR)gl_proc.o
 
-MGMT_OBJS := $(MGMT_DIR)ais_fsm.o \
+MGMT_OBJS := $(MGMT_DIR)ant_select.o \
+			 $(MGMT_DIR)ais_fsm.o \
 			 $(MGMT_DIR)aaa_fsm.o \
 			 $(MGMT_DIR)assoc.o \
 			 $(MGMT_DIR)auth.o \
