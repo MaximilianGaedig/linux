@@ -238,5 +238,8 @@ int aic32x4_register_clocks(struct device *dev, const char *mclk_name);
 #define AIC32X4_MIN_DOSR_FREQ		2800000
 #define AIC32X4_MAX_CODEC_CLKIN_FREQ    110000000
 #define AIC32X4_MAX_PLL_CLKIN		20000000
+/* The PLL only locks with its output inside this window. */
+#define AIC32X4_MIN_PLL_CLKOUT		80000000
+#define AIC32X4_MAX_PLL_CLKOUT		110000000
 
 #endif				/* _TLV320AIC32X4_H */

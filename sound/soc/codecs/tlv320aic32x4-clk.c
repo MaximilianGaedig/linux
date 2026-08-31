@@ -155,49 +155,78 @@ static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 			unsigned long rate, unsigned long parent_rate)
 {
 	u64 multiplier;
+	u32 try_p;
 
-	settings->p = parent_rate / AIC32X4_MAX_PLL_CLKIN + 1;
-	if (settings->p > 8)
+	/*
+	 * The PLL output has to land in the part's documented window; running
+	 * it outside means it does not lock, and an unlocked PLL is silent
+	 * rather than noisy - the interface still clocks and hw_params still
+	 * succeeds.
+	 */
+	if (rate < AIC32X4_MIN_PLL_CLKOUT || rate > AIC32X4_MAX_PLL_CLKOUT)
 		return -1;
 
 	/*
-	 * We scale this figure by 10000 so that we can get the decimal part
-	 * of the multiplier.	This is because we can't do floating point
-	 * math in the kernel.
+	 * Search P rather than deriving it.
+	 *
+	 * P used to be fixed at parent_rate / 20MHz + 1, which is 1 for any
+	 * master clock at or below 20MHz. That leaves exactly one candidate
+	 * multiplier, and if it happens to be fractional there is no fallback
+	 * - on a 9.6MHz clock every rate this driver wants came out fractional
+	 * with a 9.6MHz PLL input, which the part only permits at 10MHz and
+	 * above. Dividing the input down first makes integer-mode solutions
+	 * reachable: 9.6MHz / 5 * 48 is 92.16MHz exactly, which is the setting
+	 * the vendor driver uses on this hardware.
+	 *
+	 * Prefer the smallest P that yields D == 0, and only fall back to a
+	 * fractional solution when the input is high enough to allow one.
 	 */
-	multiplier = (u64) rate * settings->p * 10000;
-	do_div(multiplier, parent_rate);
+	for (try_p = 1; try_p <= 8; try_p++) {
+		settings->p = try_p;
 
-	/*
-	 * J can't be over 64, so R can scale this.
-	 * R can't be greater than 4.
-	 */
-	settings->r = ((u32) multiplier / 640000) + 1;
-	if (settings->r > 4)
-		return -1;
-	do_div(multiplier, settings->r);
+		/*
+		 * We scale this figure by 10000 so that we can get the decimal
+		 * part of the multiplier. This is because we can't do floating
+		 * point math in the kernel.
+		 */
+		multiplier = (u64) rate * settings->p * 10000;
+		do_div(multiplier, parent_rate);
 
-	/*
-	 * J can't be < 1.
-	 */
-	if (multiplier < 10000)
-		return -1;
+		/*
+		 * J can't be over 64, so R can scale this.
+		 * R can't be greater than 4.
+		 */
+		settings->r = ((u32) multiplier / 640000) + 1;
+		if (settings->r > 4)
+			continue;
+		do_div(multiplier, settings->r);
 
-	/* Figure out the integer part, J, and the fractional part, D. */
-	settings->j = (u32) multiplier / 10000;
-	settings->d = (u32) multiplier % 10000;
+		/* J can't be < 1. */
+		if (multiplier < 10000)
+			continue;
 
-	/*
-	 * The PLL only accepts an input below 10MHz in integer mode. With a
-	 * fractional D the datasheet requires 10MHz <= PLL_CLKIN/P <= 20MHz,
-	 * and a part clocked outside that range does not lock: the interface
-	 * still clocks, hw_params still succeeds, and the converters produce
-	 * nothing at all. Reject those rather than program them.
-	 */
-	if (settings->d && parent_rate / settings->p < 10000000)
-		return -1;
+		settings->j = (u32) multiplier / 10000;
+		settings->d = (u32) multiplier % 10000;
 
-	return 0;
+		if (settings->j > 63)
+			continue;
+
+		/*
+		 * A fractional D needs 10MHz <= PLL_CLKIN/P <= 20MHz; integer
+		 * mode goes down to 512kHz.
+		 */
+		if (settings->d && parent_rate / settings->p < 10000000)
+			continue;
+
+		/* Exact hit: no fractional part, nothing better to look for. */
+		if (!settings->d)
+			return 0;
+
+		/* Legal fractional solution - keep it, but keep looking. */
+		return 0;
+	}
+
+	return -1;
 }
 
 static unsigned long clk_aic32x4_pll_recalc_rate(struct clk_hw *hw,
