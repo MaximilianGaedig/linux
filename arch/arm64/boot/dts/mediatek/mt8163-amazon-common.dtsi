@@ -376,6 +376,17 @@
 };
 
 &consys {
+	/*
+	 * Default state stays wifi_reset_init.
+	 *
+	 * Stock uses consys_pins_default here and selects wifi_reset_init
+	 * again on every CONSYS power-on. Swapping the default without also
+	 * adding that per-power-on select leaves the MT6625L
+	 * WB_RSTB/SCLK/SDATA/SEN lines unconfigured entirely, and the WiFi
+	 * function-on then fails with no wlan0 - measured. ANT_SEL is muxed by
+	 * the driver's own register write instead, which reaches the same end
+	 * state. Change both halves together or neither.
+	 */
 	pinctrl-names = "default", "wifi_reset_init", "consys_pins_default";
 	pinctrl-0 = <&wifi_reset_init>;
 	pinctrl-1 = <&wifi_reset_init>;

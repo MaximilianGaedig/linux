@@ -1042,125 +1042,90 @@ INT32 mtk_wcn_consys_hw_rst(UINT32 co_clock_type)
 	return iRet;
 }
 
-#if CONSYS_BT_WIFI_SHARE_V33
-INT32 mtk_wcn_consys_hw_bt_paldo_ctrl(UINT32 enable)
+/*
+ * VCN33 is one physical net feeding both the Bluetooth radio and the WiFi
+ * 2.4GHz front end, so it needs two consumers refcounted against it. The
+ * vendor driver expresses this by compiling its WiFi entry point straight
+ * into the BT one; that build also uses the legacy MediaTek PMIC API
+ * (hwPowerOn/upmu_set_vcn33_on_ctrl_bt), which does not exist here, so the
+ * same refcount is done with the regulator and regmap accessors this tree
+ * has and the vendor's two variants are collapsed into one.
+ *
+ * Getting this wrong is not subtle: raising per consumer but dropping on the
+ * first release lets a Bluetooth power-down pull the supply out from under a
+ * running WiFi, and 2.4GHz goes deaf while 5GHz - fed separately - keeps
+ * working.
+ */
+static INT32 biscuit_v33_users;
+static DEFINE_MUTEX(biscuit_v33_lock);
+
+static INT32 biscuit_v33_ctrl(UINT32 enable, const char *who)
 {
-	/* spin_lock_irqsave(&gBtWifiV33.lock,gBtWifiV33.flags); */
+	mutex_lock(&biscuit_v33_lock);
+
 	if (enable) {
-		if (1 == gBtWifiV33.counter) {
-			gBtWifiV33.counter++;
-			WMT_PLAT_DBG_FUNC("V33 has been enabled,counter(%d)\n", gBtWifiV33.counter);
-		} else if (2 == gBtWifiV33.counter) {
-			WMT_PLAT_DBG_FUNC("V33 has been enabled,counter(%d)\n", gBtWifiV33.counter);
-		} else {
-#if CONSYS_PMIC_CTRL_ENABLE
-			/*do BT PMIC on,depenency PMIC API ready */
-			/*switch BT PALDO control from SW mode to HW mode:0x416[5]-->0x1 */
-			/* VOL_DEFAULT, VOL_3300, VOL_3400, VOL_3500, VOL_3600 */
-			hwPowerOn(MT6323_POWER_LDO_VCN33, VOL_3300, "wcn_drv");
-			upmu_set_vcn33_on_ctrl_bt(1);
-#endif
-			WMT_PLAT_INFO_FUNC("WMT do BT/WIFI v3.3 on\n");
-			gBtWifiV33.counter++;
+		if (biscuit_v33_users++ == 0) {
+			if (reg_VCN33_BT) {
+				regulator_set_voltage(reg_VCN33_BT, 3300000, 3500000);
+				if (regulator_enable(reg_VCN33_BT))
+					WMT_PLAT_ERR_FUNC("WMT do BT/WIFI v3.3 on fail!\n");
+			}
+			if (pmic_regmap)
+				regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x1 << 5);
+			WMT_PLAT_INFO_FUNC("WMT do BT/WIFI v3.3 on (%s)\n", who);
 		}
-
 	} else {
-		if (1 == gBtWifiV33.counter) {
-			/*do BT PMIC off */
-			/*switch BT PALDO control from HW mode to SW mode:0x416[5]-->0x0 */
-#if CONSYS_PMIC_CTRL_ENABLE
-		    upmu_set_vcn33_on_ctrl_bt(0);
-			hwPowerDown(MT6323_POWER_LDO_VCN33, "wcn_drv");
-#endif
-			WMT_PLAT_INFO_FUNC("WMT do BT/WIFI v3.3 off\n");
-			gBtWifiV33.counter--;
-		} else if (2 == gBtWifiV33.counter) {
-			gBtWifiV33.counter--;
-			WMT_PLAT_DBG_FUNC("V33 no need disabled,counter(%d)\n", gBtWifiV33.counter);
-		} else {
-			WMT_PLAT_DBG_FUNC("V33 has been disabled,counter(%d)\n", gBtWifiV33.counter);
+		if (biscuit_v33_users > 0 && --biscuit_v33_users == 0) {
+			if (pmic_regmap)
+				regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x0 << 5);
+			if (reg_VCN33_BT)
+				if (regulator_disable(reg_VCN33_BT))
+					WMT_PLAT_ERR_FUNC("WMT do BT/WIFI v3.3 off fail!\n");
+			WMT_PLAT_INFO_FUNC("WMT do BT/WIFI v3.3 off (%s)\n", who);
 		}
-
 	}
-	/* spin_unlock_irqrestore(&gBtWifiV33.lock,gBtWifiV33.flags); */
+
+	WMT_PLAT_DBG_FUNC("v3.3 users=%d\n", biscuit_v33_users);
+	mutex_unlock(&biscuit_v33_lock);
+
 	return 0;
 }
+
+INT32 mtk_wcn_consys_hw_bt_paldo_ctrl(UINT32 enable)
+{
+	return biscuit_v33_ctrl(enable, "BT");
+}
+EXPORT_SYMBOL(mtk_wcn_consys_hw_bt_paldo_ctrl);
 
 INT32 mtk_wcn_consys_hw_wifi_paldo_ctrl(UINT32 enable)
 {
-	mtk_wcn_consys_hw_bt_paldo_ctrl(enable);
-	return 0;
-}
-EXPORT_SYMBOL(mtk_wcn_consys_hw_wifi_paldo_ctrl);
+	static bool wifi_holds_v33;
 
-#else
-INT32 mtk_wcn_consys_hw_bt_paldo_ctrl(UINT32 enable)
-{
-
-	if (enable) {
-		/*do BT PMIC on,depenency PMIC API ready */
-		/*switch BT PALDO control from SW mode to HW mode:0x416[5]-->0x1 */
-		if (reg_VCN33_BT) {
-			regulator_set_voltage(reg_VCN33_BT, 3300000, 3300000);
-			if (regulator_enable(reg_VCN33_BT))
-				WMT_PLAT_ERR_FUNC("WMT do BT PMIC on fail!\n");
-		}
-		if (pmic_regmap)
-			regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x1 << 5);/*BT*/
-		WMT_PLAT_INFO_FUNC("WMT do BT PMIC on\n");
-	} else {
-		/*do BT PMIC off */
-		/*switch BT PALDO control from HW mode to SW mode:0x416[5]-->0x0 */
-		if (pmic_regmap)
-			regmap_update_bits(pmic_regmap, 0x416, 0x1 << 5, 0x0 << 5);/*BT*/
-		if (reg_VCN33_BT)
-			if (regulator_disable(reg_VCN33_BT))
-				WMT_PLAT_ERR_FUNC("WMT do BT PMIC off fail!\n");
-		WMT_PLAT_INFO_FUNC("WMT do BT PMIC off\n");
-	}
-
-	return 0;
-
-}
-
-INT32 mtk_wcn_consys_hw_wifi_paldo_ctrl(UINT32 enable)
-{
 	/*
-	 * On this board BT and WiFi share one physical 3.3V net.
+	 * reg_VCN33_WIFI and PMIC 0x418[14] are not wired on this board, so
+	 * the WiFi block is simply a second consumer of the BT rail.
 	 *
-	 * Amazon builds with CONSYS_BT_WIFI_SHARE_V33=1, where this function is
-	 * nothing but a call into the BT one - a single rail, refcounted by two
-	 * consumers, which is why its own log strings read "BT/WIFI v3.3".
-	 * reg_VCN33_WIFI and PMIC 0x418[14] are never touched on this hardware.
-	 *
-	 * Driving them anyway raises a rail the 2.4GHz front end is not on,
-	 * while the one it is on comes up only if Bluetooth happens to be
-	 * running - and goes away again when BT stops. 5GHz is fed from a
-	 * different domain and is unaffected, which is exactly the observed
-	 * failure: perfect 5GHz, no 2.4GHz reception at all, varying from boot
-	 * to boot with whatever BT did first.
-	 *
-	 * Take the shared path without the compile-time switch, which would
-	 * pull in the legacy MediaTek PMIC API that is not ported here.
-	 *
-	 * Only ever raise it. SoC init turns the WiFi PALDO on before RF
-	 * calibration and straight back off afterwards, which is harmless when
-	 * that call drives a rail nothing else uses - but on the shared net it
-	 * pulls the supply out from under the chip mid-initialisation and the
-	 * WiFi function-on then times out with no wlan0 at all. Bluetooth owns
-	 * the matching disable; leaving the rail up costs an idle LDO and
-	 * keeps the 2.4GHz front end supplied for as long as WiFi is loaded.
+	 * Its reference is taken once and not given back. SoC init raises the
+	 * WiFi PALDO before RF calibration and lowers it immediately after,
+	 * which on a rail of its own is harmless bookkeeping. Here, with
+	 * Bluetooth not necessarily holding a reference of its own, honouring
+	 * that release drops the supply in the middle of initialisation and
+	 * the chip never finishes coming up - measured: no wlan0 at all.
+	 * Bluetooth still refcounts normally against the same rail, so a BT
+	 * power-down can no longer pull it out from under a running WiFi
+	 * either, which is what the one-way version got wrong.
 	 */
-	if (!enable) {
-		WMT_PLAT_INFO_FUNC("WMT WIFI PALDO off ignored (shared with BT)\n");
-		return 0;
+	if (enable) {
+		if (wifi_holds_v33)
+			return 0;
+		wifi_holds_v33 = true;
+		return biscuit_v33_ctrl(TRUE, "WIFI");
 	}
 
-	return mtk_wcn_consys_hw_bt_paldo_ctrl(enable);
+	WMT_PLAT_DBG_FUNC("WIFI v3.3 release ignored (held for the chip's life)\n");
+	return 0;
 }
 EXPORT_SYMBOL(mtk_wcn_consys_hw_wifi_paldo_ctrl);
-
-#endif
 INT32 mtk_wcn_consys_hw_vcn28_ctrl(UINT32 enable)
 {
 	if (enable) {
