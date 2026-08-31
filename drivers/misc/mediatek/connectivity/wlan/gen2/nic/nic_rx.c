@@ -2500,30 +2500,20 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 
 	ucSubtype = (*(PUINT_8) (prSwRfb->pvHeader) & MASK_FC_SUBTYPE) >> OFFSET_OF_FC_SUBTYPE;
 
-	/* biscuit: log every received mgmt frame's subtype + src, to see what the
-	 * radio actually delivers during a connection (subtype 11 = AUTH).
+	/*
+	 * Export the raw 802.11 frame on radiotap0 when monitoring.
+	 *
+	 * Nothing else happens here on purpose. A per-frame DBGLOG at ERROR
+	 * level used to sit in this spot, firing for every beacon and probe
+	 * response - dozens per second anywhere populated. The per-frame work
+	 * inside the RX path was enough on its own to break association
+	 * timing: scanning survived it, because scanning only needs frames
+	 * parsed, while authentication and association consistently timed out.
 	 */
-	{
-		PUINT_8 pucFr = (PUINT_8) prSwRfb->pvHeader;
-
-		/*
-		 * Deliberately not logging here.
-		 *
-		 * This used to print at ERROR level for every management frame
-		 * received - beacons and probe responses, dozens per second in
-		 * any populated environment. Besides drowning the console, the
-		 * work done per frame inside the RX path was enough to break
-		 * association timing: scanning still worked (it only needs the
-		 * frames to be parsed) while authentication and association
-		 * consistently timed out.
-		 */
-
-		/* Export the raw 802.11 frame on radiotap0 when monitoring. */
-		biscuitMonRxFrame(prSwRfb->pvHeader, prSwRfb->u2PacketLen,
-				  HIF_RX_HDR_GET_CHNL_NUM(prSwRfb->prHifRxHdr),
-				  HIF_RX_HDR_GET_RF_BAND(prSwRfb->prHifRxHdr) == BAND_5G,
-				  (INT_8) RCPI_TO_dBm(prSwRfb->prHifRxHdr->ucRcpi));
-	}
+	biscuitMonRxFrame(prSwRfb->pvHeader, prSwRfb->u2PacketLen,
+			  HIF_RX_HDR_GET_CHNL_NUM(prSwRfb->prHifRxHdr),
+			  HIF_RX_HDR_GET_RF_BAND(prSwRfb->prHifRxHdr) == BAND_5G,
+			  (INT_8) RCPI_TO_dBm(prSwRfb->prHifRxHdr->ucRcpi));
 
 #if 0				/* CFG_RX_PKTS_DUMP */
 	{
