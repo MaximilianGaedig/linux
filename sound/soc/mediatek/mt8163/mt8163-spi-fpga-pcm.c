@@ -54,6 +54,10 @@
  * probe(): >200ns with CRESET_B and SS_B both low, then >=1200us for the
  * FPGA to clear its configuration memory before it will accept a bitstream.
  */
+static int biscuit_fpga_tpg;
+module_param(biscuit_fpga_tpg, int, 0644);
+MODULE_PARM_DESC(biscuit_fpga_tpg, "put the FPGA in test-pattern mode instead of I2S capture");
+
 #define FPGA_CRESET_DELAY_US		1
 #define FPGA_HOUSEKEEPING_DELAY_US	1200
 
@@ -63,7 +67,7 @@
 #define SENINF_TG1_PH_CNT	0x200
 #define SENINF_TG1_SEN_CK	0x204
 #define FPGA_MCLK_SRC_HZ	48000000	/* CAMTG_SEL -> UNIVPLL_D26 */
-#define FPGA_MCLK_OUT_HZ	9600000		/* SENINF divider output */
+#define FPGA_MCLK_OUT_HZ	12000000  /* 48MHz/4; see comment below */		/* SENINF divider output */
 #define SENINF_TG1_MCLK_EN	0x20000000	/* mclk_enable_reg bit */
 
 #define SAMPLING_RATE		16000
@@ -82,6 +86,14 @@
 enum dough_fw_cmd {
 	DOUGH_FW_OFF	= 0x80,
 	DOUGH_FW_I2S	= 0x81,
+	/*
+	 * Test-pattern generator. The FPGA synthesises frames on its own,
+	 * with no I2S input needed, so this separates "the FPGA never frames"
+	 * from "the microphones are not feeding it": if capture works in TPG
+	 * mode then the SPI path, the frame layout and the ALSA plumbing are
+	 * all correct and only the mic-side I2S is at fault.
+	 */
+	DOUGH_FW_TPG	= 0x83,
 };
 
 struct __packed dough_status_frame {
@@ -118,6 +130,8 @@ struct biscuit_spi_pcm {
 	struct snd_pcm_substream *substream;
 	struct task_struct *capture_thread;
 	bool running;
+	unsigned int dbg_reads;
+	unsigned int dbg_ptr;
 	spinlock_t lock;
 	size_t write_offset;
 	size_t elapsed_since_period;
@@ -169,7 +183,17 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 	v |= SENINF_TG1_MCLK_EN;
 	writel(v, b + SENINF_TG1_PH_CNT);
 
-	/* mclk_divider_reg(9.6 MHz): clkcnt = 48M/9.6M - 1 = 4 */
+	/*
+	 * mclk_divider_reg: clkcnt = 48M/out - 1, so 12MHz gives 3.
+	 *
+	 * Amazon runs this pad at 9.6MHz, but this clock is shared with the
+	 * two audio codecs and mainline's aic32x4 cannot use 9.6MHz at all:
+	 * its PLL solver (clk_aic32x4_pll_calc_muldiv) finds no valid p/r for
+	 * that input, so hw_params fails with -EINVAL at every sample rate.
+	 * 12MHz is an exact divide of the same 48MHz source, is a standard
+	 * MCLK the aic32x4 handles, and is already present in the ADC3101
+	 * divider table for the 16kHz the mic array runs at.
+	 */
 	clkcnt = (FPGA_MCLK_SRC_HZ / FPGA_MCLK_OUT_HZ) - 1;
 	clkf_pol = !(clkcnt & 0x1);
 	clkf_edge = clkcnt > 1 ? ((clkcnt + 1) >> 1) : 1;
@@ -244,6 +268,24 @@ static int biscuit_spi_capture_thread(void *data)
 		n_bytes = min_t(u16, le16_to_cpu(priv->rx_buf->dsf.num_audio_frames),
 				 DOUGH_AUDIO_FRAME_BUF) * DOUGH_FRAME_BYTES;
 
+		/*
+		 * Report what the FPGA is handing us for the first few reads of
+		 * each stream. Without this it is impossible to tell apart "the
+		 * reader thread never ran", "the FPGA has no frames" and "the
+		 * frames arrive but never reach ALSA".
+		 */
+		if (priv->dbg_reads < 8) {
+			priv->dbg_reads++;
+			dev_err(&priv->spi->dev,
+				"biscuit-rd[%u]: rev=%u mode=%u nframes=%u i2s_inact=%u dac_inact=%u overrun=%u -> %zu bytes\n",
+				priv->dbg_reads, priv->rx_buf->dsf.fpga_rev,
+				priv->rx_buf->dsf.mode,
+				le16_to_cpu(priv->rx_buf->dsf.num_audio_frames),
+				priv->rx_buf->dsf.i2s_inactive,
+				priv->rx_buf->dsf.dac_inactive,
+				priv->rx_buf->dsf.overrun, n_bytes);
+		}
+
 		while (n_bytes > 0) {
 			size_t bytes = min_t(size_t, ss->runtime->dma_bytes - priv->write_offset,
 					      n_bytes);
@@ -314,6 +356,8 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	priv->write_offset = 0;
 	priv->elapsed_since_period = 0;
 	priv->running = false;
+	priv->dbg_reads = 0;
+	priv->dbg_ptr = 0;
 	spin_lock_init(&priv->lock);
 
 	/*
@@ -327,6 +371,28 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	 * captured.  open() is allowed to sleep, so the thread is created
 	 * once here and simply parked until trigger flips priv->running.
 	 */
+	/*
+	 * Re-issue the I2S-mode command now, at stream start.
+	 *
+	 * probe() sends this once, but at that point nothing is clocking the
+	 * FPGA's I2S inputs - its own status frame reports i2s_inactive=1 and
+	 * dac_inactive=1 there. Once the ADCs and the playback path are
+	 * running those both clear, yet the part still hands back
+	 * num_audio_frames=0: it latched "no I2S" when the command arrived and
+	 * never starts framing. Telling it again once the clocks are live is
+	 * what actually arms capture.
+	 */
+	{
+		u8 i2s_cmd[32] = { biscuit_fpga_tpg ? DOUGH_FW_TPG
+						   : DOUGH_FW_I2S };
+		int cret = dough_spi_txrx(priv->spi, i2s_cmd, NULL,
+					  sizeof(i2s_cmd));
+
+		dev_err(&priv->spi->dev,
+			"biscuit-dbg: FPGA %s mode armed at stream start (%d)\n",
+			biscuit_fpga_tpg ? "TPG" : "I2S", cret);
+	}
+
 	priv->capture_thread = kthread_run(biscuit_spi_capture_thread, priv,
 					   "biscuit-spi-pcm");
 	dev_err(&priv->spi->dev, "biscuit-dbg: kthread_run -> %ld\n",
@@ -353,6 +419,16 @@ static int biscuit_spi_pcm_close(struct snd_soc_component *component,
 	}
 	priv->substream = NULL;
 
+	return 0;
+}
+
+static int biscuit_spi_pcm_prepare(struct snd_soc_component *component,
+				   struct snd_pcm_substream *substream)
+{
+	struct biscuit_spi_pcm *priv = snd_soc_component_get_drvdata(component);
+
+	dev_err(&priv->spi->dev, "biscuit-dbg: pcm prepare, state=%d\n",
+		(int)substream->runtime->state);
 	return 0;
 }
 
@@ -393,6 +469,16 @@ static snd_pcm_uframes_t biscuit_spi_pcm_pointer(struct snd_soc_component *compo
 	frames = bytes_to_frames(substream->runtime, priv->write_offset);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
+	if (priv->dbg_ptr < 6) {
+		priv->dbg_ptr++;
+		dev_err(&priv->spi->dev,
+			"biscuit-ptr[%u]: off=%zu frames=%lu dma_area=%p dma_bytes=%zu state=%d\n",
+			priv->dbg_ptr, priv->write_offset, (unsigned long)frames,
+			substream->runtime->dma_area,
+			(size_t)substream->runtime->dma_bytes,
+			(int)substream->runtime->state);
+	}
+
 	return frames;
 }
 
@@ -420,6 +506,7 @@ static const struct snd_soc_component_driver biscuit_spi_pcm_component = {
 	.name		= "biscuit-spi-pcm",
 	.open		= biscuit_spi_pcm_open,
 	.close		= biscuit_spi_pcm_close,
+	.prepare	= biscuit_spi_pcm_prepare,
 	.trigger	= biscuit_spi_pcm_trigger,
 	.pointer	= biscuit_spi_pcm_pointer,
 	.copy		= biscuit_spi_pcm_copy,
