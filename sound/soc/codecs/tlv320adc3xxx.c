@@ -97,6 +97,8 @@
 #define ADC3XXX_INTERFACE_CTRL_1		ADC3XXX_REG(0, 27)
 #define ADC3XXX_CH_OFFSET_1			ADC3XXX_REG(0, 28)
 #define ADC3XXX_INTERFACE_CTRL_2		ADC3XXX_REG(0, 29)
+/* Keep BCLK/WCLK driven while the codec is powered down. */
+#define ADC3XXX_BCLK_WCLK_ACTIVE		BIT(2)
 #define ADC3XXX_BCLK_N_DIV			ADC3XXX_REG(0, 30)
 #define ADC3XXX_INTERFACE_CTRL_3		ADC3XXX_REG(0, 31)
 #define ADC3XXX_INTERFACE_CTRL_4		ADC3XXX_REG(0, 32)
@@ -1293,6 +1295,14 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	 * first is never clocked at all, and a receiver sees a live bus
 	 * carrying nothing it can assemble.
 	 */
+	/*
+	 * Clear the digital mute. This register resets to 0x88, both channels
+	 * muted, and mainline only ever exposes it as a mixer control - so a
+	 * system without userspace to open it records silence from otherwise
+	 * perfectly configured hardware. Amazon writes 0 here unconditionally.
+	 */
+	snd_soc_component_write(component, ADC3XXX_ADC_FGA, 0);
+
 	frame_bits = adc3xxx->tdm_slots ?
 		     adc3xxx->tdm_slots * adc3xxx->tdm_slot_width :
 		     2 * width;
@@ -1392,6 +1402,12 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	else if (!master && adc3xxx->master)
 		snd_soc_dapm_del_routes(dapm, adc3xxx_bclk_out_intercon,
 					ARRAY_SIZE(adc3xxx_bclk_out_intercon));
+	if (master)
+		snd_soc_component_update_bits(component,
+					      ADC3XXX_INTERFACE_CTRL_2,
+					      ADC3XXX_BCLK_WCLK_ACTIVE,
+					      ADC3XXX_BCLK_WCLK_ACTIVE);
+
 	adc3xxx->master = master;
 
 	/* set clock direction and format */
