@@ -5058,3 +5058,64 @@ VOID aisFuncValidateRxActionFrame(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRf
 	return;
 
 }				/* aisFuncValidateRxActionFrame */
+
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+/*
+ * Userspace asked for an antenna measurement.
+ *
+ * Ported from the vendor driver. If the interface is idle on its channel the
+ * query can start immediately; otherwise it is queued as a pending AIS request
+ * and picked up when the FSM next returns to a state that can service it.
+ */
+VOID aisFsmRunEventAntSelectQuery(IN P_ADAPTER_T prAdapter)
+{
+	P_AIS_FSM_INFO_T prAisFsmInfo;
+	P_CONNECTION_SETTINGS_T prConnSettings;
+
+	prAisFsmInfo = &(prAdapter->rWifiVar.rAisFsmInfo);
+	prConnSettings = &(prAdapter->rWifiVar.rConnSettings);
+
+	prConnSettings->eConnectionPolicy = CONNECT_BY_CUSTOMIZED_RULE;
+
+	DBGLOG(AIS, INFO, "AisState=%d\n", prAisFsmInfo->eCurrentState);
+
+	if (prAisFsmInfo->eCurrentState == AIS_STATE_NORMAL_TR) {
+		if (prAisFsmInfo->fgIsInfraChannelFinished == TRUE) {
+			antenna_select_query_rssi(prAdapter);
+			aisFsmSteps(prAdapter, AIS_STATE_LOOKING_FOR);
+		} else {
+			antenna_select_abort(prAdapter);
+		}
+	} else {
+		aisFsmIsRequestPending(prAdapter,
+				       AIS_REQUEST_ANTENNA_QUERY, TRUE);
+		aisFsmInsertRequest(prAdapter, AIS_REQUEST_ANTENNA_QUERY);
+	}
+}
+
+/* Where the FSM goes once scan results arrive during an antenna query. */
+ENUM_AIS_STATE_T aisFsmAntSelectScanResultsUpdate(IN P_ADAPTER_T prAdapter)
+{
+	P_AIS_FSM_INFO_T prAisFsmInfo;
+	struct antenna_select_info *ant_sel;
+	ENUM_AIS_STATE_T eNextState;
+
+	prAisFsmInfo = &(prAdapter->rWifiVar.rAisFsmInfo);
+	ant_sel = &(prAdapter->rWifiVar.ant_select_info);
+
+	DBGLOG(AIS, INFO, "AisState=%d AntState=%d\n",
+	       prAisFsmInfo->eCurrentState, ant_sel->curr_state);
+
+	eNextState = prAisFsmInfo->eCurrentState;
+	if (ant_sel->curr_state == ANT_SEL_STATE_QUERY) {
+		antenna_select_scan_done(prAdapter);
+		eNextState = AIS_STATE_NORMAL_TR;
+	} else if (prAisFsmInfo->eCurrentState == AIS_STATE_LOOKING_FOR) {
+		eNextState = AIS_STATE_SEARCH;
+	} else if (prAisFsmInfo->eCurrentState == AIS_STATE_ONLINE_SCAN) {
+		eNextState = AIS_STATE_NORMAL_TR;
+	}
+
+	return eNextState;
+}
+#endif /* CONFIG_MTK_WIFI_ANTENNA_SELECT */
