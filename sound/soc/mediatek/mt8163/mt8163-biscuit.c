@@ -110,6 +110,17 @@ SND_SOC_DAILINK_DEFS(playback_fe,
 
 #define BISCUIT_N_MICS	4
 
+/*
+ * Which ADC drives the bus. Amazon always uses the first, and so do we; it is
+ * a module parameter only because it separates two otherwise identical
+ * symptoms - a broken slave path from a dead analogue front end on a
+ * particular part. Whichever ADC is master is the one that has been observed
+ * to convert.
+ */
+static int biscuit_mic_master;
+module_param_named(mic_master, biscuit_mic_master, int, 0644);
+MODULE_PARM_DESC(mic_master, "index of the mic ADC that drives BCLK/WCLK");
+
 /* 0x03, 0x0c, 0x30, 0x40: two channels each except the last, seven in all. */
 #define BISCUIT_MIC_RX_MASK(i)	((i) == BISCUIT_N_MICS - 1 ? \
 				 0x1 << (2 * (i)) : 0x3 << (2 * (i)))
@@ -165,7 +176,8 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 	for_each_rtd_codec_dais(rtd, i, codec_dai) {
 		unsigned int fmt = SND_SOC_DAIFMT_DSP_B |
 				   SND_SOC_DAIFMT_IB_NF |
-				   (i == 0 ? SND_SOC_DAIFMT_CBP_CFP
+				   (i == biscuit_mic_master
+					   ? SND_SOC_DAIFMT_CBP_CFP
 					   : SND_SOC_DAIFMT_CBC_CFC);
 
 		ret = snd_soc_dai_set_fmt(codec_dai, fmt);

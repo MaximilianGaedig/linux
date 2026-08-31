@@ -275,7 +275,27 @@ static int biscuit_spi_capture_thread(void *data)
 		 * frames arrive but never reach ALSA".
 		 */
 		if (priv->dbg_reads < 8) {
+			/*
+			 * Find the last byte the controller actually filled.
+			 * The status header arrives intact while the audio
+			 * payload behind it reads as zeros, which is what a
+			 * silently truncated transfer looks like - so measure
+			 * where the data stops rather than assuming the whole
+			 * buffer came back.
+			 */
+			const u8 *raw = (const u8 *)priv->rx_buf;
+			size_t last_nz = 0, k;
+
+			for (k = 0; k < sizeof(*priv->rx_buf); k++)
+				if (raw[k])
+					last_nz = k;
+
 			priv->dbg_reads++;
+			dev_err(&priv->spi->dev,
+				"biscuit-xfer[%u]: asked %zu bytes, last nonzero at %zu, tx%%4=%lu rx%%4=%lu (both must be 0 or the controller drops to a 32-byte FIFO transfer)\n",
+				priv->dbg_reads, sizeof(*priv->rx_buf), last_nz,
+				(unsigned long)tx_df % 4,
+				(unsigned long)priv->rx_buf % 4);
 			dev_err(&priv->spi->dev,
 				"biscuit-rd[%u]: rev=%u mode=%u nframes=%u i2s_inact=%u dac_inact=%u overrun=%u -> %zu bytes\n",
 				priv->dbg_reads, priv->rx_buf->dsf.fpga_rev,
