@@ -264,8 +264,21 @@ VOID rlmObssScanDone(P_ADAPTER_T prAdapter, P_MSG_HDR_T prMsgHdr)
 	 * To do: invoke rlmObssChnlLevel() to decide if 20/40 BSS coexistence
 	 *        management frame is needed.
 	 */
+	/*
+	 * Allocate only when the frame will actually be sent.
+	 *
+	 * Allocating first and then testing leaks the buffer every time the
+	 * condition is false - which is the common case, "no 20MHz request and
+	 * no non-HT neighbours" - and this runs again on every OBSS scan
+	 * interval. It drains the same management pool that probe requests,
+	 * authentication and association frames come from, and it is a 2.4GHz
+	 * code path. Stock allocates inside the test.
+	 */
+	if (prBssInfo->auc2G_20mReqChnlList[0] == 0 && prBssInfo->auc2G_NonHtChnlList[0] == 0)
+		return;
+
 	prMsduInfo = (P_MSDU_INFO_T) cnmMgtPktAlloc(prAdapter, MAC_TX_RESERVED_FIELD + PUBLIC_ACTION_MAX_LEN);
-	if ((prBssInfo->auc2G_20mReqChnlList[0] > 0 || prBssInfo->auc2G_NonHtChnlList[0] > 0) && prMsduInfo != NULL) {
+	if (prMsduInfo != NULL) {
 		DBGLOG(RLM, INFO, "Send 20/40 coexistence mgmt(20mReq=%d, NonHt=%d)\n",
 				   prBssInfo->auc2G_20mReqChnlList[0], prBssInfo->auc2G_NonHtChnlList[0]);
 
