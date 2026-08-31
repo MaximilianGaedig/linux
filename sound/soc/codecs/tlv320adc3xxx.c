@@ -327,6 +327,9 @@ struct adc3xxx {
 	int master;
 	u8 page_no;
 	int use_pll;
+	/* TDM frame geometry, from .set_tdm_slot; 0 slots => plain stereo */
+	int tdm_slots;
+	int tdm_slot_width;
 	struct gpio_chip gpio_chip;
 };
 
@@ -499,36 +502,19 @@ static const struct adc3xxx_rate_divs adc3xxx_divs[] = {
 	 * 9.6MHz MCLK, as fed to the four-ADC mic array on the Amazon Echo
 	 * Dot 2: there the master clock is the SoC's CMMCLK pad, driven by the
 	 * camera SENINF timing generator and divided down from 48MHz, so none
-	 * of the usual audio-crystal rates above apply and hw_params failed
-	 * with "Master clock rate 9600000 and sample rate 16000 is not
-	 * supported".
+	 * of the usual audio-crystal rates above apply.
 	 *
-	 * Same PLL output and same dividers as the 12MHz/16k entry above,
-	 * reached with a different multiplier:
-	 *   PLL = MCLK * R * J.D / P = 9.6MHz * 1 * 8.9600 / 1 = 86.016MHz
-	 *   fs  = PLL / (NADC * MADC * AOSR) = 86.016MHz / (21 * 2 * 128)
-	 *       = 16000Hz
-	 * P=1 leaves the PLL input at 9.6MHz and the output at 86.016MHz,
-	 * both inside the part's documented ranges.
+	 * These are Amazon's own dividers for this MCLK and rate, and the
+	 * choice matters for more than fs. It fixes ADC_CLK, which is also
+	 * where BCLK comes from:
+	 *   PLL     = MCLK * R * J.D / P = 9.6MHz * 1 * 48 / 5 = 92.16MHz
+	 *   ADC_CLK = PLL / NADC         = 92.16MHz / 15       =  6.144MHz
+	 *   fs      = ADC_CLK / (MADC * AOSR) = 6.144MHz / (3 * 128) = 16000Hz
+	 * An arithmetically equivalent set with NADC=21, MADC=2 also yields
+	 * 16kHz but leaves ADC_CLK at 4.096MHz, and no integer BDIV off that
+	 * can produce the 384-BCLK frame this board's TDM bus needs.
 	 */
-	{  9600000, 16000, 1, 1, 8, 9600, 21, 2, 128 },
-	/*
-	 * 9.6MHz MCLK, as fed to the four-ADC mic array on the Amazon Echo
-	 * Dot 2: there the master clock is the SoC's CMMCLK pad, driven by the
-	 * camera SENINF timing generator and divided from 48MHz, so none of
-	 * the usual audio-crystal rates above apply and hw_params was failing
-	 * with "Master clock rate 9600000 and sample rate 16000 is not
-	 * supported".
-	 *
-	 * Same PLL output and same dividers as the 12MHz/16k entry, reached
-	 * with a different multiplier:
-	 *   PLL = MCLK * R * J.D / P = 9.6MHz * 1 * 8.9600 / 1 = 86.016MHz
-	 *   fs  = PLL / (NADC * MADC * AOSR) = 86.016MHz / (21 * 2 * 128)
-	 *       = 16000Hz
-	 * P=1 keeps the PLL input at 9.6MHz and the output at 86.016MHz, both
-	 * inside the part's documented ranges.
-	 */
-	{  9600000, 16000, 1, 1, 8, 9600, 21, 2, 128 },
+	{  9600000, 16000, 5, 1, 48, 0, 15, 3, 128 },
 	/* 22.05k rate */
 	{ 12000000, 22050, 1, 1, 7, 560, 15, 2, 128 },
 	/* 32k rate */
@@ -1230,6 +1216,7 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dapm_context *dapm = snd_soc_component_to_dapm(dai->component);
 	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
 	int i, width = 16;
+	unsigned int frame_bits;
 	u8 iface_len, bdiv;
 
 	i = adc3xxx_get_divs(component->dev, adc3xxx->sysclk,
@@ -1288,9 +1275,23 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	/* AOSR */
 	snd_soc_component_update_bits(component, ADC3XXX_ADC_AOSR,
 				      ADC3XXX_AOSR_MASK, adc3xxx_divs[i].aosr);
-	/* BDIV N Value */
-	/* BCLK is (by default) set up to be derived from ADC_CLK */
-	bdiv = (adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc) / (2 * width);
+	/*
+	 * BDIV N Value
+	 *
+	 * BCLK is (by default) derived from ADC_CLK, and it has to clock out a
+	 * whole frame - not just this part's own two channels. On a TDM bus
+	 * several parts share the line and answer in different slots, so the
+	 * frame is slots * slot_width bits wide; dividing for two channels
+	 * makes the master emit a frame short enough that every slot past the
+	 * first is never clocked at all, and a receiver sees a live bus
+	 * carrying nothing it can assemble.
+	 */
+	frame_bits = adc3xxx->tdm_slots ?
+		     adc3xxx->tdm_slots * adc3xxx->tdm_slot_width :
+		     2 * width;
+	bdiv = (adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc) / frame_bits;
+	if (!bdiv)
+		bdiv = 1;
 	snd_soc_component_update_bits(component, ADC3XXX_BCLK_N_DIV,
 				      ADC3XXX_BDIV_MASK, bdiv);
 
@@ -1414,6 +1415,7 @@ static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
 				    int slots, int slot_width)
 {
 	struct snd_soc_component *component = dai->component;
+	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
 	unsigned int offset;
 
 	/* No slots claimed: leave the part where it is. */
@@ -1422,6 +1424,9 @@ static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
 
 	if (slot_width <= 0)
 		return -EINVAL;
+
+	adc3xxx->tdm_slots = slots;
+	adc3xxx->tdm_slot_width = slot_width;
 
 	offset = __ffs(rx_mask) * slot_width;
 	if (offset > 255) {
