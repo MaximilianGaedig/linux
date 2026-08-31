@@ -1990,6 +1990,9 @@ P_BSS_DESC_T scanAddToBssDesc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfb)
 				prBssDesc->ucChannelNum = ucHwChannelNum;
 			}
 		}
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+		antenna_select_query_probe_resp_avg_rssi(prAdapter, prBssDesc);
+#endif
 	}
 
 	/* 4 <5> PHY type setting */

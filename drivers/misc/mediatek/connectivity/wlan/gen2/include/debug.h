@@ -197,6 +197,8 @@ typedef enum _ENUM_DBG_MODULE_T {
 	DBG_OID_IDX,
 	DBG_NIC_IDX,
 
+	DBG_ANT_IDX,		/* Antenna selection */
+
 	DBG_MODULE_NUM		/* Notice the XLOG check */
 } ENUM_DBG_MODULE_T;
 
