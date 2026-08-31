@@ -1132,6 +1132,16 @@ static const struct {
 };
 
 /* 1 = write the table before WIFI_START */
+/*
+ * On by default - measured, not assumed.
+ *
+ * These replay a table of chip addresses/values captured from a 2017
+ * firmware build into CONNSYS memory during init. An earlier note claimed
+ * they were no-ops, so they were switched off and the 2.4GHz bring-up rate
+ * measured across six boots: 0/6, against roughly 1-in-3 with them on. They
+ * are doing something load-bearing, so they stay until whatever they paper
+ * over is understood.
+ */
 int biscuit_fix_fntable = 1;
 module_param(biscuit_fix_fntable, int, 0644);
 
@@ -1820,6 +1830,11 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 					u4Status = WLAN_STATUS_FAILURE;
 				}
 #else
+				DBGLOG(INIT, ERROR,
+				       "biscuit-dl: sec=%u dest=0x%08x len=0x%x off=0x%x\n",
+				       (unsigned int)i, prFwHead->arSection[i].u4DestAddr,
+				       prFwHead->arSection[i].u4Length,
+				       prFwHead->arSection[i].u4Offset);
 				for (j = 0; j < prFwHead->arSection[i].u4Length; j += CMD_PKT_SIZE_FOR_IMAGE) {
 					if (j + CMD_PKT_SIZE_FOR_IMAGE < prFwHead->arSection[i].u4Length)
 						u4ImgSecSize = CMD_PKT_SIZE_FOR_IMAGE;
@@ -1833,7 +1848,11 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 								     prFwHead->arSection[i].u4Offset + j) !=
 					    WLAN_STATUS_SUCCESS) {
 						DBGLOG(INIT, ERROR,
-						       "Firmware scatter download failed %d!\n", (int)i);
+						       "biscuit-dl: FAILED sec=%u dest=0x%08x chunkoff=0x%x chunk=0x%x seclen=0x%x\n",
+						       (unsigned int)i,
+						       prFwHead->arSection[i].u4DestAddr,
+						       (unsigned int)j, u4ImgSecSize,
+						       prFwHead->arSection[i].u4Length);
 						u4Status = WLAN_STATUS_FAILURE;
 						break;
 					}

@@ -356,14 +356,14 @@
 	spk_mclk: spk-mclk {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
-		clock-frequency = <12000000>;
+		clock-frequency = <9600000>;
 		clock-output-names = "spk_mclk";
 	};
 
 	mic_mclk: mic-mclk {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
-		clock-frequency = <12000000>;
+		clock-frequency = <9600000>;
 		clock-output-names = "mic_mclk";
 	};
 

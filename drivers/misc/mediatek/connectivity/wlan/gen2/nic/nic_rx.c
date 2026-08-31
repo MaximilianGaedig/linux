@@ -2506,8 +2506,17 @@ VOID nicRxProcessMgmtPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 	{
 		PUINT_8 pucFr = (PUINT_8) prSwRfb->pvHeader;
 
-		DBGLOG(RX, ERROR, "biscuit-rxmgmt: subtype=%u src=%02x:%02x:%02x:%02x:%02x:%02x\n",
-		       ucSubtype, pucFr[10], pucFr[11], pucFr[12], pucFr[13], pucFr[14], pucFr[15]);
+		/*
+		 * Deliberately not logging here.
+		 *
+		 * This used to print at ERROR level for every management frame
+		 * received - beacons and probe responses, dozens per second in
+		 * any populated environment. Besides drowning the console, the
+		 * work done per frame inside the RX path was enough to break
+		 * association timing: scanning still worked (it only needs the
+		 * frames to be parsed) while authentication and association
+		 * consistently timed out.
+		 */
 
 		/* Export the raw 802.11 frame on radiotap0 when monitoring. */
 		biscuitMonRxFrame(prSwRfb->pvHeader, prSwRfb->u2PacketLen,

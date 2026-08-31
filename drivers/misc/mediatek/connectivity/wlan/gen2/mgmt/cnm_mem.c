@@ -1182,6 +1182,13 @@ static VOID cnmStaSendUpdateCmd(P_ADAPTER_T prAdapter, P_STA_RECORD_T prStaRec, 
 	prCmdContent->ucUapsdAc = prStaRec->ucBmpTriggerAC | (prStaRec->ucBmpDeliveryAC << 4);
 	prCmdContent->ucUapsdSp = prStaRec->ucUapsdSp;
 
+	DBGLOG(CNM, ERROR,
+	       "biscuit-starec: idx=%u state=%u %pM phy=0x%x nonHT=0x%x basic=0x%x mcs=0x%x cap=0x%x resp=%u\n",
+	       prCmdContent->ucIndex, prCmdContent->ucStaState, prCmdContent->aucMacAddr,
+	       prCmdContent->ucDesiredPhyTypeSet, prCmdContent->u2DesiredNonHTRateSet,
+	       prCmdContent->u2BSSBasicRateSet, prCmdContent->ucMcsSet, prCmdContent->u2HtCapInfo,
+	       prCmdContent->ucNeedResp);
+
 	rStatus = wlanSendSetQueryCmd(prAdapter,	/* prAdapter */
 				      CMD_ID_UPDATE_STA_RECORD,	/* ucCID */
 				      TRUE,	/* fgSetQuery */
