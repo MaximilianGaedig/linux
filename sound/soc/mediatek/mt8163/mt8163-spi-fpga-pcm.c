@@ -292,10 +292,20 @@ static int biscuit_spi_capture_thread(void *data)
 
 			priv->dbg_reads++;
 			dev_err(&priv->spi->dev,
-				"biscuit-xfer[%u]: asked %zu bytes, last nonzero at %zu, tx%%4=%lu rx%%4=%lu (both must be 0 or the controller drops to a 32-byte FIFO transfer)\n",
-				priv->dbg_reads, sizeof(*priv->rx_buf), last_nz,
-				(unsigned long)tx_df % 4,
-				(unsigned long)priv->rx_buf % 4);
+				"biscuit-xfer[%u]: asked %zu bytes, last nonzero at %zu\n",
+				priv->dbg_reads, sizeof(*priv->rx_buf), last_nz);
+			/*
+			 * The status frame's own field comments number its
+			 * bytes backwards - fpga_rev is called byte 0 but sits
+			 * at offset 26 - so the wire order is reversed against
+			 * the struct. If the audio payload does not begin
+			 * where daf[] says it does, a correct header and an
+			 * empty payload is exactly what we would see. Dump the
+			 * bytes either side of the boundary and look.
+			 */
+			print_hex_dump(KERN_ERR, "biscuit-raw 0..63: ",
+				       DUMP_PREFIX_OFFSET, 16, 1,
+				       raw, 64, false);
 			dev_err(&priv->spi->dev,
 				"biscuit-rd[%u]: rev=%u mode=%u nframes=%u i2s_inact=%u dac_inact=%u overrun=%u -> %zu bytes\n",
 				priv->dbg_reads, priv->rx_buf->dsf.fpga_rev,
