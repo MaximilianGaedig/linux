@@ -494,10 +494,23 @@ static struct snd_soc_dai_link biscuit_dai_links[] = {
 static int biscuit_late_probe(struct snd_soc_card *card)
 {
 	struct snd_soc_dapm_context *dapm = card->dapm;
+	/*
+	 * The differential input widgets, not the single-ended IN_2 pins.
+	 *
+	 * Amazon selects what it calls DIF1, which is page 1 register 52 bit 7
+	 * on the left and register 55 bit 7 on the right. Mainline names those
+	 * same two bits after the pins they actually connect - DIF_2L_3L and
+	 * DIF_2R_3R - and uses the name DIF_1L_1R for a different register
+	 * entirely. Forcing IN_2L/IN_2R on instead left the differential
+	 * widgets unpowered, so the switch could be closed and still carry
+	 * nothing.
+	 */
 	static const char * const pins[] = {
 		"Mic Array",
-		"Mic0 IN_2L", "Mic0 IN_2R", "Mic1 IN_2L", "Mic1 IN_2R",
-		"Mic2 IN_2L", "Mic2 IN_2R", "Mic3 IN_2L", "Mic3 IN_2R",
+		"Mic0 DIFL_2L_3L", "Mic0 DIFR_2R_3R",
+		"Mic1 DIFL_2L_3L", "Mic1 DIFR_2R_3R",
+		"Mic2 DIFL_2L_3L", "Mic2 DIFR_2R_3R",
+		"Mic3 DIFL_2L_3L", "Mic3 DIFR_2R_3R",
 	};
 	int i;
 
