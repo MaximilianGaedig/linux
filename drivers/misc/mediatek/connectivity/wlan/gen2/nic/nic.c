@@ -2770,6 +2770,10 @@ VOID nicInitMGMT(IN P_ADAPTER_T prAdapter, IN P_REG_INFO_T prRegInfo)
 	roamingFsmInit(prAdapter);
 #endif /* CFG_SUPPORT_ROAMING */
 
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+	antenna_select_fsm_init(prAdapter);
+#endif
+
 #if CFG_SUPPORT_SWCR
 	swCrDebugInit(prAdapter);
 #endif /* CFG_SUPPORT_SWCR */
@@ -2801,6 +2805,10 @@ VOID nicUninitMGMT(IN P_ADAPTER_T prAdapter)
 	/* Roaming Module - unintiailization */
 	roamingFsmUninit(prAdapter);
 #endif /* CFG_SUPPORT_ROAMING */
+
+#ifdef CONFIG_MTK_WIFI_ANTENNA_SELECT
+	antenna_select_fsm_uninit(prAdapter);
+#endif
 
 	/* AIS Module - unintiailization */
 	aisFsmUninit(prAdapter);
