@@ -339,6 +339,10 @@ struct adc3xxx {
 	/* TDM frame geometry, from .set_tdm_slot; 0 slots => plain stereo */
 	int tdm_slots;
 	int tdm_slot_width;
+	/* TDM bus setup, replayed once the clocks are up (see below) */
+	bool tdm_valid;
+	u8 tdm_ctrl;
+	u8 tdm_offset;
 	struct gpio_chip gpio_chip;
 };
 
@@ -566,6 +570,40 @@ static int adc3xxx_get_divs(struct device *dev, int mclk, int rate, int pll_mode
 	dev_info(dev, "Master clock rate %d and sample rate %d is not supported\n",
 		 mclk, rate);
 	return -EINVAL;
+}
+
+/*
+ * Re-apply the TDM bus setup once the ADC clock is actually running.
+ *
+ * .set_tdm_slot runs from hw_params, long before anything clocks this part,
+ * and the vendor driver deliberately does not configure the bus there: it
+ * parks DOUT in Hi-Z, sets the dividers, enables the clock, waits, and only
+ * then writes the TDM control and slot offset before releasing DOUT. Writing
+ * them into an unclocked part and hoping they stick is the one ordering
+ * difference left against stock, so replay them here, after the clock is up
+ * and settled.
+ */
+static int adc3xxx_tdm_settle(struct snd_soc_dapm_widget *w,
+			      struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
+
+	if (!adc3xxx->tdm_valid)
+		return 0;
+
+	/* Let the divider chain settle before the bus is reconfigured. */
+	msleep(100);
+
+	snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
+				adc3xxx->tdm_ctrl);
+	snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1,
+				adc3xxx->tdm_offset);
+	snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				ADC3XXX_DOUT_BUS_KEEPER_DIS |
+				ADC3XXX_DOUT_PRIMARY);
+
+	return 0;
 }
 
 static int adc3xxx_pll_delay(struct snd_soc_dapm_widget *w,
@@ -911,7 +949,7 @@ static const struct snd_soc_dapm_widget adc3xxx_dapm_widgets[] = {
 			    0, adc3xxx_pll_delay, SND_SOC_DAPM_POST_PMU),
 
 	SND_SOC_DAPM_SUPPLY("ADC_CLK", ADC3XXX_ADC_NADC, ADC3XXX_ENABLE_NADC_SHIFT,
-			    0, NULL, 0),
+			    0, adc3xxx_tdm_settle, SND_SOC_DAPM_POST_PMU),
 	SND_SOC_DAPM_SUPPLY("ADC_MOD_CLK", ADC3XXX_ADC_MADC, ADC3XXX_ENABLE_MADC_SHIFT,
 			    0, NULL, 0),
 
@@ -1258,6 +1296,40 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	}
 	snd_soc_component_update_bits(component, ADC3XXX_INTERFACE_CTRL_1,
 				      ADC3XXX_WLENGTH_MASK, iface_len);
+	if (!adc3xxx->master && adc3xxx->tdm_slots) {
+		/*
+		 * A slave on a shared TDM bus takes its clock from the bus.
+		 *
+		 * Every part here sees the same master clock, so each could
+		 * run its own PLL and arrive at the right sample rate on
+		 * paper - but those PLLs are independent, and they drift
+		 * against the word clock the bus master is actually driving.
+		 * The part then converts happily and lands its samples in
+		 * slots that have already moved on. Clock the slaves from
+		 * BCLK instead, which is what the bus master generates, so
+		 * they cannot drift relative to it. NADC is 1 because
+		 * CODEC_CLKIN is already the master's ADC clock divided by
+		 * its BCLK divider; MADC and AOSR stay as computed.
+		 */
+		snd_soc_component_write(component, ADC3XXX_CLKGEN_MUX,
+					ADC3XXX_CODEC_CLKIN_BCLK <<
+					ADC3XXX_CODEC_CLKIN_SHIFT);
+		if (adc3xxx->use_pll) {
+			snd_soc_dapm_del_routes(dapm, adc3xxx_pll_intercon,
+						ARRAY_SIZE(adc3xxx_pll_intercon));
+			adc3xxx->use_pll = 0;
+		}
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_NADC,
+					      ADC3XXX_NADC_MASK, 1);
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_MADC,
+					      ADC3XXX_MADC_MASK,
+					      adc3xxx_divs[i].madc);
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_AOSR,
+					      ADC3XXX_AOSR_MASK,
+					      adc3xxx_divs[i].aosr);
+		return 0;
+	}
+
 	if (adc3xxx_divs[i].pll_p) { /* If PLL used for this mode */
 		adc3xxx_setup_pll(component, i);
 		snd_soc_component_write(component, ADC3XXX_CLKGEN_MUX, ADC3XXX_USE_PLL);
@@ -1491,6 +1563,11 @@ static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
 	 * correct the clocks, slots and gains are. The two settings only make
 	 * sense together.
 	 */
+	adc3xxx->tdm_ctrl = (unused << ADC3XXX_TDM_CHANNEL_DIS_SHIFT) |
+			    ADC3XXX_TDM_EARLY_3STATE;
+	adc3xxx->tdm_offset = offset;
+	adc3xxx->tdm_valid = true;
+
 	ret = snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
 				      ADC3XXX_DOUT_BUS_KEEPER_DIS |
 				      ADC3XXX_DOUT_PRIMARY);
@@ -1498,12 +1575,12 @@ static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
 		return ret;
 
 	ret = snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
-				      (unused << ADC3XXX_TDM_CHANNEL_DIS_SHIFT) |
-				      ADC3XXX_TDM_EARLY_3STATE);
+				      adc3xxx->tdm_ctrl);
 	if (ret)
 		return ret;
 
-	return snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1, offset);
+	return snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1,
+				       adc3xxx->tdm_offset);
 }
 
 static const struct snd_soc_dai_ops adc3xxx_dai_ops = {
