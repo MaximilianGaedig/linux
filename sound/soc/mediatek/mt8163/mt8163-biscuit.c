@@ -110,6 +110,10 @@ SND_SOC_DAILINK_DEFS(playback_fe,
 
 #define BISCUIT_N_MICS	4
 
+/* 0x03, 0x0c, 0x30, 0x40: two channels each except the last, seven in all. */
+#define BISCUIT_MIC_RX_MASK(i)	((i) == BISCUIT_N_MICS - 1 ? \
+				 0x1 << (2 * (i)) : 0x3 << (2 * (i)))
+
 /*
  * All four ADCs are named, not just the clock master.
  *
@@ -195,8 +199,21 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 		 * though mainline's ADC3101 driver implements no .set_tdm_slot
 		 * and answers -ENOTSUPP.
 		 */
+		/*
+		 * Seven microphones across four stereo parts, so the last one
+		 * supplies a single channel. Amazon expresses this as one
+		 * global rx_mask of 0x7f handed to every codec, each of which
+		 * knows its own index; mainline's driver has no such index, so
+		 * the same thing is said per-codec here - 0x03, 0x0c, 0x30,
+		 * 0x40 - and the driver derives both its slot offset and which
+		 * of its own two channels to leave alone from that.
+		 *
+		 * The eighth channel matters: the FPGA puts its DAC loopback
+		 * reference there, so an ADC that keeps driving it collides
+		 * with the reference.
+		 */
 		ret = snd_soc_dai_set_tdm_slot(codec_dai, 0,
-					       0x3 << (2 * i),
+					       BISCUIT_MIC_RX_MASK(i),
 					       params_channels(params),
 					       snd_pcm_format_width(params_format(params)));
 		if (ret && ret != -ENOTSUPP) {
