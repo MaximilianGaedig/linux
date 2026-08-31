@@ -24,7 +24,6 @@
 #include <sound/jack.h>
 #include <linux/gpio/consumer.h>
 
-static bool biscuit_mixers_done;
 static struct snd_soc_jack biscuit_hp_jack;
 static struct snd_soc_jack_gpio biscuit_hp_gpio = {
 	.name = "hp-det",
@@ -51,9 +50,18 @@ static const struct snd_soc_dapm_widget biscuit_widgets[] = {
  * were bound to the right driver and their PLL locked. Inside each ADC the
  * path is IN_xL -> "IN_xL Capture Switch" -> Left Input -> Left PGA ->
  * Left ADC, and those mixer switches default to off, so userspace still has
- * to close one; declaring all six inputs on each part lets DAPM complete a
+ * to close one; declaring every input on each part lets DAPM complete a
  * path for whichever one this board actually wires without needing the
  * schematic first.
+ *
+ * The differential inputs are separate widgets from the single-ended ones -
+ * "DIF_1L_1R Capture Switch" is fed by DIFL_1L_1R and DIFR_1L_1R, not by
+ * IN_1L/IN_1R - so listing only IN_* left the differential pins with no
+ * source. Amazon's audio_init.sh selects exactly the differential pair
+ * (DIF1), which meant the one input this board actually uses was the one
+ * input DAPM could not power: the switch closed, the path still dead-ended,
+ * and ADC_DIGITAL stayed 0x00 with both ADCs off, no PLL, and no I2S clock
+ * for the FPGA to count frames from.
  */
 #define BISCUIT_MIC_ROUTES(prefix)					\
 	{ prefix " IN_1L", NULL, "Mic Array" },				\
@@ -61,7 +69,13 @@ static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	{ prefix " IN_2L", NULL, "Mic Array" },				\
 	{ prefix " IN_2R", NULL, "Mic Array" },				\
 	{ prefix " IN_3L", NULL, "Mic Array" },				\
-	{ prefix " IN_3R", NULL, "Mic Array" }
+	{ prefix " IN_3R", NULL, "Mic Array" },				\
+	{ prefix " DIFL_1L_1R", NULL, "Mic Array" },			\
+	{ prefix " DIFL_2L_3L", NULL, "Mic Array" },			\
+	{ prefix " DIFL_2R_3R", NULL, "Mic Array" },			\
+	{ prefix " DIFR_1L_1R", NULL, "Mic Array" },			\
+	{ prefix " DIFR_2L_3L", NULL, "Mic Array" },			\
+	{ prefix " DIFR_2R_3R", NULL, "Mic Array" }
 
 static const struct snd_soc_dapm_route biscuit_routes[] = {
 	/*
@@ -125,6 +139,7 @@ SND_SOC_DAILINK_DEFS(mic_capture,
  * behaviour their NB_NF produced.
  */
 #define BISCUIT_MIC_MCLK_HZ	9600000
+
 
 static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params)
@@ -191,6 +206,18 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 		}
 	}
 
+	/*
+	 * The ADC input routing and PGA gain are deliberately NOT set here.
+	 *
+	 * They are DAPM controls, and calling a DAPM control's .put from
+	 * inside hw_params deadlocks: the put ends up in
+	 * snd_soc_dpcm_runtime_update(), which wants the card mutex that this
+	 * callback is already holding. The process wedges in D state and the
+	 * whole card follows, because every later snd_pcm_open() blocks behind
+	 * it. Amazon sets these from userspace instead, in audio_init.sh, once
+	 * at boot and outside any stream - see the equivalent script in the
+	 * initrd, which is where this belongs.
+	 */
 	dev_info(rtd->dev, "biscuit: mic hw_params rate=%u ch=%u width=%d\n",
 		 params_rate(params), params_channels(params),
 		 snd_pcm_format_width(params_format(params)));
@@ -310,7 +337,6 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
-	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
 	/*
 	 * 9.6MHz, not rate*256: the codec's clock is the CMMCLK pad shared
@@ -356,21 +382,6 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 
 	dev_info(rtd->dev, "biscuit: BE hw_params rate=%u mclk=%u\n",
 		 params_rate(params), mclk);
-
-	if (!biscuit_mixers_done) {
-		static const char * const codec_routes[] = {
-			"Speaker HP DAC Playback Switch",
-			"Speaker HPL Output Mixer L_DAC Switch",
-			"Speaker HPR Output Mixer R_DAC Switch",
-			"Speaker LO DAC Playback Switch",
-			"Speaker LOL Output Mixer L_DAC Switch",
-			"Speaker LOR Output Mixer R_DAC Switch",
-		};
-
-		biscuit_mixers_done = true;
-		biscuit_close_mixers(rtd->card, codec_routes,
-				     ARRAY_SIZE(codec_routes));
-	}
 
 	/*
 	 * Unmute the external amplifier.
