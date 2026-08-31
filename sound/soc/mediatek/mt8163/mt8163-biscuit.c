@@ -124,7 +124,7 @@ SND_SOC_DAILINK_DEFS(mic_capture,
  * polarity bit from opposite defaults, so IB_NF here is the same wire
  * behaviour their NB_NF produced.
  */
-#define BISCUIT_MIC_MCLK_HZ	12000000
+#define BISCUIT_MIC_MCLK_HZ	9600000
 
 static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params)
@@ -318,7 +318,15 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 	 * 9.6MHz. Amazon passes the same constant (AIC31XX_FREQ_9600000) to
 	 * this codec and to the ADCs.
 	 */
-	unsigned int mclk = 12000000;
+	/*
+	 * 9.6MHz - the rate stock actually uses (AIC31XX_FREQ_9600000), from
+	 * the CMMCLK pad shared with the mic ADCs. An earlier -EINVAL here was
+	 * misattributed to the codec being unable to use 9.6MHz; it came from
+	 * asking the AFE to *generate* that rate, which it cannot because
+	 * mtk_dai_i2s_set_sysclk() requires an exact APLL divisor. That call
+	 * is gone, and the codec's own PLL handles 9.6MHz fine.
+	 */
+	unsigned int mclk = 9600000;
 	int ret;
 
 	/*

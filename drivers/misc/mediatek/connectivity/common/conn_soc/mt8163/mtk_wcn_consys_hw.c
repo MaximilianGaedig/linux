@@ -116,6 +116,27 @@ module_param(biscuit_emitest, int, 0644);
 static struct clk *clk_infra_conn_main;	/*ctrl infra_connmcu_bus clk */
 static struct platform_device *my_pdev;
 static struct reset_control *rstc;
+
+/*
+ * Actually drop the four connectivity rails on power-off.
+ *
+ * Off by default, and deliberately so.  Now that the device tree no longer
+ * pins these rails with "regulator-always-on", regulator_disable() in the
+ * power-down path really can turn them off - and on this board that resets
+ * the whole machine: the cycle test below reboots within one off/on round,
+ * coming back with a fresh uptime and no oops or panic text on the console,
+ * which is what a hardware reset looks like rather than a kernel crash.
+ * Something outside CONNSYS is fed from these rails, or their collapse
+ * browns out a domain that is.
+ *
+ * Everything else in the power-down sequence - stopping the MCU, dropping
+ * the bus clock, releasing runtime PM - still runs, so this only controls
+ * the very last step.  Set biscuit_pwroff_rails=1 to opt back in when
+ * measuring what a genuine chip power cycle does.
+ */
+static int biscuit_pwroff_rails;
+module_param(biscuit_pwroff_rails, int, 0644);
+MODULE_PARM_DESC(biscuit_pwroff_rails, "drop VCN18/VCN28 on CONNSYS power-off (resets this board)");
 static struct regulator *reg_VCN18;
 static struct regulator *reg_VCN28;
 static struct regulator *reg_VCN33_BT;
@@ -905,7 +926,7 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			if (pmic_regmap)
 				regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x0 << 14);/*V28*/
 			/*turn off VCN28 LDO (with PMIC_WRAP API)" */
-			if (reg_VCN28) {
+			if (reg_VCN28 && biscuit_pwroff_rails) {
 				if (regulator_disable(reg_VCN28))
 					WMT_PLAT_ERR_FUNC("disable VCN_2V8 fail!\n");
 				else
@@ -923,7 +944,7 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		 * inverse of what the vendor driver does to this rail anyway
 		 * (see the LP-mode comment in the power-up path above).
 		 */
-		if (reg_VCN18) {
+		if (reg_VCN18 && biscuit_pwroff_rails) {
 			if (regulator_disable(reg_VCN18))
 				WMT_PLAT_ERR_FUNC("disable VCN_1V8 fail!\n");
 			else

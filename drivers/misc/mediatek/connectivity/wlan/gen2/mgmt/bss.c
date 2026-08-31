@@ -608,6 +608,33 @@ bssCreateStaRecFromBssDesc(IN P_ADAPTER_T prAdapter,
 	prStaRec->u2BSSBasicRateSet = prBssDesc->u2BSSBasicRateSet;
 
 	prStaRec->ucPhyTypeSet = prBssDesc->ucPhyTypeSet;
+
+	/*
+	 * biscuit: on this board the 2.4GHz scan delivers only a scan-result
+	 * summary (no beacon/probe-resp with a Supported-Rates IE), so the rate
+	 * and PHY sets arrive as 0. The firmware then builds an empty WTBL rate
+	 * entry for the AP and every UNICAST frame to it (Auth1, AssocReq) fails
+	 * to transmit - "Pkt TX_DONE Fail AUTH" with WTBLDW1..4 = 0 - while
+	 * broadcast probe requests still work. Fill in the standard rate/PHY set
+	 * for the band when the descriptor carries none, so the WTBL gets a valid
+	 * TX rate.
+	 */
+	if (prStaRec->u2OperationalRateSet == 0) {
+		if (prBssDesc->ucChannelNum <= 14) {
+			prStaRec->u2OperationalRateSet = RATE_SET_ERP;
+			prStaRec->u2BSSBasicRateSet = RATE_SET_HR_DSSS;
+			prStaRec->ucPhyTypeSet = PHY_TYPE_SET_802_11BGN;
+		} else {
+			prStaRec->u2OperationalRateSet = RATE_SET_OFDM;
+			prStaRec->u2BSSBasicRateSet = RATE_SET_OFDM;
+			prStaRec->ucPhyTypeSet = PHY_TYPE_SET_802_11ABG;
+		}
+		DBGLOG(BSS, WARN,
+		       "biscuit: BSS %pM ch %u had no rates (summary-only), defaulted phy=0x%x op=0x%x basic=0x%x\n",
+		       prBssDesc->aucBSSID, prBssDesc->ucChannelNum,
+		       prStaRec->ucPhyTypeSet, prStaRec->u2OperationalRateSet,
+		       prStaRec->u2BSSBasicRateSet);
+	}
 	if (IS_STA_IN_AIS(prStaRec)) {
 		if (!((prAdapter->rWifiVar.rConnSettings.eEncStatus == ENUM_ENCRYPTION3_ENABLED) ||
 		      (prAdapter->rWifiVar.rConnSettings.eEncStatus == ENUM_ENCRYPTION3_KEY_ABSENT) ||
