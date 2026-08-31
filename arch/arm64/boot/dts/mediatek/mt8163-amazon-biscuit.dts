@@ -293,7 +293,18 @@
 	 * aic32x4; without this the AFE clocks I2S1 internally but the pads
 	 * stay GPIOs and no audio reaches the codec. */
 	pinctrl-names = "default";
-	pinctrl-0 = <&aud_pins_spk_i2s>;
+	/*
+	 * No pinctrl here at all.
+	 *
+	 * The I2S1 pads (72/73/74) are owned by the mic-array FPGA driver,
+	 * which muxes them with its own "active" state - two consumers
+	 * claiming the same pins makes pinctrl fail and takes the whole sound
+	 * card down. The amplifier gain pins cannot be driven from pinctrl
+	 * either: mainline's pinctrl-mtk-common implements no
+	 * PIN_CONFIG_OUTPUT, so an "output-high" group fails with
+	 * "pin_config_group_set op failed" and leaves the card in deferred
+	 * probe forever. They are requested as GPIOs by the machine driver.
+	 */
 };
 
 /*
@@ -331,10 +342,28 @@
 	 * their PLL dividers from. The old nodes claimed clk26m, which is not
 	 * what the pin carries.
 	 */
+	/*
+	 * The speaker codec's master clock.
+	 *
+	 * The speaker codec and the mic ADCs share ONE master clock: the
+	 * CMMCLK pad (pin 119), driven by the camera SENINF divider at 9.6MHz.
+	 * Amazon's machine driver hands the aic32x4 mt_soc_mclk_freq, which is
+	 * AIC31XX_FREQ_9600000, exactly as it does for the ADCs - and their
+	 * device tree never muxes pin 15 at all, so I2S1_MCK is not involved.
+	 * The node used to claim clk26m, so the codec computed PLL dividers
+	 * for a 26MHz clock it never receives.
+	 */
+	spk_mclk: spk-mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <12000000>;
+		clock-output-names = "spk_mclk";
+	};
+
 	mic_mclk: mic-mclk {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
-		clock-frequency = <9600000>;
+		clock-frequency = <12000000>;
 		clock-output-names = "mic_mclk";
 	};
 
@@ -369,6 +398,13 @@
 		 * driver wires it (their "AMZN_SPI_Capture" link names only
 		 * tlv320aic3101.0-0018).
 		 */
+		/*
+		 * External amplifier gain select. Amazon defines four gain
+		 * states on these two pins (aud_pins_extamp_gain0..3); drive
+		 * both high, their gain3 state.
+		 */
+		extamp-gain-gpios = <&pio 28 GPIO_ACTIVE_HIGH>,
+				    <&pio 29 GPIO_ACTIVE_HIGH>;
 		amazon,mic-codec = <&mic0_codec>, <&mic1_codec>,
 				   <&mic2_codec>, <&mic3_codec>;
 		/*

@@ -837,17 +837,24 @@ static int tsl2583_probe(struct i2c_client *clientp)
 	 * is a settle/contention problem, not a missing device, and failing
 	 * the probe outright leaves the sensor permanently unbound.
 	 */
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < 50; i++) {
 		ret = i2c_smbus_read_byte_data(clientp,
 					       TSL2583_CMD_REG | TSL2583_CHIPID);
 		if (ret >= 0)
 			break;
-		usleep_range(1000, 2000);
+		usleep_range(10000, 12000);
 	}
 	if (ret < 0) {
+		/*
+		 * Ask to be retried later rather than giving up. The device is
+		 * present - the same register reads back fine once the system
+		 * has settled - so a hard failure here would leave it unbound
+		 * for the rest of the boot.
+		 */
 		dev_err(&clientp->dev,
-			"%s: failed to read the chip ID register\n", __func__);
-		return ret;
+			"%s: failed to read the chip ID register (%d), deferring\n",
+			__func__, ret);
+		return -EPROBE_DEFER;
 	}
 
 	if ((ret & TSL2583_CHIP_ID_MASK) != TSL2583_CHIP_ID) {
