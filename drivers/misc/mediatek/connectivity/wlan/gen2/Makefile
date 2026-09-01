@@ -66,7 +66,16 @@ else
     ccflags-y += -DCFG_TC1_FEATURE=0
 endif
 
-MTK_SRAM_SIZE_OPTION=0
+# biscuit: default to the MT8163 value (1) rather than 0.
+#
+# Stock reaches MTK_SRAM_SIZE_OPTION=1 through the CONFIG_ARCH_MT8163 test
+# below, but that symbol does not exist in this mainline defconfig (the SoC is
+# selected via CONFIG_ARCH_MEDIATEK plus per-driver symbols such as
+# CONFIG_PINCTRL_MT8163), so the test never fired and we silently fell back to
+# 0 -- giving NIC_TX_BUFF_COUNT_TC1 = 20 where stock gets 36. This tree only
+# ever builds for MT8163, so make 1 the default. The per-SoC overrides below
+# are left intact and still take precedence if this driver is ever reused.
+MTK_SRAM_SIZE_OPTION=1
 ifeq ($(CONFIG_ARCH_MT6755), y)
     MTK_SRAM_SIZE_OPTION=2
 endif
