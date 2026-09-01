@@ -454,6 +454,20 @@ static INT32 _stp_psm_proc(void *pvData)
 	UINT32 id;
 	INT32 result;
 
+	/*
+	 * biscuit: stock builds with CONFIG_BISCUIT and raises the PSM thread to
+	 * SCHED_FIFO at MAX_RT_PRIO-2 (vendor psm_core.c:456-467). See the note in
+	 * wmt_lib.c on why this uses sched_setscheduler_nocheck().
+	 */
+	{
+		struct sched_param param = { .sched_priority = MAX_RT_PRIO - 2 };
+		int i_ret;
+
+		i_ret = sched_setscheduler_nocheck(current, SCHED_FIFO, &param);
+		if (0 != i_ret)
+			STP_PSM_WARN_FUNC("set RT to psm workqueue failed %d\n", i_ret);
+	}
+
 	if (!stp_psm) {
 		STP_PSM_WARN_FUNC("!stp_psm\n");
 		return -1;
