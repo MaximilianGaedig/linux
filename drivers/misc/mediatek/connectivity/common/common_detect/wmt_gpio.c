@@ -271,13 +271,17 @@ INT32 wmt_gpio_init(struct platform_device *pdev)
 
 		pr_err("wmt_gpio: gpio init start!\n");
 
-		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_state[GPIO_PULL_DIS]) {
-			pinctrl_select_state(gpio_ctrl_info.pinctrl_info,
-					gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].
-					gpio_state[GPIO_PULL_DIS]);
-			pr_err("wmt_gpio:set GPIO_COMBO_PMU_EN_PIN to GPIO_PULL_DIS done!\n");
-		} else
-			pr_err("wmt_gpio:set GPIO_COMBO_PMU_EN_PIN to GPIO_PULL_DIS fail, is NULL!\n");
+		/*
+		 * These two output-low calls are not in stock, but this board
+		 * needs them: _wmt_detect_pwr_on() drives PMU_EN/RST from a
+		 * known low, and without a prior direction set the pads sit as
+		 * inputs and the chip never enables.
+		 *
+		 * They are undone later - mtk_wcn_consys_hw_reg_ctrl() selects
+		 * the wifi_reset_init pinctrl state on every power-on, which
+		 * puts both pads back into their WB_* function as pulled-up
+		 * inputs, the state stock leaves them in.
+		 */
 
 		if (DEFAULT_PIN_ID != gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num) {
 			gpio_direction_output(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num,
@@ -286,19 +290,27 @@ INT32 wmt_gpio_init(struct platform_device *pdev)
 					gpio_get_value(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num));
 		}
 
-		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_state[GPIO_PULL_DIS]) {
-			pinctrl_select_state(gpio_ctrl_info.pinctrl_info,
-					gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_state[GPIO_PULL_DIS]);
-			pr_err("wmt_gpio:set GPIO_COMBO_RST_PIN to GPIO_PULL_DIS done!\n");
-		} else
-			pr_err("wmt_gpio:set GPIO_COMBO_RST_PIN to GPIO_PULL_DIS fail, is NULL!\n");
-
 		if (DEFAULT_PIN_ID != gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num) {
 			gpio_direction_output(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num,
 					0);
 			pr_err("wmt_gpio:set GPIO_COMBO_RST_PIN out to 0: %d!\n",
 					gpio_get_value(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num));
 		}
+
+		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_state[GPIO_PULL_DIS]) {
+			pinctrl_select_state(gpio_ctrl_info.pinctrl_info,
+					gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].
+					gpio_state[GPIO_PULL_DIS]);
+			pr_err("wmt_gpio:set GPIO_COMBO_PMU_EN_PIN to GPIO_PULL_DIS done!\n");
+		} else
+			pr_err("wmt_gpio:set GPIO_COMBO_PMU_EN_PIN to GPIO_PULL_DIS fail, is NULL!\n");
+
+		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_state[GPIO_PULL_DIS]) {
+			pinctrl_select_state(gpio_ctrl_info.pinctrl_info,
+					gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_state[GPIO_PULL_DIS]);
+			pr_err("wmt_gpio:set GPIO_COMBO_RST_PIN to GPIO_PULL_DIS done!\n");
+		} else
+			pr_err("wmt_gpio:set GPIO_COMBO_RST_PIN to GPIO_PULL_DIS fail, is NULL!\n");
 
 		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_WIFI_EINT_PIN].gpio_state[GPIO_IN_PULLUP]) {
 			pinctrl_select_state(gpio_ctrl_info.pinctrl_info,

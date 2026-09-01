@@ -525,6 +525,28 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				WMT_PLAT_ERR_FUNC("enable VCN18 fail\n");
 			else
 				WMT_PLAT_DBG_FUNC("enable VCN18 ok\n");
+			{
+				/*
+				 * Stock does this here, on every power-on,
+				 * between enabling VCN18 and the 150us settle
+				 * (stock mtk_wcn_consys_hw.c:419-433). The
+				 * group puts WB_RSTB/SCLK/SDATA/SEN back to
+				 * their WB_* function as pulled-up inputs; the
+				 * boot-time pinctrl-0 default is not enough,
+				 * because the pads have to be re-released after
+				 * every power cycle of the combo chip.
+				 */
+				struct pinctrl_state *pinctrl_wifi_reset;
+
+				pinctrl_wifi_reset =
+					pinctrl_lookup_state(consys_pinctrl,
+							     "wifi_reset_init");
+				if (IS_ERR(pinctrl_wifi_reset))
+					WMT_PLAT_ERR_FUNC("no wifi_reset_init state\n");
+				else
+					pinctrl_select_state(consys_pinctrl,
+							     pinctrl_wifi_reset);
+			}
 		}
 		udelay(150);
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);

@@ -853,6 +853,22 @@ static INT32 wmtd_thread(void *pvData)
 	}
 	WMT_INFO_FUNC("wmtd thread starts\n");
 
+	/*
+	 * biscuit: stock builds with CONFIG_BISCUIT and raises wmtd to SCHED_FIFO
+	 * at MAX_RT_PRIO-2 (vendor wmt_lib.c:841-852). sched_setscheduler_nocheck()
+	 * is the kernel-thread entry point on this kernel; the vendor's
+	 * sched_setscheduler() would additionally run capability checks that a
+	 * kthread has no business going through.
+	 */
+	{
+		struct sched_param param = { .sched_priority = MAX_RT_PRIO - 2 };
+		int i_ret;
+
+		i_ret = sched_setscheduler_nocheck(current, SCHED_FIFO, &param);
+		if (0 != i_ret)
+			WMT_WARN_FUNC("set RT to wmtd workqueue failed %d\n", i_ret);
+	}
+
 	pEvent = &(pWmtDev->rWmtdWq);
 
 	for (;;) {

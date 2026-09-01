@@ -327,53 +327,15 @@
 	};
 };
 
-&mmc1 {
-	status = "okay";
-	/*
-	 * mtk-sd.c's msdc_drv_probe() hard-requires a "state_uhs" pinctrl
-	 * lookup to succeed (PTR_ERR aborts probe otherwise), even though we
-	 * don't actually run this bus in UHS mode - reuse the same physical
-	 * pin group for it rather than defining a distinct one.
-	 */
-	pinctrl-names = "default", "state_uhs";
-	pinctrl-0 = <&msdc1_pins_default>;
-	pinctrl-1 = <&msdc1_pins_default>;
-	bus-width = <4>;
-	max-frequency = <50000000>;
-	cap-sdio-irq;
-	/*
-	 * non-removable (not broken-cd): broken-cd without non-removable
-	 * makes mmc core re-poll for a card indefinitely on a timer, which
-	 * floods dmesg forever once the (unpowered-at-boot) chip predictably
-	 * doesn't answer and drowns out everything else. mmc-pwrseq-simple
-	 * below toggles WB_RSTB automatically as part of mmc core's own
-	 * probe - before card detection runs - which is the actual fix for
-	 * probing an unpowered chip, rather than reaching for endless
-	 * retries after the fact.
-	 */
-	non-removable;
-	keep-power-in-suspend;
-	mmc-pwrseq = <&wifi_pwrseq>;
-	vmmc-supply = <&mt6323_vcn33_bt_reg>;
-};
-
-/ {
-	wifi_pwrseq: wifi-pwrseq {
-		compatible = "mmc-pwrseq-simple";
-		/*
-		 * pwrseq_simple_pre_power_on()/power_on() drive every GPIO in
-		 * this array to its "active" polarity together as one group
-		 * (devm_gpiod_get_array()) - listing both RST (WB_RSTB,
-		 * active-low: deasserting releases reset) and PMU_EN (WB_SEN,
-		 * active-high: asserting enables the chip) here gets both
-		 * toggled automatically before mmc core's boot-time SDIO
-		 * probe, instead of only after the too-late userspace WMT
-		 * trigger.
-		 */
-		reset-gpios = <&pio 60 GPIO_ACTIVE_LOW>, <&pio 65 GPIO_ACTIVE_HIGH>;
-		post-power-on-delay-ms = <10>;
-	};
-};
+/*
+ * mmc1 stays disabled, as it is in stock (mt8163.dtsi:1042; stock's DTS never
+ * re-enables it). The MT6625L on this board talks over BTIF, not SDIO, so the
+ * bus has nothing on it - and the mmc-pwrseq-simple that used to live here
+ * claimed pins 60 (WB_RSTB) and 65 (WB_SEN) as GPIOs via devm_gpiod_get_array()
+ * to toggle them before an SDIO probe that can never succeed. Claiming them
+ * muxes both pads out of their WB_* function; stock leaves all four WB pins
+ * released and pulled up (wifi_reset_init) and drives none of them.
+ */
 
 &consys {
 	/*
@@ -386,6 +348,12 @@
 	 * function-on then fails with no wlan0 - measured. ANT_SEL is muxed by
 	 * the driver's own register write instead, which reaches the same end
 	 * state. Change both halves together or neither.
+	 *
+	 * The per-power-on select is now in place (mtk_wcn_consys_hw_reg_ctrl,
+	 * right after regulator_enable(reg_VCN18)), so flipping pinctrl-0 to
+	 * consys_pins_default is safe to try - but keep it here for now, so
+	 * that the WB-pin ownership fix lands as a single change with nothing
+	 * else moving underneath it.
 	 */
 	pinctrl-names = "default", "wifi_reset_init", "consys_pins_default";
 	pinctrl-0 = <&wifi_reset_init>;

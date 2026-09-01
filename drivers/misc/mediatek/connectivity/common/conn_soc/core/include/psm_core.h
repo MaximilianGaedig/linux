@@ -207,7 +207,12 @@ typedef struct stp_psm_opid_record {
 INT32 stp_psm_disable_by_tx_rx_density(MTKSTP_PSM_T *stp_psm, INT32 dir);
 #else
 #define SAMPLE_DURATION 1	/*1 second */
-#define RTX_SPEED_THRESHOLD     50000	/*50KB/s */
+/*
+ * biscuit: stock builds with CONFIG_BISCUIT, which halves this threshold
+ * (vendor psm_core.h:210). The default 50KB/s lets STP drop into PSM under
+ * traffic loads this board is expected to stay awake for.
+ */
+#define RTX_SPEED_THRESHOLD     25000	/*25KB/s */
 INT32 stp_psm_disable_by_tx_rx_density(MTKSTP_PSM_T *stp_psm, INT32 dir, INT32 length);
 #endif
 
