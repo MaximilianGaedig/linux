@@ -104,23 +104,52 @@
 	/*
 	 * External speaker amplifier enable. Amazon's stock audio driver
 	 * asserts this by selecting the "extamp-pullhigh" pinctrl state
-	 * (AudDrv_GPIO_EXTAMP_Select(1)), which drives GPIO 124 output-high;
-	 * the "extamp-pulllow" state drives it low to mute. Mainline's mt8163
-	 * pinctrl (pinctrl-mtk-common) does not implement PIN_CONFIG_OUTPUT, so
-	 * an output-high pinctrl group would be silently ignored here - drive
-	 * the same pin through a fixed regulator instead, which requests the
-	 * GPIO after the gpiochip is up (a gpio-hog fails with -EPROBE_DEFER
-	 * during gpiochip_add and takes the whole pinctrl driver down with it).
-	 * Without this the aic32x4 codec plays but the amp stays muted, so
-	 * nothing is audible.
+	 * (AudDrv_GPIO_EXTAMP_Select(1)); "extamp-pulllow" drives it low to
+	 * mute. Mainline's mt8163 pinctrl (pinctrl-mtk-common) does not
+	 * implement PIN_CONFIG_OUTPUT, so an output-high pinctrl group would be
+	 * silently ignored here - drive the pin through a fixed regulator
+	 * instead, which requests the GPIO after the gpiochip is up (a gpio-hog
+	 * fails with -EPROBE_DEFER during gpiochip_add and takes the whole
+	 * pinctrl driver down with it).
+	 *
+	 * The pin is GPIO 122, not 124. biscuit.dtsi is the pre-EVT board file
+	 * and puts extamp on 124, but both shipping board files override that
+	 * group: biscuit_evt.dts:45-60 and biscuit_min_evt.dts:45-60 redefine
+	 * aud_pins_extamp_high/_low as MT8163_PIN_122_MSDC1_CLK__FUNC_GPIO122,
+	 * and introduce GPIO 124 as a separate signal - the DAC mux, see
+	 * ext_spk_dacmux below. Driving 124 therefore left the amplifier's
+	 * enable line untouched in MSDC1_CLK mode, which is why the aic32x4
+	 * could be register-for-register identical to stock and still silent.
 	 */
 	ext_spk_amp: regulator-ext-spk-amp {
 		compatible = "regulator-fixed";
 		regulator-name = "ext-spk-amp";
-		gpio = <&pio 124 GPIO_ACTIVE_HIGH>;
+		gpio = <&pio 122 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
 		regulator-always-on;
 		regulator-boot-on;
+	};
+
+	/*
+	 * DAC output mux (stock: aud_pins_extamp_dacmux_high/_low, added in
+	 * biscuit_evt.dts:62-76, exposed to userspace as the mixer control
+	 * "Audio_DacMux_Setting"). Stock never selects either state at boot and
+	 * initialises its shadow to false, so the pad keeps its reset default;
+	 * mirror that by leaving this regulator off unless something asks for
+	 * it, rather than pinning it high the way the old 124 amp node did.
+	 */
+	ext_spk_dacmux: regulator-ext-spk-dacmux {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-dacmux";
+		gpio = <&pio 124 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		/*
+		 * Left disabled so the pad stays unclaimed and can be driven
+		 * from userspace while working out which mux leg feeds the
+		 * amplifier. Stock never selects either dacmux state at boot
+		 * either, so "unclaimed" is also the closest match to stock.
+		 */
+		status = "disabled";
 	};
 
 	gpio-keys {
@@ -398,13 +427,6 @@
 		 * driver wires it (their "AMZN_SPI_Capture" link names only
 		 * tlv320aic3101.0-0018).
 		 */
-		/*
-		 * External amplifier gain select. Amazon defines four gain
-		 * states on these two pins (aud_pins_extamp_gain0..3); drive
-		 * both high, their gain3 state.
-		 */
-		extamp-gain-gpios = <&pio 28 GPIO_ACTIVE_HIGH>,
-				    <&pio 29 GPIO_ACTIVE_HIGH>;
 		amazon,mic-codec = <&mic0_codec>, <&mic1_codec>,
 				   <&mic2_codec>, <&mic3_codec>;
 		/*
@@ -494,21 +516,35 @@
 };
 
 /*
- * wmt_gpio_init() (drivers/misc/mediatek/connectivity/common/common_detect/
- * wmt_gpio.c) looks this node up by of_find_compatible_node() - it is not a
- * bound device, just a property container the legacy WMT combo-chip power
- * sequencing code reads gpio_combo_*_pin properties from. Without it,
- * wmt_gpio_init() bails immediately ("can't find device tree node!") and
- * the MT6625L combo chip's power-on sequence never runs at all.
+ * There is deliberately no "mediatek,connectivity-combo" node here.
  *
- * Only rst/pmu_en are supplied: biscuit's WB_* pin group (wifi_reset_init
- * in mt8163-amazon-common.dtsi) breaks out exactly four pins - RSTB, SCLK,
- * SDATA, SEN - with SEN ("System ENable") mapping to PMU_EN and RSTB to
- * RST. There's no fifth pin for a WIFI_EINT gpio; wmt_detect_pwr.c's
- * precondition check was relaxed to not require one, consistent with this
- * being an SDIO combo chip that signals in-band over DAT1 rather than a
- * separate wake GPIO. SCLK/SDATA are unclaimed here - so far unidentified,
- * possibly an unused debug/FM path on this board.
+ * wmt_gpio_init() looks such a node up by of_find_compatible_node() and, if
+ * it finds one, claims gpio_combo_rst_pin / gpio_combo_pmu_en_pin as plain
+ * GPIOs and drives them. On this board those are pins 60 (WB_RSTB) and 65
+ * (WB_SEN), and requesting them as GPIOs muxes both pads out of their WB_*
+ * function and parks them at a static level.
+ *
+ * Amazon never does that. Their whole treatment of the four WB pins is the
+ * wifi_reset_init pinctrl group (biscuit.dtsi:757-765), which sets RSTB,
+ * SCLK, SDATA and SEN to "input-enable; bias-pull-up" - released, pulled up,
+ * never driven - and re-selects that state on every CONSYS power-on. Stock's
+ * DTS contains no connectivity-combo node at all, so stock's wmt_gpio_init()
+ * takes its early return and every gpio_num stays DEFAULT_PIN_ID.
+ *
+ * But the node cannot simply be deleted: on this board it is what powers the
+ * chip at all. _wmt_detect_pwr_on() (wmt_detect_pwr.c:108,153) returns early
+ * unless both gpio_nums are valid, and its _wmt_detect_output_high(PMU_EN) is
+ * the actual chip enable - remove the node and the WMT function-on fails with
+ * EFAULT and no wlan0 appears. Measured, twice.
+ *
+ * So keep the node and drive the sequence, then hand the pads back: the
+ * pinctrl_select_state("wifi_reset_init") added to
+ * mtk_wcn_consys_hw_reg_ctrl() (matching stock mtk_wcn_consys_hw.c:419-433)
+ * re-muxes 60/65 to their WB_* function as pulled-up inputs on every
+ * power-on, so they end in stock's state instead of being pinned low by a
+ * gpiod that never lets go. Holding WB_SEN low is the only board-level
+ * divergence found that could gate the 2.4 GHz front end while leaving BT
+ * (which does not pass through the WiFi FEM) and 5 GHz working.
  */
 / {
 	connectivity-combo {
