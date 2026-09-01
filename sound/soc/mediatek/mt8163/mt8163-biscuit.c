@@ -610,23 +610,17 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 	card->dev = &pdev->dev;
 
 	/*
-	 * Drive the amplifier gain-select pins high.
+	 * No amplifier gain-select pins are driven here.
 	 *
-	 * These cannot come from pinctrl: mainline's pinctrl-mtk-common has
-	 * no PIN_CONFIG_OUTPUT, so an output-high group just fails.
+	 * biscuit.dtsi does define aud_pins_extamp_gain0..3 on GPIO 28/29, but
+	 * the &audgpio node's pinctrl-names never lists those states - not in
+	 * biscuit.dtsi and not in either EVT override - so stock's
+	 * pinctrl_lookup_state() fails for them, gpio_prepare stays false and
+	 * AudDrv_GPIO_EXTAMP_Gain_Set() is a no-op returning -1 on this board.
+	 * They are MediaTek reference-board leftovers. Worse, stock uses
+	 * <&pio 29 0> as the enable-gpio of the lp55231 LED controller
+	 * (biscuit.dtsi:180), so driving it from here fights the LED ring.
 	 */
-	{
-		struct gpio_descs *gains;
-
-		gains = devm_gpiod_get_array_optional(&pdev->dev, "extamp-gain",
-						      GPIOD_OUT_HIGH);
-		if (IS_ERR(gains))
-			dev_warn(&pdev->dev, "biscuit: extamp-gain gpios: %ld\n",
-				 PTR_ERR(gains));
-		else if (gains)
-			dev_info(&pdev->dev, "biscuit: %u amp gain pins driven high\n",
-				 gains->ndescs);
-	}
 
 	platform = of_parse_phandle(pdev->dev.of_node, "mediatek,platform", 0);
 	if (!platform)
