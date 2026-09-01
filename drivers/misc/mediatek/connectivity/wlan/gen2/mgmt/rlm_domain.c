@@ -854,9 +854,17 @@ rlmDomainGetChnlList(P_ADAPTER_T prAdapter,
 VOID rlmDomainSendCmd(P_ADAPTER_T prAdapter, BOOLEAN fgIsOid)
 {
 	rlmDomainSendDomainInfoCmd(prAdapter, fgIsOid);
-#if CFG_SUPPORT_PWR_LIMIT_COUNTRY
-	rlmDomainSendPwrLimitCmd(prAdapter);
-#endif
+	/*
+	 * biscuit: do NOT send CMD_ID_SET_COUNTRY_POWER_LIMIT here.
+	 *
+	 * The stock Amazon driver wraps this call in "#if !CFG_CUSTOM_REG" and
+	 * builds with CFG_CUSTOM_REG=1, so on this board the firmware never
+	 * receives a country power-limit command -- the per-country limits come
+	 * from the custom regulatory tables instead. Our firmware blob is the
+	 * vendor one, so it has never been exercised with this command and we
+	 * must match stock. rlmDomainSendPwrLimitCmd() is kept compiled for
+	 * reference but is deliberately not invoked.
+	 */
 	rlmDomainSendPassiveScanInfoCmd(prAdapter, fgIsOid);
 }
 

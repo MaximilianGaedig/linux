@@ -308,7 +308,13 @@ int mtk_p2p_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev,
 		p2pFuncGetStationInfo(prGlueInfo->prAdapter, (PUINT_8)mac, &rP2pStaInfo);
 
 		/* Inactive time. */
-		sinfo->filled |= NL80211_STA_INFO_INACTIVE_TIME;
+		/*
+		 * filled is a bitmap indexed by the NL80211_STA_INFO_* enum, so the
+		 * enum value has to go through BIT(). NL80211_STA_INFO_INACTIVE_TIME
+		 * is 1, so ORing it raw set bit 0 (__NL80211_STA_INFO_INVALID) and
+		 * left inactive_time flagged as absent.
+		 */
+		sinfo->filled |= BIT(NL80211_STA_INFO_INACTIVE_TIME);
 		sinfo->inactive_time = rP2pStaInfo.u4InactiveTime;
 		sinfo->generation = prP2pGlueInfo->i4Generation;
 
