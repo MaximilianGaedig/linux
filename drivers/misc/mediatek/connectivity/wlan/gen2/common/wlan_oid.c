@@ -6896,6 +6896,16 @@ wlanoidSet802dot11PowerSaveProfile(IN P_ADAPTER_T prAdapter,
 		}
 	}
 
+	/*
+	 * biscuit: the stock Amazon driver unconditionally forces CAM on this
+	 * board (vendor wlan_oid.c:7205-7209, guarded by a
+	 * kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "biscuit", ...) check), i.e. 802.11
+	 * power save is never actually enabled here no matter what userspace
+	 * asks for. The board check is dropped because this tree only builds for
+	 * this board.
+	 */
+	ePowerMode = Param_PowerModeCAM;
+
 	status = nicConfigPowerSaveProfile(prAdapter, NETWORK_TYPE_AIS_INDEX, ePowerMode, TRUE);
 
 	switch (ePowerMode) {

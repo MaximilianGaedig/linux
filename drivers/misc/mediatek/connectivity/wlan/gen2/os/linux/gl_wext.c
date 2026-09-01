@@ -1562,7 +1562,7 @@ wext_set_mlme(IN struct net_device *prNetDev,
 /*----------------------------------------------------------------------------*/
 static int
 wext_set_scan(IN struct net_device *prNetDev,
-	      IN struct iw_request_info *prIwrInfo, IN union iwreq_data *prData, IN char *pcExtra)
+	      IN struct iw_request_info *prIwrInfo, IN struct iw_scan_req *prIwScanReq, IN char *pcExtra)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
@@ -1575,9 +1575,13 @@ wext_set_scan(IN struct net_device *prNetDev,
 	prGlueInfo = *((P_GLUE_INFO_T *) netdev_priv(prNetDev));
 
 #if WIRELESS_EXT > 17
-	/* retrieve SSID */
-	if (prData)
-		essid_len = ((struct iw_scan_req *)(((struct iw_point *)prData)->pointer))->essid_len;
+	/*
+	 * retrieve SSID. prIwScanReq points at a kernel-side copy made by the
+	 * caller; it must never be a raw __user pointer. The caller is also
+	 * responsible for clamping essid_len to IW_ESSID_MAX_SIZE.
+	 */
+	if (prIwScanReq)
+		essid_len = prIwScanReq->essid_len;
 #endif
 
 	init_completion(&prGlueInfo->rScanComp);
@@ -3353,8 +3357,11 @@ static int wext_get_priv(IN struct net_device *prNetDev, OUT struct iw_point *pr
 {
 	UINT_16 u2BufferSize = prData->length;
 
-	/* Update our private args table size */
-	prData->length = (__u16)sizeof(rIwPrivTable);
+	/*
+	 * Update our private args table size. SIOCGIWPRIV reports the number of
+	 * iw_priv_args ENTRIES, not the byte size of the table.
+	 */
+	prData->length = (__u16)(sizeof(rIwPrivTable) / sizeof(struct iw_priv_args));
 	if (u2BufferSize < prData->length)
 		return -E2BIG;
 
@@ -3530,20 +3537,29 @@ int wext_support_ioctl(IN struct net_device *prDev, IN struct ifreq *prIfReq, IN
 			ret = wext_set_scan(prDev, NULL, NULL, NULL);
 #if WIRELESS_EXT > 17
 		else if (iwr->u.data.length == sizeof(struct iw_scan_req)) {
-			prExtraBuf = kalMemAlloc(MAX_SSID_LEN, VIR_MEM_TYPE);
-			if (!prExtraBuf) {
+			/*
+			 * Copy the whole iw_scan_req in first: iwr->u.data.pointer is a
+			 * __user pointer and must not be dereferenced here, and essid_len
+			 * comes from userspace so it has to be clamped before it is used
+			 * as a copy length.
+			 */
+			struct iw_scan_req *prIwScanReq;
+
+			prIwScanReq = kalMemAlloc(sizeof(struct iw_scan_req), VIR_MEM_TYPE);
+			if (!prIwScanReq) {
 				ret = -ENOMEM;
 				break;
 			}
-			if (copy_from_user(prExtraBuf, ((struct iw_scan_req *)(iwr->u.data.pointer))->essid,
-					   ((struct iw_scan_req *)(iwr->u.data.pointer))->essid_len)) {
+			if (copy_from_user(prIwScanReq, iwr->u.data.pointer, sizeof(struct iw_scan_req))) {
 				ret = -EFAULT;
 			} else {
-				ret = wext_set_scan(prDev, NULL, (union iwreq_data *)&(iwr->u.data), prExtraBuf);
+				if (prIwScanReq->essid_len > IW_ESSID_MAX_SIZE)
+					prIwScanReq->essid_len = IW_ESSID_MAX_SIZE;
+				ret = wext_set_scan(prDev, NULL, prIwScanReq, &(prIwScanReq->essid[0]));
 			}
 
-			kalMemFree(prExtraBuf, VIR_MEM_TYPE, MAX_SSID_LEN);
-			prExtraBuf = NULL;
+			kalMemFree(prIwScanReq, VIR_MEM_TYPE, sizeof(struct iw_scan_req));
+			prIwScanReq = NULL;
 		}
 #endif
 		else

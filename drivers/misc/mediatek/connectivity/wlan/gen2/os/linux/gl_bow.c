@@ -1070,11 +1070,12 @@ static int bowHardStartXmit(IN struct sk_buff *prSkb, IN struct net_device *prDe
 		GLUE_INC_REF_CNT(prGlueInfo->i4TxPendingFrameNum);
 		GLUE_INC_REF_CNT(prGlueInfo->ai4TxPendingFrameNumPerQueue[NETWORK_TYPE_BOW_INDEX][u2QueueIdx]);
 		if (prGlueInfo->ai4TxPendingFrameNumPerQueue[NETWORK_TYPE_BOW_INDEX][u2QueueIdx] >=
-				CFG_TX_STOP_NETIF_PER_QUEUE_THRESHOLD)
+				CFG_TX_STOP_NETIF_PER_QUEUE_THRESHOLD) {
 			DBGLOG(TX, INFO, "netif_stop_subqueue for BOW, Queue len: %d\n",
 				prGlueInfo->ai4TxPendingFrameNumPerQueue[NETWORK_TYPE_BOW_INDEX][u2QueueIdx]);
 
 			netif_stop_subqueue(prDev, u2QueueIdx);
+		}
 	} else {
 		GLUE_INC_REF_CNT(prGlueInfo->i4TxPendingSecurityFrameNum);
 	}

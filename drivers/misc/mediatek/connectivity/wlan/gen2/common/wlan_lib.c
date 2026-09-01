@@ -6041,49 +6041,23 @@ WLAN_STATUS wlanLoadManufactureData(IN P_ADAPTER_T prAdapter, IN P_REG_INFO_T pr
 #endif
 
 	/*
-	 * Only push the PHY/RF parameter block if NVRAM actually contains one.
+	 * biscuit: send CMD_ID_SET_PHY_PARAM unconditionally, as stock does
+	 * (vendor wlan_lib.c:4546-4551).
 	 *
-	 * This command overwrites the firmware's PHY parameters with
-	 * prRegInfo->aucEFUSE, which comes from /etc/firmware/nvram/WIFI. On
-	 * stock that file is produced at runtime by MediaTek's NVRAM daemon and
-	 * carries the board's real RF trim; it does not exist on this device, so
-	 * the file is synthesised and the EFUSE block is all zeros. Sending 144
-	 * zero bytes as the RF configuration clobbers what the chip derived from
-	 * its own eFuse - and the chip does have one, it reports ucEfuseValid in
-	 * the NIC capability event.
-	 *
-	 * Symptom that led here: 2.4GHz receives nothing at all while 5GHz works
-	 * (a 2.4GHz-only scan completes with rc=0 and 0 BSSes, a 5GHz-only scan
-	 * on the same interface seconds later returns 2), even though the radio
-	 * is provably fine - BLE receives at -45 dBm on the same antenna - and
-	 * the driver hands the firmware channels 1..13 explicitly.
-	 *
-	 * So skip the command when the block is empty and let the firmware keep
-	 * its own calibration. A real NVRAM still takes effect unchanged.
+	 * An earlier version of this port skipped the command when aucEFUSE was
+	 * all-zero, on the theory that pushing a zero RF block would clobber the
+	 * chip's own eFuse calibration. That premise does not hold: stock's
+	 * built-in default block (vendor gl_init.c:3470 aucEFUSE_default) is
+	 * itself all-zero apart from bytes 10..12, and stock pushes it every
+	 * time. Whatever the firmware does with a near-zero block, it is what
+	 * stock does, so match it.
 	 */
-	{
-		UINT_32 u4E;
-		BOOLEAN fgHaveEfuse = FALSE;
-
-		for (u4E = 0; u4E < sizeof(prRegInfo->aucEFUSE); u4E++) {
-			if (prRegInfo->aucEFUSE[u4E]) {
-				fgHaveEfuse = TRUE;
-				break;
-			}
-		}
-
-		if (fgHaveEfuse) {
-			wlanSendSetQueryCmd(prAdapter,
-					    CMD_ID_SET_PHY_PARAM,
-					    TRUE,
-					    FALSE,
-					    FALSE, NULL, NULL, sizeof(CMD_PHY_PARAM_T),
-					    (PUINT_8) (prRegInfo->aucEFUSE), NULL, 0);
-		} else {
-			DBGLOG(INIT, WARN,
-			       "biscuit-phy: NVRAM EFUSE block is empty, not overwriting firmware RF params\n");
-		}
-	}
+	wlanSendSetQueryCmd(prAdapter,
+			    CMD_ID_SET_PHY_PARAM,
+			    TRUE,
+			    FALSE,
+			    FALSE, NULL, NULL, sizeof(CMD_PHY_PARAM_T),
+			    (PUINT_8) (prRegInfo->aucEFUSE), NULL, 0);
 
 #if CFG_SUPPORT_RDD_TEST_MODE
 	rRddParam.ucRddTestMode = (UINT_8) prRegInfo->u4RddTestMode;

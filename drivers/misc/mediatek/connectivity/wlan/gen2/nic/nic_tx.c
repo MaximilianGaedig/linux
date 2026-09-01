@@ -597,7 +597,15 @@ WLAN_STATUS nicTxAcquireResource(IN P_ADAPTER_T prAdapter, IN UINT_8 ucTC, IN BO
 			cmdBufDumpCmdQueue(&prAdapter->rPendingCmdQueue, "waiting response CMD queue");
 			glDumpConnSysCpuInfo(prAdapter->prGlueInfo);
 			kalSendAeeWarning("[TC4 no resource delay 5s!]", __func__);
-			glDoChipReset();
+			/*
+			 * biscuit: stock has no glDoChipReset() here (the vendor
+			 * driver never calls it at all). Keep the diagnostic, but do
+			 * not reset the chip -- a spurious reset here turns a
+			 * recoverable stall into a full re-download.
+			 */
+			DBGLOG(TX, ERROR,
+			       "biscuit: TC4 starved for %d ms -- stock would NOT chip-reset here, continuing\n",
+			       TC4_NO_RESOURCE_DELAY_MS);
 			u4CurrTick = 0;
 		}
 	}

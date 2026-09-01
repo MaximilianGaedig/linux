@@ -759,13 +759,18 @@ int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, struc
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-static PARAM_SCAN_REQUEST_EXT_T rScanRequest;
 int mtk_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus;
 	UINT_32 u4BufLen;
-/* PARAM_SCAN_REQUEST_EXT_T rScanRequest; */
+	/*
+	 * Per-call, as in the vendor driver. A file-scope static here is
+	 * non-reentrant across the AIS and P2P wiphys and, because pucIE is only
+	 * assigned when request->ie_len > 0, leaves a dangling pointer to the
+	 * previous scan's IE buffer whenever a scan carries no IEs.
+	 */
+	PARAM_SCAN_REQUEST_EXT_T rScanRequest;
 
 	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
 	ASSERT(prGlueInfo);

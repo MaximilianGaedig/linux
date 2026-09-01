@@ -2075,6 +2075,23 @@ WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN ENUM_NETWORK_TYPE_INDEX_T 
 	       rCmdSetBssInfo.u2BSSBasicRateSet, rCmdSetBssInfo.ucNonHTBasicPhyType,
 	       rCmdSetBssInfo.ucStaRecIdxOfAP);
 
+	/*
+	 * biscuit: match the stock Amazon driver (vendor nic.c:2069-2081), which
+	 * pins the Rx BA window to 0x12 on a connected 2.4GHz AIS link and
+	 * releases it otherwise. Stock reaches this via a
+	 * kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "biscuit", ...) board check, which
+	 * is dropped here because this tree only ever builds for this board.
+	 */
+	if (prBssInfo->ucNetTypeIndex == NETWORK_TYPE_AIS_INDEX) {
+		if (prBssInfo->eConnectionState == PARAM_MEDIA_STATE_CONNECTED &&
+		    prBssInfo->eBand == BAND_2G4) {
+			/* Fix Rx BA Size to 2 */
+			nicQmSetRxBASize(prAdapter, TRUE, 0x12);
+		} else {
+			nicQmSetRxBASize(prAdapter, FALSE, 0);
+		}
+	}
+
 	u4Status = wlanSendSetQueryCmd(prAdapter,
 				       CMD_ID_SET_BSS_INFO,
 				       TRUE,
@@ -2553,6 +2570,40 @@ WLAN_STATUS nicQmUpdateWmmParms(IN P_ADAPTER_T prAdapter, IN ENUM_NETWORK_TYPE_I
 				   FALSE,
 				   FALSE,
 				   NULL, NULL, sizeof(CMD_UPDATE_WMM_PARMS_T), (PUINT_8)&rCmdUpdateWmmParms, NULL, 0);
+}
+
+/*----------------------------------------------------------------------------*/
+/*!
+* @brief Pin the firmware's Rx block-ack window size.
+*
+* biscuit: ported from the Amazon vendor driver (nic.c:2569). The stock driver
+* clamps the Rx BA window on 2.4GHz AIS links; see nicUpdateBss().
+*
+* @param prAdapter Pointer of ADAPTER_T
+*        enable    TRUE to pin the window, FALSE to let firmware negotiate
+*        size      window size to pin when enabled
+*
+* @retval WLAN_STATUS_PENDING
+*/
+/*----------------------------------------------------------------------------*/
+WLAN_STATUS nicQmSetRxBASize(IN P_ADAPTER_T prAdapter, BOOLEAN enable, UINT32 size)
+{
+	CMD_SPECIFIC_RX_BA_WIN_SIZE_T rCmdRxBASize;
+
+	ASSERT(prAdapter);
+
+	rCmdRxBASize.fgEnabled = enable;
+	rCmdRxBASize.u2RxBAWinSize = size;
+
+	return wlanSendSetQueryCmd(prAdapter,
+				   CMD_ID_SET_RX_BA_WIN_SIZE,
+				   TRUE,
+				   FALSE,
+				   FALSE,
+				   NULL, NULL,
+				   sizeof(CMD_SPECIFIC_RX_BA_WIN_SIZE_T),
+				   (PUINT_8)&rCmdRxBASize,
+				   NULL, 0);
 }
 
 /*----------------------------------------------------------------------------*/

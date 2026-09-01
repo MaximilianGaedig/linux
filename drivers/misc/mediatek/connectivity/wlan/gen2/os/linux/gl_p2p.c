@@ -2042,8 +2042,11 @@ mtk_p2p_wext_get_priv(IN struct net_device *prDev,
 	struct iw_point *prData = (struct iw_point *)&wrqu->data;
 	UINT_16 u2BufferSize = prData->length;
 
-	/* Update our private args table size */
-	prData->length = (__u16)sizeof(rP2PIwPrivTable);
+	/*
+	 * Update our private args table size. SIOCGIWPRIV reports the number of
+	 * iw_priv_args ENTRIES, not the byte size of the table.
+	 */
+	prData->length = (__u16)(sizeof(rP2PIwPrivTable) / sizeof(struct iw_priv_args));
 	if (u2BufferSize < prData->length)
 		return -E2BIG;
 
