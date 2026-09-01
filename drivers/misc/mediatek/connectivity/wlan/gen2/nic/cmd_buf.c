@@ -211,8 +211,15 @@ P_CMD_INFO_T cmdBufAllocateCmdInfo(IN P_ADAPTER_T prAdapter, IN UINT_32 u4Length
 		cmdBufDumpCmdQueue(prCmdQue, "waiting Tx CMD queue");
 		cmdBufDumpCmdQueue(prPendingCmdQue, "waiting response CMD queue");
 		DBGLOG(NIC, INFO, "Tc4 number:%d\n", prTc->aucFreeBufferCount[TC4_INDEX]);
+		/*
+		 * biscuit: stock has no glDoChipReset() here (the vendor driver
+		 * never calls it at all). Keep the diagnostic, but do not reset
+		 * the chip.
+		 */
 		if (prTc->aucFreeBufferCount[TC4_INDEX] != 0)
-			glDoChipReset();
+			DBGLOG(NIC, ERROR,
+			       "biscuit: CMD alloc failed with TC4 free (%d) -- stock would NOT chip-reset here, continuing\n",
+			       prTc->aucFreeBufferCount[TC4_INDEX]);
 	}
 
 	return prCmdInfo;

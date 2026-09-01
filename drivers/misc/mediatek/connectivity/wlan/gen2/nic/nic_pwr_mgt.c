@@ -377,7 +377,13 @@ BOOLEAN nicpmSetDriverOwn(IN P_ADAPTER_T prAdapter)
 					DBGLOG(NIC, WARN, "0x%08x ", MCU_REG_READL(HifInfo, CONN_MCU_CPUPCR));
 				/* CONSYS_REG_READ(CONSYS_CPUPCR_REG) */
 				kalSendAeeWarning("[Fatal error! Driver own fail!]", __func__);
-				glDoChipReset();
+				/*
+				 * biscuit: stock has no glDoChipReset() here (the vendor
+				 * driver never calls it at all). Keep the diagnostic, but
+				 * do not reset the chip.
+				 */
+				DBGLOG(NIC, ERROR,
+				       "biscuit: driver-own failed -- stock would NOT chip-reset here, continuing\n");
 			}
 			break;
 		}

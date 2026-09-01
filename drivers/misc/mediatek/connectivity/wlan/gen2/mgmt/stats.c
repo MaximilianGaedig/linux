@@ -1010,8 +1010,8 @@ static VOID statsParsePktInfo(PUINT_8 pucPkt, UINT_8 status, UINT_8 eventType, P
 	case ETH_P_ARP:
 	{
 		UINT_16 u2OpCode = (pucEthBody[6] << 8) | pucEthBody[7];
-		if (eventType == EVENT_TX)
-			prMsduInfo->fgIsBasicRate = TRUE;
+
+		/* biscuit: stock does not force ARP TX down to a basic rate. */
 
 		if ((su2TxDoneCfg & CFG_ARP) == 0)
 			break;
@@ -1108,8 +1108,8 @@ static VOID statsParsePktInfo(PUINT_8 pucPkt, UINT_8 status, UINT_8 eventType, P
 				case EVENT_TX:
 					DBGLOG(TX, INFO, "<TX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%08x\n",
 									u2IpId, pucUdpPayload[0], u4TransID);
+					/* biscuit: stock does not force DHCP TX to a basic rate. */
 					prMsduInfo->fgNeedTxDoneStatus = TRUE;
-					prMsduInfo->fgIsBasicRate = TRUE;
 					break;
 				case EVENT_TX_DONE:
 					DBGLOG(TX, INFO,
@@ -1119,8 +1119,8 @@ static VOID statsParsePktInfo(PUINT_8 pucPkt, UINT_8 status, UINT_8 eventType, P
 				}
 			} else if (u2UdpDstPort == UDP_PORT_DNS) { /* tx dns */
 				UINT_16 u2TransId = (pucUdpPayload[0] << 8) | pucUdpPayload[1];
-				if (eventType == EVENT_TX)
-					prMsduInfo->fgIsBasicRate = TRUE;
+
+				/* biscuit: stock does not force DNS TX to a basic rate. */
 
 				if ((su2TxDoneCfg & CFG_DNS) == 0)
 					break;
@@ -1324,10 +1324,13 @@ VOID StatsTxPktDoneInfoDisplay(ADAPTER_T *prAdapter, UINT_8 *pucEvtBuf)
 
 	prTxDone = (EVENT_TX_DONE_STATUS_T *) pucEvtBuf;
 	/*
-	 * Why 65 Bytes:
-	 * 8B + wlanheader(40B) + hif_tx_header(16B) + 6B + 6B(LLC) - 12B
+	 * biscuit: the 64-byte skip above came from a later MTK driver revision
+	 * whose firmware prepends the 802.11 + HIF headers to aucPktBuf. We run
+	 * the Amazon vendor firmware blob, which -- like the vendor driver
+	 * (which parses from aucPktBuf[0]) -- hands us the ethernet frame at
+	 * offset 0. Skipping 64 bytes here parses garbage.
 	 */
-	statsParsePktInfo(&prTxDone->aucPktBuf[64], prTxDone->ucStatus, EVENT_TX_DONE, NULL);
+	statsParsePktInfo(prTxDone->aucPktBuf, prTxDone->ucStatus, EVENT_TX_DONE, NULL);
 }
 
 VOID StatsSetCfgTxDone(UINT_16 u2Cfg, BOOLEAN fgSet)
