@@ -77,7 +77,7 @@ static void mt8163_enable_cci_snoop(void)
 
 	mcucfg_base = ioremap(MT8163_MCUCFG_BASE_PHY, 0x1000);
 	if (!mcucfg_base) {
-		pr_err("biscuit-debug: mt8163_enable_cci_snoop: ioremap failed\n");
+		pr_err("mt8163: CCI snoop: ioremap failed\n");
 		return;
 	}
 
@@ -86,7 +86,7 @@ static void mt8163_enable_cci_snoop(void)
 
 	ret = mt8163_secure_call(MTK_SIP_KERNEL_MCUSYS_WRITE,
 				  MT8163_MP0_AXI_CONFIG_PHY, val & ~MT8163_ACINACTM, 0);
-	pr_err("biscuit-debug: mt8163_enable_cci_snoop: read val=0x%x, smc write ret=%d\n",
+	pr_debug("mt8163: CCI snoop enable: val=0x%x smc=%d\n",
 	       val, ret);
 }
 
@@ -158,68 +158,13 @@ static bool mt8163_spm_poll(void __iomem *base, unsigned int off, u32 mask, u32 
 #define MT8163_ATF_LOG_BASE	0x43000000
 #define MT8163_ATF_LOG_SIZE	0x30000
 
-static void mt8163_dump_atf_log(void)
-{
-	void __iomem *atf_base;
-	char line[65];
-	unsigned int i, j, n;
-
-	atf_base = ioremap(MT8163_ATF_LOG_BASE, MT8163_ATF_LOG_SIZE);
-	if (!atf_base) {
-		pr_err("biscuit-debug: atf log: ioremap failed\n");
-		return;
-	}
-
-	pr_err("biscuit-debug: atf log: scanning 0x%x bytes at 0x%x for ASCII text\n",
-	       MT8163_ATF_LOG_SIZE, MT8163_ATF_LOG_BASE);
-
-	for (i = 0; i < MT8163_ATF_LOG_SIZE; ) {
-		u8 c = readb_relaxed(atf_base + i);
-
-		if (c >= 0x20 && c < 0x7f) {
-			n = 0;
-			for (j = i; j < MT8163_ATF_LOG_SIZE && n < sizeof(line) - 1; j++) {
-				u8 cc = readb_relaxed(atf_base + j);
-
-				if (cc < 0x20 || cc >= 0x7f)
-					break;
-				line[n++] = cc;
-			}
-			line[n] = '\0';
-			if (n >= 4)
-				pr_err("biscuit-debug: atf log[0x%x]: %s\n", i, line);
-			i = j + 1;
-		} else {
-			i++;
-		}
-	}
-
-	pr_err("biscuit-debug: atf log: scan done\n");
-
-	/*
-	 * Zero printable ASCII found above is itself a data point, but could
-	 * also just mean the log isn't plain text. Dump the raw first 256
-	 * bytes regardless of content (via proper MMIO byte reads into a
-	 * local buffer first - print_hex_dump isn't MMIO-safe), so we can
-	 * tell "genuinely all zero / untouched" apart from "non-zero binary
-	 * data that isn't ASCII".
-	 */
-	{
-		u8 raw[256];
-
-		for (i = 0; i < sizeof(raw); i++)
-			raw[i] = readb_relaxed(atf_base + i);
-		print_hex_dump(KERN_ERR, "biscuit-debug: atf raw[0x0]: ", DUMP_PREFIX_OFFSET,
-				16, 1, raw, sizeof(raw), false);
-	}
-
-	iounmap(atf_base);
-}
 
 #define PSCI_0_2_FN_BASE		0x84000000
 #define PSCI_0_2_FN(n)			(PSCI_0_2_FN_BASE + (n))
 #define PSCI_0_2_FN_PSCI_FEATURES	PSCI_0_2_FN(10)
 #define PSCI_0_2_FN64_CPU_ON		(PSCI_0_2_FN_BASE | 0x40000000 | 3)
+#define PSCI_0_2_FN_PSCI_VERSION	PSCI_0_2_FN(0)
+#define PSCI_0_2_FN64_AFFINITY_INFO	(PSCI_0_2_FN_BASE | 0x40000000 | 4)
 
 static noinline int mt8163_raw_smc(u32 func, u64 a0, u64 a1, u64 a2)
 {
@@ -249,17 +194,118 @@ static int __init cpu_psci_cpu_prepare(unsigned int cpu)
 	if (!cci_snoop_done) {
 		mt8163_enable_cci_snoop();
 		cci_snoop_done = true;
-		pr_err("biscuit-debug: PSCI_FEATURES(CPU_ON) = %d (0=supported per spec; negative=NOT_SUPPORTED/error)\n",
-		       mt8163_raw_smc(PSCI_0_2_FN_PSCI_FEATURES, PSCI_0_2_FN64_CPU_ON, 0, 0));
 	}
 
 	return 0;
 }
 
+/*
+ * SPM/MTCMOS power-on for a secondary core, restored and re-ordered.
+ *
+ * New evidence: PSCI here is v0.2 and CPU_ON is NOT a stub - it answers
+ * INVALID_PARAMS (-2) to a bogus MPIDR, and after a real call AFFINITY_INFO
+ * moves OFF -> ON_PENDING. So ATF does accept the request and does program the
+ * warm-boot entry; the core simply never comes out of reset, so it never
+ * reaches even ATF's own warm-boot path and the state stays ON_PENDING.
+ *
+ * The previous attempt ran this MTCMOS sequence BEFORE cpu_on, which lets ATF
+ * see the domain already powered and no-op its own release. Run it AFTER
+ * cpu_on instead: ATF programs the boot address, then we supply the power-up
+ * it is failing to complete.
+ */
+
+
+
+
+
+/* Returns true if the CPU's power domain was successfully turned on. */
+static bool mt8163_mtcmos_power_on_cpu(unsigned int cpu)
+{
+	unsigned long flags;
+	unsigned int pwr_con_off, l1_pdn_off, ca7_bit;
+	u32 val;
+	bool ok = true;
+
+	switch (cpu) {
+	case 1:
+		pwr_con_off = SPM_CA7_CPU1_PWR_CON;
+		l1_pdn_off = SPM_CA7_CPU1_L1_PDN;
+		ca7_bit = CA7_CPU1;
+		break;
+	case 2:
+		pwr_con_off = SPM_CA7_CPU2_PWR_CON;
+		l1_pdn_off = SPM_CA7_CPU2_L1_PDN;
+		ca7_bit = CA7_CPU2;
+		break;
+	case 3:
+		pwr_con_off = SPM_CA7_CPU3_PWR_CON;
+		l1_pdn_off = SPM_CA7_CPU3_L1_PDN;
+		ca7_bit = CA7_CPU3;
+		break;
+	default:
+		return true;
+	}
+
+	if (!mt8163_spm_base) {
+		mt8163_spm_base = ioremap(MT8163_SPM_BASE_PHY, 0x1000);
+		if (!mt8163_spm_base) {
+			pr_err("mt8163: cpu MTCMOS: SPM ioremap failed\n");
+			return false;
+		}
+	}
+
+	spin_lock_irqsave(&mt8163_spm_lock, flags);
+
+	/* enable register control */
+	writel_relaxed((SPM_PROJECT_CODE << 16) | (1U << 0),
+			mt8163_spm_base + SPM_POWERON_CONFIG_SET);
+
+	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
+	writel_relaxed(val | PWR_ON, mt8163_spm_base + pwr_con_off);
+	udelay(1);
+	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
+	writel_relaxed(val | PWR_ON_2ND, mt8163_spm_base + pwr_con_off);
+
+	if (!mt8163_spm_poll(mt8163_spm_base, SPM_PWR_STATUS, ca7_bit, ca7_bit) ||
+	    !mt8163_spm_poll(mt8163_spm_base, SPM_PWR_STATUS_2ND, ca7_bit, ca7_bit)) {
+		pr_err("mt8163: cpu%u MTCMOS PWR_STATUS ack timeout\n", cpu);
+		ok = false;
+		goto out;
+	}
+
+	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
+	writel_relaxed(val & ~PWR_ISO, mt8163_spm_base + pwr_con_off);
+
+	val = readl_relaxed(mt8163_spm_base + l1_pdn_off);
+	writel_relaxed(val & ~L1_PDN, mt8163_spm_base + l1_pdn_off);
+
+	if (!mt8163_spm_poll(mt8163_spm_base, l1_pdn_off, L1_PDN_ACK, 0)) {
+		pr_err("mt8163: cpu%u MTCMOS L1_PDN_ACK timeout\n", cpu);
+		ok = false;
+		goto out;
+	}
+
+	udelay(1);
+	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
+	writel_relaxed(val | SRAM_ISOINT_B, mt8163_spm_base + pwr_con_off);
+	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
+	writel_relaxed(val & ~SRAM_CKISO, mt8163_spm_base + pwr_con_off);
+
+	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
+	writel_relaxed(val & ~PWR_CLK_DIS, mt8163_spm_base + pwr_con_off);
+	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
+	writel_relaxed(val | PWR_RST_B, mt8163_spm_base + pwr_con_off);
+
+out:
+	spin_unlock_irqrestore(&mt8163_spm_lock, flags);
+	pr_debug("mt8163: cpu%u MTCMOS power-on %s\n", cpu, ok ? "ok" : "FAILED");
+	return ok;
+}
+
 static int cpu_psci_cpu_boot(unsigned int cpu)
 {
 	phys_addr_t pa_secondary_entry = __pa_symbol(secondary_entry);
-	int err;
+	int err, before, after;
 
 	/*
 	 * Confirmed via stock-kernel research: mt_smp_boot_secondary()
@@ -298,26 +344,28 @@ static int cpu_psci_cpu_boot(unsigned int cpu)
 	 * were removed: MTCMOS worked but only powered domains whose cores then
 	 * jumped to address 0, and both address writers were rejected outright.
 	 */
-	err = psci_ops.cpu_on(cpu_logical_map(cpu), pa_secondary_entry);
-	pr_err("biscuit-debug: pure-PSCI cpu_on(cpu=%u, mpidr=%lu, entry=%pa) = %d\n",
-	       cpu, cpu_logical_map(cpu), &pa_secondary_entry, err);
-	pr_err("biscuit-debug: mt8163 non-PSCI release (cpu=%u, mpidr=%lu, entry=%pa) done\n",
-	       cpu, cpu_logical_map(cpu), &pa_secondary_entry);
-
 	/*
-	 * Informational only: also try the real PSCI SMC now that MTCMOS/
-	 * boot-addr/SW_ROM_PD are all staged (previously this was called
-	 * with no staging at all). Its return value is logged but not
-	 * relied on - err above (0) is what's returned to the arm64 SMP
-	 * core, since the working theory is this call may be a no-op or
-	 * even counterproductive on this platform.
+	 * One CPU_ON, and then ask the firmware what it thinks happened.
+	 *
+	 * AFFINITY_INFO is the discriminator this path was missing: if ATF
+	 * reports the core ON after a SUCCESS, the core really was released and
+	 * the fault is on our side of the handoff (entry address, exception
+	 * level, coherency). If it still reports OFF, ATF accepted the call and
+	 * did nothing, and no amount of kernel-side work will help.
+	 *
+	 * This used to call cpu_on twice and report the second, already-on
+	 * result (-22 INVALID_PARAMS) alongside the first, which read as a
+	 * contradiction and hid the fact that the first call succeeds.
 	 */
-	if (psci_ops.cpu_on) {
-		int psci_err = psci_ops.cpu_on(cpu_logical_map(cpu), pa_secondary_entry);
-
-		pr_err("biscuit-debug: (informational) psci_ops.cpu_on(cpu=%u) = %d\n",
-		       cpu, psci_err);
-	}
+	before = mt8163_raw_smc(PSCI_0_2_FN64_AFFINITY_INFO, cpu_logical_map(cpu), 0, 0);
+	err = psci_ops.cpu_on(cpu_logical_map(cpu), pa_secondary_entry);
+	/* ATF has set the entry and left the core ON_PENDING; power it. */
+	if (!err)
+		mt8163_mtcmos_power_on_cpu(cpu);
+	udelay(1000);
+	after = mt8163_raw_smc(PSCI_0_2_FN64_AFFINITY_INFO, cpu_logical_map(cpu), 0, 0);
+	pr_debug("mt8163: cpu%u on: psci=%d affinity %d -> %d\n",
+		 cpu, err, before, after);
 
 	return err;
 }
@@ -410,40 +458,5 @@ const struct cpu_operations cpu_psci_ops = {
  */
 #define MT8163_SPIN_CANARY_BASE	0x43102000
 
-static void mt8163_dump_spin_canaries(void)
-{
-	void __iomem *base;
-	int cpu;
 
-	/*
-	 * Now that MT8163_SPIN_CANARY_BASE's whole range is covered by the
-	 * mt8163_spin_table_reserved DT node (no-map), ioremap() is correct
-	 * again - the kernel's allocator won't have touched it, unlike the
-	 * first (inconclusive) run of this diagnostic before the DT
-	 * reservation existed, where the region was ordinary System RAM
-	 * and ioremap() correctly refused to double-map it.
-	 */
-	base = ioremap(MT8163_SPIN_CANARY_BASE, 0x1000);
-	if (!base) {
-		pr_err("biscuit-debug: spin canary: ioremap failed\n");
-		return;
-	}
-
-	for (cpu = 0; cpu < 4; cpu++) {
-		u32 val = readl_relaxed(base + cpu * 8);
-
-		pr_err("biscuit-debug: spin canary[cpu%d] = 0x%08x (expect 0x%08x if BootROM jumped here)\n",
-		       cpu, val, 0xc0ffee00u | cpu);
-	}
-
-	iounmap(base);
-}
-
-static int __init mt8163_atf_log_late_init(void)
-{
-	mt8163_dump_atf_log();
-	mt8163_dump_spin_canaries();
-	return 0;
-}
-late_initcall(mt8163_atf_log_late_init);
 
