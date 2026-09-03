@@ -1070,8 +1070,17 @@ VOID kalUpdateMACAddress(IN P_GLUE_INFO_T prGlueInfo, IN PUINT_8 pucMacAddr)
 	ASSERT(prGlueInfo);
 	ASSERT(pucMacAddr);
 
+	/*
+	 * dev_addr_set(), not memcpy into dev_addr.
+	 *
+	 * net_device.dev_addr is const since 5.17 and the kernel keeps it in a
+	 * per-device address hash; writing it directly leaves the hash stale and
+	 * trips WARN_ON(dev_addr_check) at net/core/dev_addr_lists.c:520 on the
+	 * next up/down - a burst of up/down flapping produced dozens of Call
+	 * trace splats before this. dev_addr_set() updates both together.
+	 */
 	if (UNEQUAL_MAC_ADDR(prGlueInfo->prDevHandler->dev_addr, pucMacAddr))
-		memcpy(prGlueInfo->prDevHandler->dev_addr, pucMacAddr, PARAM_MAC_ADDR_LEN);
+		dev_addr_set(prGlueInfo->prDevHandler, pucMacAddr);
 
 }
 
