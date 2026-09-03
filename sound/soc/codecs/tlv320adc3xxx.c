@@ -219,6 +219,20 @@
 #define ADC3XXX_WCLK_MASTER		0x04
 
 /* Interface register masks */
+/*
+ * Release DOUT outside this part's own slots.
+ *
+ * Distinct from the early-3-state bit in I2S_TDM_CTRL, which only moves
+ * the release one BCLK earlier: without THIS bit the part drives the data
+ * line for the whole frame regardless of slot configuration, so on a bus
+ * shared by four ADCs whichever one wins overwrites every other slot with
+ * its own data. Amazon's driver sets it unconditionally for DSP mode
+ * (AIC31XX_3STATES, same register, same bit); mainline never had it, which
+ * is why every microphone slot read as an exact digital zero while the
+ * clocks, framing and gains all measured correct.
+ */
+#define ADC3XXX_IFACE_3STATE		0x01
+
 #define ADC3XXX_FORMAT_MASK		0xc0
 #define ADC3XXX_FORMAT_SHIFT		6
 #define ADC3XXX_WLENGTH_MASK		0x30
@@ -594,6 +608,15 @@ static int adc3xxx_tdm_settle(struct snd_soc_dapm_widget *w,
 
 	/* Let the divider chain settle before the bus is reconfigured. */
 	msleep(100);
+
+	/*
+	 * Park DOUT in Hi-Z first. Stock disables every part's DOUT at the top
+	 * of hw_params, programs the bus, and only re-enables it at the end, so
+	 * no part is driving while slot assignments are in flux and none of
+	 * them latches a half-written configuration.
+	 */
+	snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				ADC3XXX_DOUT_BUS_KEEPER_DIS);
 
 	snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
 				adc3xxx->tdm_ctrl);
@@ -1451,10 +1474,10 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 		format = ADC3XXX_FORMAT_I2S;
 		break;
 	case SND_SOC_DAIFMT_DSP_A | SND_SOC_DAIFMT_IB_NF:
-		format = ADC3XXX_FORMAT_DSP;
+		format = ADC3XXX_FORMAT_DSP | ADC3XXX_IFACE_3STATE;
 		break;
 	case SND_SOC_DAIFMT_DSP_B | SND_SOC_DAIFMT_IB_NF:
-		format = ADC3XXX_FORMAT_DSP;
+		format = ADC3XXX_FORMAT_DSP | ADC3XXX_IFACE_3STATE;
 		break;
 	case SND_SOC_DAIFMT_RIGHT_J | SND_SOC_DAIFMT_NB_NF:
 		format = ADC3XXX_FORMAT_RJF;
@@ -1485,7 +1508,8 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	/* set clock direction and format */
 	ret = snd_soc_component_update_bits(component,
 					    ADC3XXX_INTERFACE_CTRL_1,
-					    ADC3XXX_CLKDIR_MASK | ADC3XXX_FORMAT_MASK,
+					    ADC3XXX_CLKDIR_MASK | ADC3XXX_FORMAT_MASK |
+					    ADC3XXX_IFACE_3STATE,
 					    clkdir | format);
 	if (ret < 0)
 		return ret;
