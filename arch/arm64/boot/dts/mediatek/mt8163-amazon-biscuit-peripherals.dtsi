@@ -479,6 +479,18 @@
 	 * Amazon's own DTB names these same three pads i2s1dat/i2s1ws/i2s1clk
 	 * (<0x2e>, <0x2f>, <0x30> = 46, 47, 48) on their audio node.
 	 *
+	 * NOTE: necessary but NOT sufficient - the speaker is still silent. With the
+	 * codec now genuinely receiving I2S, none of its output controls change what
+	 * the microphone array hears: toggling DAC->HP routing, DAC->LO routing, the
+	 * HP driver gain (0/6/29dB), the driver mute bit, or muting one DAC channel
+	 * (the bridge-tied theory behind stock's "Right Channel Only") all measure
+	 * flat, each averaged over six alternations against a control frequency. The
+	 * 1kHz the mics do pick up during playback is crosstalk from these very I2S
+	 * lines, not sound - it is equally present with the DAC unrouted. The amp and
+	 * speaker themselves work, since enabling the amp pops audibly. So the break
+	 * is between the codec's analogue output pins and the amplifier input, which
+	 * needs a schematic or a probe to resolve, not more register work.
+	 *
 	 * MCLK is deliberately not included: the codec takes its master clock from
 	 * the CMMCLK pad (119) shared with the mic ADCs, which is why stock has a
 	 * "cmmclk-mclk" pinctrl state and never muxes pin 15.
