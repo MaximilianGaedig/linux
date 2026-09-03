@@ -1446,7 +1446,17 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 		 */
 		static unsigned long u4Mon80211, u4Mon8023;
 
-		if (prSwRfb->u4HifRxHdrFlag & HIF_RX_HDR_FLAG_802_11_FORMAT) {
+		/*
+		 * Use the HIF RX header's own 802.11-format bit, not
+		 * prSwRfb->u4HifRxHdrFlag. That flag is only ever written by a
+		 * block in nicRxProcessPacketType() that is #if 0'd out on this
+		 * driver, so it is always zero - which made every data frame
+		 * count as 802.3 and hid whether the firmware can hand any of
+		 * them up raw. HIF_RX_HDR_GET_80211_FLAG() reads
+		 * uc80211_Reorder_PAL_TCL bit 0, the same source the live data
+		 * path (qmHandleRxPackets) trusts to decide 802.11 vs 802.3.
+		 */
+		if (HIF_RX_HDR_GET_80211_FLAG(prHifRxHdr)) {
 			u4Mon80211++;
 			biscuitMonRxFrame(prSwRfb->pvHeader, prSwRfb->u2PacketLen,
 					  HIF_RX_HDR_GET_CHNL_NUM(prHifRxHdr),

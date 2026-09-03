@@ -1629,7 +1629,8 @@ static void createWirelessDevice(void)
 	prWiphy->max_match_sets		= CFG_SCAN_SSID_MATCH_MAX_NUM;
 	prWiphy->max_sched_scan_ie_len	= CFG_CFG80211_IE_BUF_LEN;
 
-	prWiphy->interface_modes	= BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_ADHOC);
+	prWiphy->interface_modes	= BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_ADHOC)
+					| BIT(NL80211_IFTYPE_MONITOR);
 	prWiphy->bands[NL80211_BAND_2GHZ] = &mtk_band_2ghz;
 	/* always assign 5Ghz bands here, if the chip is not support 5Ghz,
 		bands[IEEE80211_BAND_5GHZ] will be assign to NULL */
@@ -2298,6 +2299,17 @@ MODULE_PARM_DESC(biscuit_monitor, "expose received 802.11 management frames on r
 static struct net_device *g_prBiscuitMonDev;
 
 /*
+ * Injection is deferred from ndo_start_xmit (softirq, TX lock held) to this
+ * workqueue. The chip's raw-TX path (cnmMemAlloc -> cnmMgtPktAlloc ->
+ * mboxSendMsg) allocates with GFP_KERNEL and can sleep, which is why
+ * cfg80211's mgmt_tx runs fine from its process-context handler but doing the
+ * same work directly in biscuitMonTx panicked the box. Queue the skb and let a
+ * worker thread do the sleeping part.
+ */
+static struct sk_buff_head g_rBiscuitMonTxQ;
+static struct work_struct g_rBiscuitMonTxWork;
+
+/*
  * Radiotap header we can actually fill honestly. The HIF RX header gives us the
  * real channel/band and RCPI for every management frame, so we advertise
  * TSFT-less CHANNEL + ANTSIGNAL and nothing else - the PHY-layer fields (MCS,
@@ -2319,6 +2331,14 @@ struct biscuit_radiotap_hdr {
 
 static int biscuitMonOpen(struct net_device *prDev)
 {
+	/*
+	 * Carrier must be ON or the qdisc silently drops every TX skb before it
+	 * ever reaches ndo_start_xmit - injection frames written to radiotap0
+	 * were being discarded by the core, not by us, which showed up as
+	 * tx_dropped climbing with no biscuitMonTx log at all. A monitor netdev
+	 * has no real link, so assert carrier unconditionally on open.
+	 */
+	netif_carrier_on(prDev);
 	netif_start_queue(prDev);
 	return 0;
 }
@@ -2329,12 +2349,112 @@ static int biscuitMonStop(struct net_device *prDev)
 	return 0;
 }
 
+/*
+ * Inject a raw 802.11 frame written to radiotap0 by a userspace tool.
+ *
+ * The skb arrives as [radiotap header][802.11 frame]. Strip the radiotap
+ * header (its length is self-describing in bytes 2-3) and hand the bare 802.11
+ * frame to the same path cfg80211's mgmt_tx uses: an MSG_MGMT_TX_REQUEST_T to
+ * the AIS FSM, whose aisFuncTxMgmtFrame() marks the MSDU fgIs802_11 = TRUE so
+ * the firmware transmits it verbatim instead of building an 802.11 header from
+ * an 802.3 payload. That is the chip's real raw-TX primitive; it is what every
+ * management and action frame the driver sends already rides on, so injection
+ * of arbitrary 802.11 frames is the same mechanism exposed to userspace.
+ */
+/* Process-context half of injection: sleep-safe, drains the TX queue. */
+static void biscuitMonTxWork(struct work_struct *prWork)
+{
+	struct sk_buff *prSkb;
+	P_GLUE_INFO_T prGlueInfo;
+	struct net_device *prDev = g_prBiscuitMonDev;
+
+	prGlueInfo = (gprWdev && gprWdev->wiphy) ? (P_GLUE_INFO_T) wiphy_priv(gprWdev->wiphy) : NULL;
+
+	while ((prSkb = skb_dequeue(&g_rBiscuitMonTxQ)) != NULL) {
+		P_MSG_MGMT_TX_REQUEST_T prMsgTxReq;
+		P_MSDU_INFO_T prMgmtFrame;
+		PUINT_8 pucFrameBuf, pucFrame80211;
+		UINT_16 u2RtLen, u2FrameLen;
+		int iDropReason = 0;
+
+		if (!prGlueInfo || !prGlueInfo->prAdapter) {
+			iDropReason = 4;
+			goto drop;
+		}
+		if (prSkb->len < 4) {
+			iDropReason = 1;
+			goto drop;
+		}
+		/* radiotap: [0]=ver [1]=pad [2..3]=len (LE); frame follows it. */
+		u2RtLen = prSkb->data[2] | (prSkb->data[3] << 8);
+		if (u2RtLen < 4 || u2RtLen >= prSkb->len) {
+			iDropReason = 2;
+			goto drop;
+		}
+		pucFrame80211 = prSkb->data + u2RtLen;
+		u2FrameLen = prSkb->len - u2RtLen;
+		if (u2FrameLen < 10) {	/* smallest real 802.11 frame is a 10-byte ACK */
+			iDropReason = 3;
+			goto drop;
+		}
+
+		prMsgTxReq = cnmMemAlloc(prGlueInfo->prAdapter, RAM_TYPE_MSG,
+					 sizeof(MSG_MGMT_TX_REQUEST_T));
+		if (!prMsgTxReq) {
+			iDropReason = 5;
+			goto drop;
+		}
+		prMgmtFrame = cnmMgtPktAlloc(prGlueInfo->prAdapter,
+					     (UINT_32) (u2FrameLen + MAC_TX_RESERVED_FIELD));
+		if (!prMgmtFrame) {
+			cnmMemFree(prGlueInfo->prAdapter, prMsgTxReq);
+			iDropReason = 6;
+			goto drop;
+		}
+
+		prMsgTxReq->prMgmtMsduInfo = prMgmtFrame;
+		prMsgTxReq->fgNoneCckRate = FALSE;
+		prMsgTxReq->fgIsWaitRsp = FALSE;
+		prMsgTxReq->u8Cookie = 0;
+		prMsgTxReq->rMsgHdr.eMsgId = MID_MNY_AIS_MGMT_TX;
+
+		pucFrameBuf = (PUINT_8) ((ULONG) prMgmtFrame->prPacket + MAC_TX_RESERVED_FIELD);
+		kalMemCopy(pucFrameBuf, pucFrame80211, u2FrameLen);
+		prMgmtFrame->u2FrameLength = u2FrameLen;
+
+		mboxSendMsg(prGlueInfo->prAdapter, MBOX_ID_0,
+			    (P_MSG_HDR_T) prMsgTxReq, MSG_SEND_METHOD_BUF);
+
+		if (prDev) {
+			prDev->stats.tx_packets++;
+			prDev->stats.tx_bytes += u2FrameLen;
+		}
+		dev_kfree_skb(prSkb);
+		continue;
+drop:
+		/* iDropReason: 1 short skb, 2 bad radiotap len, 3 frame too short,
+		 * 4 adapter not ready, 5/6 out of memory. */
+		DBGLOG(TX, WARN, "biscuit-inject: dropped frame, reason=%d len=%u\n",
+		       iDropReason, prSkb->len);
+		if (prDev)
+			prDev->stats.tx_dropped++;
+		dev_kfree_skb(prSkb);
+	}
+}
+
 static netdev_tx_t biscuitMonTx(struct sk_buff *prSkb, struct net_device *prDev)
 {
-	/* TX on the monitor interface is not supported; mgmt-frame injection goes
-	 * through cfg80211's mgmt_tx on wlan0 instead. */
-	dev_kfree_skb(prSkb);
-	prDev->stats.tx_dropped++;
+	/*
+	 * softirq context: only queue and kick the worker. Bound the backlog so a
+	 * runaway injector cannot exhaust memory; the raw-TX path is not fast.
+	 */
+	if (skb_queue_len(&g_rBiscuitMonTxQ) > 256) {
+		prDev->stats.tx_dropped++;
+		dev_kfree_skb(prSkb);
+		return NETDEV_TX_OK;
+	}
+	skb_queue_tail(&g_rBiscuitMonTxQ, prSkb);
+	schedule_work(&g_rBiscuitMonTxWork);
 	return NETDEV_TX_OK;
 }
 
@@ -2362,6 +2482,9 @@ VOID biscuitMonRegister(VOID)
 	prDev->flags |= IFF_NOARP;
 	netif_carrier_off(prDev);
 
+	skb_queue_head_init(&g_rBiscuitMonTxQ);
+	INIT_WORK(&g_rBiscuitMonTxWork, biscuitMonTxWork);
+
 	if (register_netdev(prDev) < 0) {
 		DBGLOG(INIT, ERROR, "biscuit-mon: register_netdev failed\n");
 		free_netdev(prDev);
@@ -2369,7 +2492,7 @@ VOID biscuitMonRegister(VOID)
 	}
 
 	g_prBiscuitMonDev = prDev;
-	DBGLOG(INIT, ERROR, "biscuit-mon: %s up (mgmt/control frames only)\n", prDev->name);
+	DBGLOG(INIT, ERROR, "biscuit-mon: %s up (RX mgmt/ctrl; TX injection)\n", prDev->name);
 }
 
 VOID biscuitMonUnregister(VOID)
@@ -2378,6 +2501,8 @@ VOID biscuitMonUnregister(VOID)
 		return;
 	unregister_netdev(g_prBiscuitMonDev);
 	g_prBiscuitMonDev = NULL;
+	cancel_work_sync(&g_rBiscuitMonTxWork);
+	skb_queue_purge(&g_rBiscuitMonTxQ);
 }
 
 /* Called from nicRxProcessMgmtPacket for every raw 802.11 management frame. */
