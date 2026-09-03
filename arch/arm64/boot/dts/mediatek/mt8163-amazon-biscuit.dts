@@ -145,18 +145,54 @@
 	 * mirror that by leaving this regulator off unless something asks for
 	 * it, rather than pinning it high the way the old 124 amp node did.
 	 */
-	ext_spk_dacmux: regulator-ext-spk-dacmux {
+	/*
+	 * Second amplifier enable, on GPIO 124.
+	 *
+	 * The extracted OTA device tree (amzn0_full.dts) is the authority for
+	 * this exact board: its audio node's "extamp-pullhigh"/"extamp-pulllow"
+	 * pinctrl states drive GPIO 124 (pins = <0x7c00>), and GPIO 122 is never
+	 * referenced anywhere in it. The pre-EVT source files put extamp on 122,
+	 * which is where our first ext_spk_amp came from, but the shipped
+	 * firmware uses 124 - so drive both, DAPM-gated the same way, until a
+	 * listen test says which one actually gates the amp. Named separately so
+	 * the machine driver can pull it up as its own supply widget.
+	 */
+	ext_spk_amp2: regulator-ext-spk-amp2 {
 		compatible = "regulator-fixed";
-		regulator-name = "ext-spk-dacmux";
+		regulator-name = "ext-spk-amp2";
 		gpio = <&pio 124 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
-		/*
-		 * Left disabled so the pad stays unclaimed and can be driven
-		 * from userspace while working out which mux leg feeds the
-		 * amplifier. Stock never selects either dacmux state at boot
-		 * either, so "unclaimed" is also the closest match to stock.
-		 */
-		status = "disabled";
+	};
+
+	/*
+	 * External amplifier gain select, GPIOs 28 and 29.
+	 *
+	 * Stock's AudDrv_GPIO_EXTAMP_Gain_Set(3) drives both high for gain 3 on
+	 * every speaker-on (audexampgain3: pins <0x1c00>=GPIO28 and <0x1d00>=
+	 * GPIO29, both output-high). Our port drove neither, leaving the pads
+	 * floating - an amplifier gain input left to float can sit anywhere,
+	 * including a mute/shutdown code. Hold both high (gain 3) for the whole
+	 * session via always-on regulators; the gain input is harmless while the
+	 * amp enable is de-asserted, so it does not need DAPM gating. Regulators
+	 * (not gpio-hogs) so the pinctrl gpiochip is fully up before the pad is
+	 * requested - a hog on &pio takes the whole pinctrl driver down.
+	 */
+	ext_spk_gain_a: regulator-ext-spk-gain-a {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-gain-a";
+		gpio = <&pio 28 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	ext_spk_gain_b: regulator-ext-spk-gain-b {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-gain-b";
+		gpio = <&pio 29 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
 	};
 
 	gpio-keys {
@@ -413,6 +449,7 @@
 		 * same way.
 		 */
 		ext-spk-amp-supply = <&ext_spk_amp>;
+		ext-spk-amp2-supply = <&ext_spk_amp2>;
 		/*
 		 * MT8163's AFE splits playback into a front-end memif (DL1)
 		 * and a separate I2S back-end DAI; only a DPCM card can bind

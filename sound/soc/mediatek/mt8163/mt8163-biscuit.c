@@ -46,6 +46,13 @@ static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	 * only while a speaker stream is open and refcounts it.
 	 */
 	SND_SOC_DAPM_REGULATOR_SUPPLY("ext-spk-amp", 0, 0),
+	/*
+	 * Second amplifier enable, GPIO 124 - the pin the shipped OTA device
+	 * tree actually uses for extamp (see ext_spk_amp2 in the DTS). Driven
+	 * the same DAPM-gated way as ext-spk-amp so whichever pin really gates
+	 * the amp on this board is asserted during playback.
+	 */
+	SND_SOC_DAPM_REGULATOR_SUPPLY("ext-spk-amp2", 0, 0),
 };
 
 /* The aic32x4's line outputs drive the on-board amplifier. */
@@ -101,6 +108,7 @@ static const struct snd_soc_dapm_route biscuit_routes[] = {
 	 * described means whichever pair is populated can be driven.
 	 */
 	{ "Ext Spk", NULL, "ext-spk-amp" },
+	{ "Ext Spk", NULL, "ext-spk-amp2" },
 	{ "Ext Spk", NULL, "Speaker HPL" },
 	{ "Ext Spk", NULL, "Speaker HPR" },
 	{ "Ext Spk", NULL, "Speaker LOL" },
