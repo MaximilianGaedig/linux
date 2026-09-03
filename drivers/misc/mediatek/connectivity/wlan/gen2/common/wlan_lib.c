@@ -1146,12 +1146,16 @@ int biscuit_fix_fntable = 1;
 module_param(biscuit_fix_fntable, int, 0644);
 
 /*
- * 0 = the 2017 patch that ships on this device, 1 = the 2021 patch from the
- * OTA. Selects which decoded table to replay; getting this wrong writes
- * addresses from the other build and the firmware faults exactly as it did
- * before the fixup existed.
+ * 0 = the 2017 patch, 1 = the 2021 patch. Selects which decoded table to
+ * replay; getting this wrong writes addresses from the other build and the
+ * firmware faults exactly as it did before the fixup existed.
+ *
+ * DEFAULT 1. The initrd now ships the firmware set from the device's own Fire
+ * OS 5.5.5.4 OTA rather than the 2017 set it carried before - the chip reports
+ * patchver(20210531) with it - so the 2021 table is the matching one. The old
+ * default of 0 belonged to the 2017 blobs.
  */
-int biscuit_fw2021;
+int biscuit_fw2021 = 1;
 module_param(biscuit_fw2021, int, 0644);
 
 /*
@@ -1207,11 +1211,15 @@ module_param(biscuit_patch_tables, int, 0644);
 
 /*
  * 1 = install a trampoline at the WiFi entry (0x6a000) so the firmware runs the
- * patch main-init (0x69828) itself. Default 0; enable via sysfs before WiFi
- * function-on so a failure just reboots to the working path. See the install
- * site in wlanAdapterStart.
+ * patch main-init (0x69828) itself. See the install site in wlanAdapterStart.
+ *
+ * DEFAULT 0, and it must stay 0 now: 0x6a000/0x69828 are addresses from the
+ * 2017 patch, and the initrd now ships the 2021 patch from the device's own
+ * OTA. With the trampoline on against that patch the firmware never comes
+ * ready (download firmware status = -5, eFailReason=3, no wlan0); with it off
+ * the same build brings wlan0 up and scans. Measured both ways.
  */
-int biscuit_trampoline = 1;
+int biscuit_trampoline;
 module_param(biscuit_trampoline, int, 0644);
 
 int biscuit_entry_probe;
@@ -1261,7 +1269,19 @@ module_param(biscuit_force_assert_us, int, 0644);
  * still never writes the two firmware sections at +0x6000 and +0x4e000.
  * Turning this off leaves section 3 reading back as zeroes, so it stays on.
  */
-/* #define BISCUIT_EMI_HOST_FILL 1 */  /* off: let the chip place them, so the sweep finds the chip's own copy */
+/*
+ * OFF, and now for a measured reason rather than an open question.
+ *
+ * Turning it ON makes both sections read back "match" at 99% occupancy - the
+ * image really is placed - and then the firmware does not come ready at all:
+ * wlanProbe fails i4Status=-5 eFailReason=3 and no wlan0 appears, repeatably,
+ * where with the fill off 5 GHz works. So these 0xf00xxxxx destinations are
+ * NOT the DRAM window; they are internal to the chip, and this window is
+ * simply the wrong place to look. The "sections missing from EMI" reading of
+ * the fwsec mismatch is therefore wrong, and writing them there corrupts
+ * memory the chip is using for something else.
+ */
+/* #define BISCUIT_EMI_HOST_FILL 1 */
 /* #define BISCUIT_CHIP_PEEK_TEST 1 */
 /* #define BISCUIT_CRC_TEST 1 */
 
@@ -2130,9 +2150,15 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 					       u4FirstHole);
 				}
 				iounmap(pucEmi);
+#ifdef BISCUIT_EMI_HOST_FILL
 				DBGLOG(INIT, WARN,
 				       "biscuit-fwsec[%u]: host-wrote 0x%x bytes into EMI window\n",
 				       i, u4Len);
+#else
+				DBGLOG(INIT, WARN,
+				       "biscuit-fwsec[%u]: host fill is OFF, nothing written by us\n",
+				       i);
+#endif
 
 				DBGLOG(INIT, WARN,
 				       "biscuit-fwsec[%u]: dest=0x%08x len=0x%x emi_phys=0x%llx %s\n",
