@@ -1753,7 +1753,7 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 	P_CONNECTION_SETTINGS_T prConnSettings;
 	P_BSS_DESC_T prBssDesc;
 	P_MSG_CH_REQ_T prMsgChReq;
-	P_MSG_SCN_SCAN_REQ prScanReqMsg;
+	P_MSG_SCN_SCAN_REQ_V2 prScanReqMsg;
 	P_AIS_REQ_HDR_T prAisReq;
 	ENUM_BAND_T eBand;
 	UINT_8 ucChannel;
@@ -2130,16 +2130,30 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 #endif
 			}
 
-			prScanReqMsg = (P_MSG_SCN_SCAN_REQ) cnmMemAlloc(prAdapter,
+			/*
+			 * V2, as stock does.
+			 *
+			 * MSG_SCN_SCAN_REQ goes to the firmware as
+			 * CMD_ID_SCAN_REQ (0x1E); MSG_SCN_SCAN_REQ_V2 goes as
+			 * CMD_ID_SCAN_REQ_V2 (0x04). The two payloads are not
+			 * layout-compatible - legacy has ucSSIDLength/aucSSID[32]
+			 * where V2 has PARAM_SSID_T arSSID[4], so ucChannelType,
+			 * ucChannelListNum and arChannelList[] sit at offset
+			 * 42/43/44 in one and 152/153/154 in the other. Stock's
+			 * AIS station scans have only ever used V2 (0x1E is its
+			 * P2P/BOW/RLM path), so the channel list we build here
+			 * was landing in the wrong place in the command.
+			 */
+			prScanReqMsg = (P_MSG_SCN_SCAN_REQ_V2) cnmMemAlloc(prAdapter,
 									RAM_TYPE_MSG,
-									OFFSET_OF(MSG_SCN_SCAN_REQ,
+									OFFSET_OF(MSG_SCN_SCAN_REQ_V2,
 										  aucIE) + u2ScanIELen);
 			if (!prScanReqMsg) {
 				ASSERT(0);	/* Can't trigger SCAN FSM */
 				return;
 			}
 
-			prScanReqMsg->rMsgHdr.eMsgId = MID_AIS_SCN_SCAN_REQ;
+			prScanReqMsg->rMsgHdr.eMsgId = MID_AIS_SCN_SCAN_REQ_V2;
 			prScanReqMsg->ucSeqNum = ++prAisFsmInfo->ucSeqNumOfScanReq;
 			prScanReqMsg->ucNetTypeIndex = (UINT_8) NETWORK_TYPE_AIS_INDEX;
 
@@ -2163,19 +2177,29 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 				if (prAisFsmInfo->ucScanSSIDLen == 0) {
 					/* Scan for all available SSID */
 					prScanReqMsg->ucSSIDType = SCAN_REQ_SSID_WILDCARD;
+					prScanReqMsg->ucSSIDNum = 0;
+					prScanReqMsg->prSsid = NULL;
 				} else {
 					prScanReqMsg->ucSSIDType = SCAN_REQ_SSID_SPECIFIED;
-					COPY_SSID(prScanReqMsg->aucSSID,
-						  prScanReqMsg->ucSSIDLength,
+					COPY_SSID(prAisFsmInfo->rScanSSID.aucSsid,
+						  prAisFsmInfo->rScanSSID.u4SsidLen,
 						  prAisFsmInfo->aucScanSSID, prAisFsmInfo->ucScanSSIDLen);
+					prScanReqMsg->ucSSIDNum = 1;
+					prScanReqMsg->prSsid = &prAisFsmInfo->rScanSSID;
 				}
 			} else {
 				/* Scan for determined SSID */
 				prScanReqMsg->ucSSIDType = SCAN_REQ_SSID_SPECIFIED;
-				COPY_SSID(prScanReqMsg->aucSSID,
-					  prScanReqMsg->ucSSIDLength,
+				COPY_SSID(prAisFsmInfo->rScanSSID.aucSsid,
+					  prAisFsmInfo->rScanSSID.u4SsidLen,
 					  prConnSettings->aucSSID, prConnSettings->ucSSIDLen);
+				prScanReqMsg->ucSSIDNum = 1;
+				prScanReqMsg->prSsid = &prAisFsmInfo->rScanSSID;
 			}
+
+			/* default channel dwell time / probe delay, as stock */
+			prScanReqMsg->u2ProbeDelay = 1;
+			prScanReqMsg->u2ChannelDwellTime = 0;
 
 			/* check if tethering is running and need to fix on specific channel */
 			if (cnmAisInfraChannelFixed(prAdapter, &eBand, &ucChannel) == TRUE) {
@@ -2378,7 +2402,7 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 * \return none
 */
 /*----------------------------------------------------------------------------*/
-VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ ScanReqMsg, IN ENUM_AIS_STATE_T CurrentState)
+VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ_V2 ScanReqMsg, IN ENUM_AIS_STATE_T CurrentState)
 {
 	/*get scan channel infro from prAdapter->prGlueInfo->prScanRequest*/
 	struct cfg80211_scan_request *scan_req_t = NULL;

@@ -67,7 +67,14 @@
 
 #define CFG_SUBSYS_COEX_NEED 0
 
-#define CFG_WMT_COREDUMP_ENABLE 1
+/*
+ * 0, as stock (its wmt_ic_soc.c:69). With this at 1 we run
+ * mtk_wcn_stp_coredump_flag_ctrl(1), which makes init_table_6 send
+ * WMT_CORE_DUMP_LEVEL_04_CMD ("full dump on assert") - a command stock never
+ * sends, and one that changes what the firmware reserves and how it behaves
+ * on assert.
+ */
+#define CFG_WMT_COREDUMP_ENABLE 0
 
 #define CFG_WMT_MULTI_PATCH (1)
 
@@ -1077,30 +1084,28 @@ static INT32 mtk_wcn_soc_sw_init(P_WMT_HIF_CONF pWmtHifConf)
 	}
 #endif
 	/* 6.3 Multi-patch Patch download */
+	/*
+	 * Reset after each patch, inside the loop, exactly as stock does
+	 * (stock wmt_ic_soc.c:996-1007).
+	 *
+	 * This was previously batched into a single reset after both patches
+	 * because per-patch reset made the second download fail. That was
+	 * measured with the patch order reversed - see patch_names[] above -
+	 * so the failing case was "download the seq-2 patch first, reset, then
+	 * try the seq-1 patch", which is not what stock ever does.
+	 */
 	for (patch_index = 0; patch_index < patch_num; patch_index++) {
 		iRet = mtk_wcn_soc_patch_dwn(patch_index);
 		if (iRet) {
 			WMT_ERR_FUNC("patch dwn fail (%d),patch_index(%d)\n", iRet, patch_index);
 			return -7;
 		}
+		iRet = wmt_core_init_script(init_table_3, osal_array_size(init_table_3));
+		if (iRet) {
+			WMT_ERR_FUNC("init_table_3 fail(%d)\n", iRet);
+			return -8;
+		}
 	}
-
-	/*
-	 * Activate both patches with a single reset, after both are in place.
-	 *
-	 * Upstream resets after each patch. Tried that here with settle waits
-	 * of 100ms and 500ms: the second patch's download then fails outright
-	 * (mtk_wcn_soc_patch_dwn errors out of wmt_core_stp_init), which is
-	 * worse than batching them. Neither ordering makes the chip survive a
-	 * WiFi firmware download, so the ordering is not the fault - but this
-	 * one at least gets the whole init script through.
-	 */
-	iRet = wmt_core_init_script(init_table_3, osal_array_size(init_table_3));
-	if (iRet) {
-		WMT_ERR_FUNC("init_table_3 fail(%d)\n", iRet);
-		return -8;
-	}
-	osal_sleep_ms(100);
 
 
 #if CFG_WMT_PATCH_DL_OPTM
@@ -2144,9 +2149,19 @@ static WMT_PATCH_INFO gBiscuitPatchInfo[BISCUIT_WMT_PATCH_NUM];
 
 static INT32 mtk_wcn_soc_patch_info_prepare(VOID)
 {
+	/*
+	 * Order matters, and it is not filename order.
+	 *
+	 * Stock takes this list from userspace: 6620_launcher reads byte 24 of
+	 * each patch header and uses its low nibble as the download sequence.
+	 * For these files byte 24 is 0x21 in ROMv2_lm_patch_1_1_hdr.bin (seq 1)
+	 * and 0x22 in ROMv2_lm_patch_1_0_hdr.bin (seq 2), so stock downloads
+	 * _1_1 (to 0xf00e0000) first and _1_0 (to 0x00060000) second. We had
+	 * them the other way round.
+	 */
 	static const char * const patch_names[BISCUIT_WMT_PATCH_NUM] = {
-		BISCUIT_WMT_PATCH_NAME_1,
 		BISCUIT_WMT_PATCH_NAME_2,
+		BISCUIT_WMT_PATCH_NAME_1,
 	};
 	UINT32 i;
 
