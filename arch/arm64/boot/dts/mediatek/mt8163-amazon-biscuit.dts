@@ -126,8 +126,15 @@
 		regulator-name = "ext-spk-amp";
 		gpio = <&pio 122 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
-		regulator-always-on;
-		regulator-boot-on;
+		/*
+		 * Deliberately not always-on. The amplifier has audible
+		 * self-noise with nothing driving it, so holding it enabled
+		 * makes the speaker hiss continuously. Stock enables it only
+		 * while a speaker stream is open and refcounts it
+		 * (AudioALSACodecDeviceOutExtSpeakerAmp::open/close writes
+		 * Ext_Speaker_Amp_Switch On/Off); the machine driver does the
+		 * same from its DAPM supply widget.
+		 */
 	};
 
 	/*
@@ -399,6 +406,13 @@
 	sound: sound {
 		compatible = "amazon,biscuit-audio";
 		mediatek,platform = <&afe>;
+		/*
+		 * Enabled by a DAPM supply widget so the amplifier is powered
+		 * only while a playback stream is up - it hisses audibly when
+		 * held on with nothing driving it, and stock refcounts it the
+		 * same way.
+		 */
+		ext-spk-amp-supply = <&ext_spk_amp>;
 		/*
 		 * MT8163's AFE splits playback into a front-end memif (DL1)
 		 * and a separate I2S back-end DAI; only a DPCM card can bind

@@ -525,28 +525,26 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				WMT_PLAT_ERR_FUNC("enable VCN18 fail\n");
 			else
 				WMT_PLAT_DBG_FUNC("enable VCN18 ok\n");
-			{
-				/*
-				 * Stock does this here, on every power-on,
-				 * between enabling VCN18 and the 150us settle
-				 * (stock mtk_wcn_consys_hw.c:419-433). The
-				 * group puts WB_RSTB/SCLK/SDATA/SEN back to
-				 * their WB_* function as pulled-up inputs; the
-				 * boot-time pinctrl-0 default is not enough,
-				 * because the pads have to be re-released after
-				 * every power cycle of the combo chip.
-				 */
-				struct pinctrl_state *pinctrl_wifi_reset;
-
-				pinctrl_wifi_reset =
-					pinctrl_lookup_state(consys_pinctrl,
-							     "wifi_reset_init");
-				if (IS_ERR(pinctrl_wifi_reset))
-					WMT_PLAT_ERR_FUNC("no wifi_reset_init state\n");
-				else
-					pinctrl_select_state(consys_pinctrl,
-							     pinctrl_wifi_reset);
-			}
+			/*
+			 * Stock re-selects the wifi_reset_init pinctrl group here, on
+			 * every power-on (stock mtk_wcn_consys_hw.c:419-433), which
+			 * returns WB_RSTB/SCLK/SDATA/SEN to their WB_* function as
+			 * pulled-up inputs. Do NOT do that on this port.
+			 *
+			 * Here those pads are owned by gpiod and _wmt_detect_pwr_on()
+			 * drives PMU_EN (pin 65) high as the actual chip enable. Muxing
+			 * them back to WB_* releases that enable mid-sequence: the chip
+			 * stops answering, wmt_core_stp_init() fails -1 in
+			 * opfunc_pwr_on(), and BOTH radios die - the WiFi function-on
+			 * returns EFAULT with no wlan0, and mtk_bt_hci_open reports
+			 * "func on failed". Measured on the UART, which is the only
+			 * console that survives it.
+			 *
+			 * Stock can release the pads because its CONSYS block drives
+			 * WB_SEN itself; this port has no equivalent, so the GPIO has to
+			 * keep holding it. That also closes the theory that we leave
+			 * WB_SEN pinned low - at runtime it is held HIGH, deliberately.
+			 */
 		}
 		udelay(150);
 printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
