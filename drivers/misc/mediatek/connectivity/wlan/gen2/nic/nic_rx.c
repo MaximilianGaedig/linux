@@ -811,6 +811,8 @@ Add per station flow control when STA is in PS
 */
 #include "precomp.h"
 
+extern int biscuit_monitor;
+
 #ifndef LINUX
 #include <limits.h>
 #else
@@ -1417,6 +1419,46 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 	fIsDummy = (prHifRxHdr->u2PacketLen >= 12) ? FALSE : TRUE;
 
 	nicRxFillRFB(prAdapter, prSwRfb);
+
+	/*
+	 * Feed data frames to the monitor netdev as well as management ones.
+	 *
+	 * The hook in nicRxProcessMgmtPacket() only ever saw beacons, probes
+	 * and auth/assoc, so radiotap0 could never show a data frame - not even
+	 * a WPA handshake. pvHeader still points at the 802.11 header here,
+	 * before qmHandleRxPackets() reorders and converts to Ethernet.
+	 *
+	 * biscuitMonRxFrame() returns immediately unless biscuit_monitor is on,
+	 * so this costs one predictable branch per packet when it is off. That
+	 * matters: per-frame work in this path has previously been enough to
+	 * break association timing on its own.
+	 */
+	if (biscuit_monitor) {
+		/*
+		 * Only 802.11-format frames can go to radiotap.
+		 *
+		 * This firmware hands most data frames up already decapsulated
+		 * to 802.3, in which case pvHeader points at an Ethernet header
+		 * and feeding it to the monitor would emit garbage that decodes
+		 * as a reserved 802.11 type. HIF_RX_HDR_FLAG_802_11_FORMAT is
+		 * the firmware telling us which it is. Count both so it is
+		 * answerable whether raw data frames are available at all.
+		 */
+		static unsigned long u4Mon80211, u4Mon8023;
+
+		if (prSwRfb->u4HifRxHdrFlag & HIF_RX_HDR_FLAG_802_11_FORMAT) {
+			u4Mon80211++;
+			biscuitMonRxFrame(prSwRfb->pvHeader, prSwRfb->u2PacketLen,
+					  HIF_RX_HDR_GET_CHNL_NUM(prHifRxHdr),
+					  HIF_RX_HDR_GET_RF_BAND(prHifRxHdr) == BAND_5G,
+					  (INT_8) RCPI_TO_dBm(prHifRxHdr->ucRcpi));
+		} else {
+			u4Mon8023++;
+		}
+		if (((u4Mon80211 + u4Mon8023) & 0x3f) == 0)
+			DBGLOG(RX, WARN, "biscuit-mon: data frames 802.11-format=%lu 802.3-format=%lu\n",
+			       u4Mon80211, u4Mon8023);
+	}
 
 #if CFG_TCP_IP_CHKSUM_OFFLOAD || CFG_TCP_IP_CHKSUM_OFFLOAD_NDIS_60
 	{
