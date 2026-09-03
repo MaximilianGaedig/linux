@@ -464,6 +464,38 @@
 	 */
 
 
+	/*
+	 * Speaker I2S1 pads.
+	 *
+	 * The AFE's I2S1 playback back-end is fanned out to two pad sets on this
+	 * board: pins 72/73/74, which the mic FPGA claims for its own reference
+	 * input, and pins 46/47/48, which go to the aic32x4. Only the FPGA set was
+	 * ever muxed, so the AFE clocked I2S1 happily, the FPGA's DAC-loopback
+	 * channels showed the stream at full scale - and the codec sat on three
+	 * pads still in EINT mode, receiving no BCLK, no LRCK and no data. Its DAC
+	 * then holds DC: silent, while the output driver still clicks audibly as it
+	 * powers up and down, which is exactly the "pops but no sound" symptom.
+	 *
+	 * Amazon's own DTB names these same three pads i2s1dat/i2s1ws/i2s1clk
+	 * (<0x2e>, <0x2f>, <0x30> = 46, 47, 48) on their audio node.
+	 *
+	 * MCLK is deliberately not included: the codec takes its master clock from
+	 * the CMMCLK pad (119) shared with the mic ADCs, which is why stock has a
+	 * "cmmclk-mclk" pinctrl state and never muxes pin 15.
+	 *
+	 * Safe to claim: these pads' alternate function is ANT_SEL1/2/3, but the
+	 * WiFi antenna select on this board is on pins 85/86 (see the consys
+	 * pinctrl in mt8163-amazon-common.dtsi), not here.
+	 */
+	aud_pins_spk_i2s1: audspki2s1 {
+		pins {
+			pinmux = <MT8163_PIN_46_EINT14__FUNC_I2S1_DO>,
+				 <MT8163_PIN_47_EINT15__FUNC_I2S1_LRCK>,
+				 <MT8163_PIN_48_EINT16__FUNC_I2S1_BCK>;
+			drive-strength = <MTK_DRIVE_4mA>;
+		};
+	};
+
 	aud_pins_i2s1_idle: audi2s1idle {
 		pins {
 			pinmux = <MT8163_PIN_72_I2S_DATA_IN__FUNC_GPIO72>,
