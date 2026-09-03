@@ -39,6 +39,13 @@ static struct snd_soc_jack_gpio biscuit_hp_gpio = {
 static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	SND_SOC_DAPM_SPK("Ext Spk", NULL),
 	SND_SOC_DAPM_MIC("Mic Array", NULL),
+	/*
+	 * The external amplifier's enable line (GPIO 122), as a supply widget
+	 * so DAPM turns it on with the speaker path and off again after.
+	 * Holding it on continuously makes the speaker hiss; stock enables it
+	 * only while a speaker stream is open and refcounts it.
+	 */
+	SND_SOC_DAPM_REGULATOR_SUPPLY("ext-spk-amp", 0, 0),
 };
 
 /* The aic32x4's line outputs drive the on-board amplifier. */
@@ -93,6 +100,7 @@ static const struct snd_soc_dapm_route biscuit_routes[] = {
 	 * The LO routes stay as well: they cost nothing, and keeping both
 	 * described means whichever pair is populated can be driven.
 	 */
+	{ "Ext Spk", NULL, "ext-spk-amp" },
 	{ "Ext Spk", NULL, "Speaker HPL" },
 	{ "Ext Spk", NULL, "Speaker HPR" },
 	{ "Ext Spk", NULL, "Speaker LOL" },
