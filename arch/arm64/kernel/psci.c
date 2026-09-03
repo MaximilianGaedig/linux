@@ -146,142 +146,6 @@ static bool mt8163_spm_poll(void __iomem *base, unsigned int off, u32 mask, u32 
 	return true;
 }
 
-/* Returns true if the CPU's power domain was successfully turned on. */
-static bool mt8163_mtcmos_power_on_cpu(unsigned int cpu)
-{
-	unsigned long flags;
-	unsigned int pwr_con_off, l1_pdn_off, ca7_bit;
-	u32 val;
-	bool ok = true;
-
-	switch (cpu) {
-	case 1:
-		pwr_con_off = SPM_CA7_CPU1_PWR_CON;
-		l1_pdn_off = SPM_CA7_CPU1_L1_PDN;
-		ca7_bit = CA7_CPU1;
-		break;
-	case 2:
-		pwr_con_off = SPM_CA7_CPU2_PWR_CON;
-		l1_pdn_off = SPM_CA7_CPU2_L1_PDN;
-		ca7_bit = CA7_CPU2;
-		break;
-	case 3:
-		pwr_con_off = SPM_CA7_CPU3_PWR_CON;
-		l1_pdn_off = SPM_CA7_CPU3_L1_PDN;
-		ca7_bit = CA7_CPU3;
-		break;
-	default:
-		return true;
-	}
-
-	if (!mt8163_spm_base) {
-		mt8163_spm_base = ioremap(MT8163_SPM_BASE_PHY, 0x1000);
-		if (!mt8163_spm_base) {
-			pr_err("biscuit-debug: mtcmos: ioremap SPM base failed\n");
-			return false;
-		}
-	}
-
-	spin_lock_irqsave(&mt8163_spm_lock, flags);
-
-	/* enable register control */
-	writel_relaxed((SPM_PROJECT_CODE << 16) | (1U << 0),
-			mt8163_spm_base + SPM_POWERON_CONFIG_SET);
-
-	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
-	writel_relaxed(val | PWR_ON, mt8163_spm_base + pwr_con_off);
-	udelay(1);
-	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
-	writel_relaxed(val | PWR_ON_2ND, mt8163_spm_base + pwr_con_off);
-
-	if (!mt8163_spm_poll(mt8163_spm_base, SPM_PWR_STATUS, ca7_bit, ca7_bit) ||
-	    !mt8163_spm_poll(mt8163_spm_base, SPM_PWR_STATUS_2ND, ca7_bit, ca7_bit)) {
-		pr_err("biscuit-debug: mtcmos: cpu%u PWR_STATUS ack timeout\n", cpu);
-		ok = false;
-		goto out;
-	}
-
-	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
-	writel_relaxed(val & ~PWR_ISO, mt8163_spm_base + pwr_con_off);
-
-	val = readl_relaxed(mt8163_spm_base + l1_pdn_off);
-	writel_relaxed(val & ~L1_PDN, mt8163_spm_base + l1_pdn_off);
-
-	if (!mt8163_spm_poll(mt8163_spm_base, l1_pdn_off, L1_PDN_ACK, 0)) {
-		pr_err("biscuit-debug: mtcmos: cpu%u L1_PDN_ACK timeout\n", cpu);
-		ok = false;
-		goto out;
-	}
-
-	udelay(1);
-	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
-	writel_relaxed(val | SRAM_ISOINT_B, mt8163_spm_base + pwr_con_off);
-	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
-	writel_relaxed(val & ~SRAM_CKISO, mt8163_spm_base + pwr_con_off);
-
-	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
-	writel_relaxed(val & ~PWR_CLK_DIS, mt8163_spm_base + pwr_con_off);
-	val = readl_relaxed(mt8163_spm_base + pwr_con_off);
-	writel_relaxed(val | PWR_RST_B, mt8163_spm_base + pwr_con_off);
-
-out:
-	spin_unlock_irqrestore(&mt8163_spm_lock, flags);
-	pr_err("biscuit-debug: mtcmos: cpu%u power-on %s\n", cpu, ok ? "OK" : "FAILED");
-	return ok;
-}
-
-/*
- * SW_ROM_PD (bit 31 of BOOTROM_SEC_CTRL = INFRACFG_AO_BASE+0x804, the
- * register right next to the boot-address register at +0x800) enables
- * "BootROM power-down mode" - per the stock kernel's mt_smp_prepare_cpus()
- * (drivers/misc/mediatek/base/power/mt8163/mt-smp.c), this is set
- * *alongside* staging the boot address, and plausibly gates whether the
- * BootROM's reset-vector polling logic honors that boot-address register
- * at all. Never set by this port until now.
- */
-#define MT8163_INFRACFG_AO_BOOTROM_SEC_CTRL_OFF	0x804
-#define MT8163_SW_ROM_PD				(1U << 31)
-
-static void mt8163_smp_set_boot_addr(phys_addr_t entry)
-{
-	void __iomem *infracfg_ao_base;
-	u32 readback_addr, readback_ctrl;
-	int smc_ret1, smc_ret2;
-
-	/*
-	 * Confirmed on real hardware: a direct non-secure writel_relaxed()
-	 * to these registers is silently dropped - readback immediately
-	 * after writing shows 0x0 regardless of what was written. This
-	 * region is evidently secure-world-protected against non-secure
-	 * (kernel/EL1) writes, the same way the CCI-snoop MP0_AXI_CONFIG
-	 * register needs the MTK_SIP_KERNEL_MCUSYS_WRITE SMC rather than a
-	 * direct poke. Route through the same secure-call service instead.
-	 */
-	smc_ret1 = mt8163_secure_call(MTK_SIP_KERNEL_MCUSYS_WRITE,
-				       MT8163_INFRACFG_AO_BASE + MT8163_INFRACFG_AO_BOOT_ADDR_OFF,
-				       (u32)entry, 0);
-	pr_err("biscuit-debug: mt8163_smp_set_boot_addr: SMC-wrote entry=%pa to infracfg_ao+0x800, ret=%d\n",
-	       &entry, smc_ret1);
-
-	smc_ret2 = mt8163_secure_call(MTK_SIP_KERNEL_MCUSYS_WRITE,
-				       MT8163_INFRACFG_AO_BASE + MT8163_INFRACFG_AO_BOOTROM_SEC_CTRL_OFF,
-				       MT8163_SW_ROM_PD, 0);
-	pr_err("biscuit-debug: mt8163_smp_set_boot_addr: SMC-set SW_ROM_PD at infracfg_ao+0x804, ret=%d\n",
-	       smc_ret2);
-
-	/* Read back (plain MMIO read, not SMC) to confirm the SMC writes stuck. */
-	infracfg_ao_base = ioremap(MT8163_INFRACFG_AO_BASE, 0x1000);
-	if (!infracfg_ao_base) {
-		pr_err("biscuit-debug: mt8163_smp_set_boot_addr: ioremap failed\n");
-		return;
-	}
-	readback_addr = readl_relaxed(infracfg_ao_base + MT8163_INFRACFG_AO_BOOT_ADDR_OFF);
-	readback_ctrl = readl_relaxed(infracfg_ao_base + MT8163_INFRACFG_AO_BOOTROM_SEC_CTRL_OFF);
-	pr_err("biscuit-debug: mt8163_smp_set_boot_addr: readback boot_addr=0x%x sec_ctrl=0x%x\n",
-	       readback_addr, readback_ctrl);
-	iounmap(infracfg_ao_base);
-}
-
 /*
  * Diagnostic only: dump the "mediatek,mt8163-atf-reserved-memory" region
  * (physical 0x43000000, 0x30000 bytes per mt8163.dtsi) that genuine ATF/
@@ -411,9 +275,32 @@ static int cpu_psci_cpu_boot(unsigned int cpu)
 	 * cpu_on() always returning success while the core never runs. Do
 	 * the non-secure MTCMOS+boot-address release only, skip the SMC.
 	 */
-	mt8163_mtcmos_power_on_cpu(cpu);
-	mt8163_smp_set_boot_addr(pa_secondary_entry);
-	err = 0;
+	/*
+	 * Plain PSCI, and nothing else.
+	 *
+	 * Every non-secure route to the secondary entrypoint is blocked on this
+	 * board: INFRACFG_AO+0x800 is dropped on a direct write and rejected by
+	 * MTK_SIP_KERNEL_MCUSYS_WRITE (-3), and the MCUCFG per-CPU reset vectors
+	 * ATF itself uses (MCUCFG+0x38+cpu*8) are rejected by the same SMC (-4);
+	 * only MCUCFG+0x2C (CCI snoop) is in its allowlist. So if the cores can
+	 * be released from EL1 at all it has to be ATF's own CPU_ON doing it.
+	 * Our MTCMOS pokes may themselves be the problem - powering the domain
+	 * from non-secure behind ATF's back can make its pwr_domain_on() see the
+	 * domain already up and no-op, which matches cpu_on() returning success
+	 * while the core never runs.
+	 *
+	 * Measured with a clean, untouched sequence: cpu_on() still returns 0 and
+	 * the cores still never run, matching PSCI_FEATURES(CPU_ON) reporting
+	 * NOT_SUPPORTED - this board's secure monitor implements CPU_ON as a stub.
+	 * Releasing the secondaries therefore needs the entrypoint written from
+	 * secure context (the bootloader), which is out of scope here. The MTCMOS
+	 * power-on and INFRACFG/MCUCFG boot-address writers that used to live here
+	 * were removed: MTCMOS worked but only powered domains whose cores then
+	 * jumped to address 0, and both address writers were rejected outright.
+	 */
+	err = psci_ops.cpu_on(cpu_logical_map(cpu), pa_secondary_entry);
+	pr_err("biscuit-debug: pure-PSCI cpu_on(cpu=%u, mpidr=%lu, entry=%pa) = %d\n",
+	       cpu, cpu_logical_map(cpu), &pa_secondary_entry, err);
 	pr_err("biscuit-debug: mt8163 non-PSCI release (cpu=%u, mpidr=%lu, entry=%pa) done\n",
 	       cpu, cpu_logical_map(cpu), &pa_secondary_entry);
 
