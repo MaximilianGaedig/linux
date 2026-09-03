@@ -2412,8 +2412,37 @@ VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ_V2 Sca
 	UINT_8 channel_num = 0;
 	UINT_8 channel_counts = 0;
 
+	P_AIS_FSM_INFO_T prAisFsmInfo;
+
 	if ((prAdapter == NULL) || (ScanReqMsg == NULL))
 		return;
+
+	prAisFsmInfo = &(prAdapter->rWifiVar.rAisFsmInfo);
+
+	/*
+	 * A chunked scan is already in progress: hand out the next slice of the
+	 * list captured on the first round. prScanRequest is still the same
+	 * cfg80211 request - we have not reported completion yet - but re-reading
+	 * it would just restart from channel 0.
+	 */
+	if (prAisFsmInfo->ucScanChnlNext > 0 &&
+	    prAisFsmInfo->ucScanChnlNext < prAisFsmInfo->ucScanChnlTotal) {
+		UINT_8 ucOut = 0;
+
+		while (prAisFsmInfo->ucScanChnlNext < prAisFsmInfo->ucScanChnlTotal &&
+		       ucOut < BISCUIT_SCAN_CHNL_CHUNK_MAX) {
+			ScanReqMsg->arChnlInfoList[ucOut] =
+				prAisFsmInfo->arScanChnlAll[prAisFsmInfo->ucScanChnlNext];
+			ucOut++;
+			prAisFsmInfo->ucScanChnlNext++;
+		}
+		ScanReqMsg->ucChannelListNum = ucOut;
+		ScanReqMsg->eScanChannel = SCAN_CHANNEL_SPECIFIED;
+		DBGLOG(AIS, INFO, "biscuit-scanch: chunk of %u, %u/%u done\n",
+		       ucOut, prAisFsmInfo->ucScanChnlNext, prAisFsmInfo->ucScanChnlTotal);
+		return;
+	}
+
 	if ((CurrentState == AIS_STATE_SCAN) || (CurrentState == AIS_STATE_ONLINE_SCAN)) {
 		if (prAdapter->prGlueInfo->prScanRequest != NULL) {
 			scan_req_t = prAdapter->prGlueInfo->prScanRequest;
@@ -2458,11 +2487,31 @@ VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ_V2 Sca
 
 	DBGLOG(AIS, INFO, "set channel i=%d\n", i);
 	if (i > 0) {
-		ScanReqMsg->ucChannelListNum = i;
+		/*
+		 * Keep the whole list, then send only as much of it as the
+		 * firmware will answer; the rest goes out in later rounds
+		 * driven from aisFsmRunEventScanDone().
+		 */
+		UINT_8 ucOut = (i > BISCUIT_SCAN_CHNL_CHUNK_MAX)
+				? BISCUIT_SCAN_CHNL_CHUNK_MAX : (UINT_8) i;
+
+		kalMemCopy(prAisFsmInfo->arScanChnlAll, ScanReqMsg->arChnlInfoList,
+			   sizeof(RF_CHANNEL_INFO_T) * i);
+		prAisFsmInfo->ucScanChnlTotal = (UINT_8) i;
+		prAisFsmInfo->ucScanChnlNext = ucOut;
+
+		ScanReqMsg->ucChannelListNum = ucOut;
 		ScanReqMsg->eScanChannel = SCAN_CHANNEL_SPECIFIED;
+		if (ucOut != (UINT_8) i)
+			DBGLOG(AIS, INFO, "biscuit-scanch: %d channels, sending %u per round\n",
+			       i, ucOut);
 
 		return;
 	}
+
+	/* not a channel-list scan - make sure no stale chunk state survives */
+	prAisFsmInfo->ucScanChnlTotal = 0;
+	prAisFsmInfo->ucScanChnlNext = 0;
 
 	if (prAdapter->aePreferBand[NETWORK_TYPE_AIS_INDEX]
 		== BAND_NULL) {
@@ -2526,6 +2575,34 @@ VOID aisFsmRunEventScanDone(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prMsgHdr)
 	} else {
 		switch (prAisFsmInfo->eCurrentState) {
 		case AIS_STATE_SCAN:
+			/*
+			 * More of the requested channel list still to cover?
+			 * Go round again instead of finishing. cfg80211 is not
+			 * told anything yet, so its request object stays valid
+			 * and the caller still sees one ordinary scan. The FSM
+			 * re-runs the AIS_STATE_SCAN case on re-entry, and the
+			 * scan-done timer has to be restarted for the new round
+			 * or the leftover from the first would fire mid-scan.
+			 */
+			if (prAisFsmInfo->ucScanChnlNext > 0 &&
+			    prAisFsmInfo->ucScanChnlNext < prAisFsmInfo->ucScanChnlTotal) {
+				cnmTimerStopTimer(prAdapter, &prAisFsmInfo->rScanDoneTimer);
+				cnmTimerStartTimer(prAdapter, &prAisFsmInfo->rScanDoneTimer,
+						   SEC_TO_MSEC(AIS_SCN_DONE_TIMEOUT_SEC));
+				/*
+				 * Drive the next round directly rather than via
+				 * eNextState: the tail of this function only calls
+				 * aisFsmSteps() when the state actually changes, and
+				 * we are already in AIS_STATE_SCAN, so assigning it
+				 * would silently do nothing and the round would never
+				 * be issued.
+				 */
+				aisFsmSteps(prAdapter, AIS_STATE_SCAN);
+				return;
+			}
+			prAisFsmInfo->ucScanChnlTotal = 0;
+			prAisFsmInfo->ucScanChnlNext = 0;
+
 			prConnSettings->fgIsScanReqIssued = FALSE;
 
 			/* reset scan IE buffer */
@@ -4219,6 +4296,17 @@ VOID aisTest(VOID)
 /*----------------------------------------------------------------------------*/
 VOID aisFsmScanRequest(IN P_ADAPTER_T prAdapter, IN P_PARAM_SSID_T prSsid, IN PUINT_8 pucIe, IN UINT_32 u4IeLength)
 {
+	/*
+	 * Every scan from userspace starts a fresh chunk sequence.
+	 *
+	 * Resetting here rather than only on successful completion means a scan
+	 * that ended any other way - scan-done timeout, abort, disconnect -
+	 * cannot leave a half-consumed channel list behind for the next one to
+	 * resume from, which would silently scan the wrong channels.
+	 */
+	prAdapter->rWifiVar.rAisFsmInfo.ucScanChnlTotal = 0;
+	prAdapter->rWifiVar.rAisFsmInfo.ucScanChnlNext = 0;
+
 	P_CONNECTION_SETTINGS_T prConnSettings;
 	P_BSS_INFO_T prAisBssInfo;
 	P_AIS_FSM_INFO_T prAisFsmInfo;

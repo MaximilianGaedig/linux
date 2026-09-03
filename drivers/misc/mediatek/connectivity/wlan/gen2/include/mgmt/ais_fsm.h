@@ -264,6 +264,13 @@
 #define AIS_JOIN_CH_GRANT_THRESHOLD         10
 #define AIS_JOIN_CH_REQUEST_INTERVAL        3000
 
+/*
+ * Most channels this firmware will accept in one scan request. 24 works, 25
+ * produces no SCAN_DONE at all - measured by bisection on the hardware.
+ * 20 leaves margin.
+ */
+#define BISCUIT_SCAN_CHNL_CHUNK_MAX         20
+
 #define AIS_SCN_DONE_TIMEOUT_SEC            30	/* 15 for 2.4G + 5G */ /* 5 */
 
 /*******************************************************************************
@@ -386,6 +393,26 @@ typedef struct _AIS_FSM_INFO_T {
 	 * arScanSSID[]/rRoamingSSID here for the same reason.
 	 */
 	PARAM_SSID_T rScanSSID;
+
+	/*
+	 * Chunking state for oversized scan channel lists.
+	 *
+	 * This firmware silently ignores a scan request carrying more than
+	 * BISCUIT_SCAN_CHNL_CHUNK_MAX channels: measured, 24 channels scan in
+	 * 2-3s and 25 never produce a SCAN_DONE at all, so the driver sits out
+	 * the full AIS_SCN_DONE_TIMEOUT_SEC (30s) and returns nothing. A plain
+	 * dual-band `iw scan` is ~35 channels and hits this every time, which
+	 * also leaves the radio unusable for the rest of the boot.
+	 *
+	 * So split the list into rounds the firmware will answer and stitch
+	 * them back together: aisFsmSetChannelInfo() emits one chunk per scan,
+	 * and aisFsmRunEventScanDone() re-enters AIS_STATE_SCAN for the next
+	 * one instead of reporting completion, so cfg80211 sees a single
+	 * ordinary scan covering every channel it asked for.
+	 */
+	RF_CHANNEL_INFO_T arScanChnlAll[MAXIMUM_OPERATION_CHANNEL_LIST];
+	UINT_8 ucScanChnlTotal;
+	UINT_8 ucScanChnlNext;
 
 	UINT_32 u4ScanIELength;
 	UINT_8 aucScanIEBuf[MAX_IE_LENGTH];
