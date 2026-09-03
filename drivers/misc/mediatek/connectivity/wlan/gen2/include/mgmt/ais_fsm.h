@@ -377,6 +377,16 @@ typedef struct _AIS_FSM_INFO_T {
 	UINT_8 ucScanSSIDLen;
 	UINT_8 aucScanSSID[ELEM_MAX_LEN_SSID];
 
+	/*
+	 * Backing store for MSG_SCN_SCAN_REQ_V2's prSsid pointer.
+	 *
+	 * The V2 scan message carries a P_PARAM_SSID_T rather than an inline
+	 * SSID, and the message can sit in the mailbox before scan_fsm copies
+	 * out of it, so the pointee has to outlive aisFsmSteps(). Stock keeps
+	 * arScanSSID[]/rRoamingSSID here for the same reason.
+	 */
+	PARAM_SSID_T rScanSSID;
+
 	UINT_32 u4ScanIELength;
 	UINT_8 aucScanIEBuf[MAX_IE_LENGTH];
 
@@ -444,7 +454,7 @@ VOID aisFsmStateAbort_IBSS(IN P_ADAPTER_T prAdapter);
 /* Re-enabled: the only caller (ais_fsm.c) now uses this to honour the channel
  * list cfg80211 requested, instead of asking the firmware for a FULL sweep.
  */
-VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ ScanReqMsg, IN ENUM_AIS_STATE_T CurrentState);
+VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ_V2 ScanReqMsg, IN ENUM_AIS_STATE_T CurrentState);
 VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState);
 
 /*----------------------------------------------------------------------------*/
