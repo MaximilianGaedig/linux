@@ -2546,93 +2546,20 @@ wlanAdapterStart(IN P_ADAPTER_T prAdapter,
 		 * EMI buffer our own writes could colour, so these samples are
 		 * trustworthy.
 		 */
-		{
-			/*
-			 * Catch the last instructions the firmware executes.
-			 *
-			 * Sampling every 10us leaves ~1000 instructions of slop,
-			 * so the "last firmware PC" it reports is only the right
-			 * neighbourhood, not the faulting instruction.  Sample as
-			 * fast as the MMIO read allows into a ring instead, and
-			 * snapshot the ring the moment the PC settles in ROM -
-			 * that keeps the final ~450 samples before the transition
-			 * at full resolution, and works regardless of whether the
-			 * firmware dies at 4ms or 14ms.
-			 *
-			 * The firmware calls ROM routines constantly during normal
-			 * operation, so a brief excursion below 0x60000 is not
-			 * death: re-arm if firmware code runs again, and only keep
-			 * a snapshot that stays in ROM for a long time afterwards.
-			 */
-			static UINT_32 au4Ring[512];
-			static UINT_32 au4Snap[512];
-			static UINT_32 au4Mcu[0x200 / 4];
-			UINT_32 u4Idx = 0, u4Post = 0, u4Iter;
-			UINT_32 u4SnapIdx = 0, fgSnap = 0, fgSeenFw = 0, fgHave = 0;
-
-			for (u4Iter = 0; u4Iter < 4000000; u4Iter++) {
-				UINT_32 pc = wmt_plat_read_cpupcr();
-
-				au4Ring[u4Idx & 511] = pc;
-				u4Idx++;
-
-				if (pc >= 0x00060000) {
-					fgSeenFw = 1;
-					u4Post = 0;
-					fgSnap = 0;
-				} else {
-					u4Post++;
-					if (fgSeenFw && !fgSnap && u4Post == 128) {
-						UINT_32 u4R;
-
-						kalMemCopy(au4Snap, au4Ring, sizeof(au4Snap));
-						u4SnapIdx = u4Idx;
-						fgSnap = 1;
-						fgHave = 1;
-						/* grab the MCU state block right here, while
-						 * it still reflects the fault
-						 */
-						for (u4R = 0; u4R < 0x200 / 4; u4R++)
-							au4Mcu[u4R] = wmt_plat_read_mcu_cr(u4R * 4);
-					}
-					if (fgSnap && u4Post > 60000)
-						break;
-				}
-			}
-
-			if (!fgHave) {
-				DBGLOG(INIT, ERROR,
-				       "biscuit-pctrace: no firmware->ROM transition captured (seenFw=%u)\n",
-				       fgSeenFw);
-			} else {
-				UINT_32 u4K, u4Prev = 0xffffffff, u4Shown = 0;
-
-				DBGLOG(INIT, ERROR,
-				       "biscuit-mcucr: CONN_MCU_CONFIG at the fault (0x18070000, MMIO - no cache):\n");
-				for (u4K = 0; u4K < 0x200 / 4; u4K += 4) {
-					DBGLOG(INIT, ERROR,
-					       "biscuit-mcucr: +0x%03x: %08x %08x %08x %08x\n",
-					       u4K * 4, au4Mcu[u4K], au4Mcu[u4K + 1],
-					       au4Mcu[u4K + 2], au4Mcu[u4K + 3]);
-				}
-				DBGLOG(INIT, ERROR,
-				       "biscuit-pctrace: final samples before the MCU settled in ROM:\n");
-				/* only the tail of the ring matters - that is the
-				 * approach to the fault; the head is ordinary running
-				 */
-				for (u4K = 330; u4K < 512; u4K++) {
-					UINT_32 pc = au4Snap[(u4SnapIdx + u4K) & 511];
-
-					if (pc == u4Prev)
-						continue;
-					u4Prev = pc;
-					DBGLOG(INIT, ERROR, "biscuit-pctrace:   [%3u] pc=0x%08x\n",
-					       u4K, pc);
-					if (++u4Shown > 120)
-						break;
-				}
-			}
-		}
+		/*
+		 * The PC-trace / MCU-CR dump that used to sit here is gone.
+		 *
+		 * It ran unconditionally - behind no module parameter - between
+		 * wlanConfigWifiFunc(...TRUE...) and the ready poll, spinning up to
+		 * 4,000,000 iterations of wmt_plat_read_cpupcr() plus 128
+		 * wmt_plat_read_mcu_cr() reads. That is millions of AHB reads into
+		 * the connectivity subsystem at exactly the moment the MCU is
+		 * running the firmware's RF/PHY bring-up, and stock
+		 * (wlan_lib.c:1428-1432) goes straight from wlanConfigWifiFunc to
+		 * the ready poll with nothing in between. RF calibration is
+		 * timing-sensitive, so this is not a safe thing to leave in a
+		 * working driver just because it was useful once.
+		 */
 #else
 		wlanConfigWifiFunc(prAdapter, FALSE, 0);
 #endif
