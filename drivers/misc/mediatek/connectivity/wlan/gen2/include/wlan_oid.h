@@ -276,13 +276,24 @@ extern int sprintf(char *buf, const char *fmt, ...);
 #endif
 
 #if CFG_SLT_SUPPORT
+/*
+ * PROMISCUOUS is listed as supported so wlanoidSetCurrentPacketFilter() will
+ * pass the bit down to the firmware in CMD_ID_SET_RX_FILTER instead of
+ * rejecting it with WLAN_STATUS_NOT_SUPPORTED. Whether this firmware honours
+ * it is a separate question - the driver's own nicRxEnablePromiscuousMode()
+ * and wlanSetPromiscuousMode() are empty stubs, so nothing here ever tried.
+ * `ifconfig wlan0 promisc` is the switch; the RX side is gated on
+ * biscuit_monitor.
+ */
 #define PARAM_PACKET_FILTER_SUPPORTED   (PARAM_PACKET_FILTER_DIRECTED | \
 					 PARAM_PACKET_FILTER_MULTICAST | \
 					 PARAM_PACKET_FILTER_BROADCAST | \
+					 PARAM_PACKET_FILTER_PROMISCUOUS | \
 					 PARAM_PACKET_FILTER_ALL_MULTICAST)
 #else
 #define PARAM_PACKET_FILTER_SUPPORTED   (PARAM_PACKET_FILTER_DIRECTED | \
 					 PARAM_PACKET_FILTER_MULTICAST | \
+					 PARAM_PACKET_FILTER_PROMISCUOUS | \
 					 PARAM_PACKET_FILTER_BROADCAST)
 #endif
 
