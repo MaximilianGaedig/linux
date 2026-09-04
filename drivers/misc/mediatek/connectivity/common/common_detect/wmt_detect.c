@@ -29,6 +29,8 @@
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 #endif
+#include <linux/kthread.h>
+#include <linux/delay.h>
 
 #define WMT_DETECT_MAJOR 154
 #define WMT_DETECT_DEV_NUM 1
@@ -274,6 +276,50 @@ static struct platform_driver wmt_detect_driver = {
 #endif
 
 /*module_platform_driver(wmt_detect_driver);*/
+#if MTK_WCN_REMOVE_KO
+/*
+ * biscuit: bring WiFi up entirely in-kernel, so nothing in userspace is required
+ * beyond the firmware files themselves.
+ *
+ * A kthread waits for the CONSYS platform driver to finish probing (regulators/
+ * clocks) and for the initramfs firmware to be in place, then runs DO_MODULE_INIT
+ * (do_connectivity_driver_init, which creates /dev/stpwmt) followed by the
+ * SET_STP_MODE(0x23) + FUNC_ON(WiFi) sequence via wmt_lib_biscuit_wifi_up().
+ *
+ * Single-shot on purpose: a failed WiFi func-on wedges the WMT and only a reboot
+ * clears it, so an in-boot retry would just make a bad boot worse. A clean boot
+ * brings WiFi up reliably (measured), which is exactly what this reproduces.
+ */
+extern int wmt_lib_biscuit_wifi_up(void);
+
+static int biscuit_wifi_autoup_en = 1;
+module_param(biscuit_wifi_autoup_en, int, 0644);
+MODULE_PARM_DESC(biscuit_wifi_autoup_en, "auto-bring WiFi up in-kernel at boot (1=on)");
+
+static int biscuit_autoup_delay_ms = 15000;
+module_param(biscuit_autoup_delay_ms, int, 0644);
+MODULE_PARM_DESC(biscuit_autoup_delay_ms, "settle delay (ms) before the in-kernel WiFi bring-up");
+
+static struct task_struct *biscuit_autoup_task;
+
+static int biscuit_wifi_autoup_fn(void *unused)
+{
+	int ret;
+
+	if (biscuit_autoup_delay_ms > 0)
+		msleep(biscuit_autoup_delay_ms);
+
+	WMT_DETECT_INFO_FUNC("biscuit-autoup: DO_MODULE_INIT (creating WMT)\n");
+	do_connectivity_driver_init(0x6625);
+	msleep(2000);
+
+	WMT_DETECT_INFO_FUNC("biscuit-autoup: bringing WiFi up in-kernel\n");
+	ret = wmt_lib_biscuit_wifi_up();
+	WMT_DETECT_INFO_FUNC("biscuit-autoup: in-kernel WiFi bring-up returned %d\n", ret);
+	return 0;
+}
+#endif
+
 static int wmt_detect_driver_init(void)
 {
 	dev_t devID = MKDEV(gWmtDetectMajor, 0);
@@ -316,6 +362,16 @@ static int wmt_detect_driver_init(void)
 	ret = platform_driver_register(&wmt_detect_driver);
 	if (ret)
 		WMT_DETECT_ERR_FUNC("platform driver register fail ret:%d\n", ret);
+#endif
+
+#if MTK_WCN_REMOVE_KO
+	if (biscuit_wifi_autoup_en) {
+		biscuit_autoup_task = kthread_run(biscuit_wifi_autoup_fn, NULL, "biscuit_wifiup");
+		if (IS_ERR(biscuit_autoup_task)) {
+			WMT_DETECT_ERR_FUNC("biscuit-autoup: kthread_run fail\n");
+			biscuit_autoup_task = NULL;
+		}
+	}
 #endif
 
 	return 0;
