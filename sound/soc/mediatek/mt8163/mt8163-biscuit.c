@@ -458,8 +458,60 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
  * inaudible while AFE_I2S_CON1 reads 0, no clock or data is leaving the SoC
  * and the codec is not the problem.
  */
+/*
+ * Make the aic32x4 actually produce analog output.
+ *
+ * Two board realities that the generic codec setup gets wrong here:
+ *
+ *  1. Clock. The codec's master clock is supposed to be the ~9.6MHz CMMCLK
+ *     pad, but on this board that clock never physically reaches the aic32x4
+ *     (only the mic ADCs are wired to it). Its PLL therefore never locks off
+ *     MCLK and the DAC is dead - the amp just pops. The I2S bit clock, on the
+ *     other hand, is right there on the same pins the codec already listens
+ *     to. So run the PLL from BCLK: at 48kHz the BE clocks BCLK at 3.072MHz,
+ *     and 3.072MHz x J=30 / P=1 = 92.16MHz, exactly the CODEC_CLKIN the DAC
+ *     divider setup (NDAC/MDAC/DOSR from aic32x4_setup_clocks) already targets,
+ *     so nothing downstream of the PLL has to change.
+ *
+ *  2. Output. The line outputs drive the external amplifier, but DAPM leaves
+ *     the LOL/LOR (and HPL/HPR) mixers unrouted and the output stages muted by
+ *     default, so even a locked DAC reaches nothing. Route both DACs to the
+ *     outputs and lift the analog mutes.
+ *
+ * Do it in prepare(): it runs after the codec's own hw_params (which programs
+ * the MCLK-based PLL) and before trigger, so these writes win. Register
+ * numbers are the flat aic32x4 map (page*128 + offset), matching the reg-53
+ * amp-unmute write above.
+ */
+static int biscuit_be_prepare(struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
+	struct snd_soc_component *comp = snd_soc_rtd_to_codec(rtd, 0)->component;
+
+	/* PLL: run from BCLK, P=1 R=1 J=30 -> 92.16MHz CODEC_CLKIN */
+	snd_soc_component_write(comp, 5, 0x91);		/* PLLPR: PLL on, P=1, R=1 */
+	snd_soc_component_write(comp, 6, 30);		/* PLLJ = 30 */
+	snd_soc_component_write(comp, 7, 0);		/* PLLDMSB = 0 */
+	snd_soc_component_write(comp, 8, 0);		/* PLLDLSB = 0 */
+	snd_soc_component_write(comp, 4, 0x07);		/* CLKMUX: PLL<-BCLK, CODEC_CLKIN<-PLL */
+
+	/* Analog output: power the drivers, route both DACs, lift the mutes. */
+	snd_soc_component_write(comp, 128 + 9, 0x33);	/* OUTPWRCTL: LOL/LOR + HPL/HPR on */
+	snd_soc_component_write(comp, 128 + 12, 0x08);	/* HPLROUTE: L_DAC */
+	snd_soc_component_write(comp, 128 + 13, 0x08);	/* HPRROUTE: R_DAC */
+	snd_soc_component_write(comp, 128 + 14, 0x08);	/* LOLROUTE: L_DAC */
+	snd_soc_component_write(comp, 128 + 15, 0x08);	/* LORROUTE: R_DAC */
+	snd_soc_component_write(comp, 128 + 16, 0x04);	/* HPLGAIN: unmuted */
+	snd_soc_component_write(comp, 128 + 17, 0x04);	/* HPRGAIN: unmuted */
+	snd_soc_component_write(comp, 128 + 18, 0x04);	/* LOLGAIN: unmuted */
+	snd_soc_component_write(comp, 128 + 19, 0x04);	/* LORGAIN: unmuted */
+
+	return 0;
+}
+
 static const struct snd_soc_ops biscuit_be_ops = {
 	.hw_params = biscuit_be_hw_params,
+	.prepare = biscuit_be_prepare,
 };
 
 static struct snd_soc_dai_link biscuit_dai_links[] = {
