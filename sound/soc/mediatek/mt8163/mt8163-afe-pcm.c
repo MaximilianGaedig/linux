@@ -560,12 +560,14 @@ static int mt8163_afe_runtime_resume(struct device *dev)
 	struct mtk_base_afe *afe = dev_get_drvdata(dev);
 	int ret;
 
+	/*
+	 * mt8163_afe_enable_clock() selects APB 3.0 and ungates the audsys
+	 * register block (see the comment there); by the time it returns the
+	 * AFE bank is reachable, so the AFE_ON write below lands.
+	 */
 	ret = mt8163_afe_enable_clock(afe);
 	if (ret)
 		return ret;
-
-	/* set APB 3.0 */
-	regmap_set_bits(afe->regmap, AUDIO_TOP_CON0, APB3_SEL);
 
 	/* enable AFE */
 	regmap_set_bits(afe->regmap, AFE_DAC_CON0, AFE_ON);
