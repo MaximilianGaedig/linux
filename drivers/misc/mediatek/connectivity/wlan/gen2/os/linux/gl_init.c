@@ -2290,9 +2290,11 @@ VOID wlanUpdateChannelTable(P_GLUE_INFO_T prGlueInfo)
  * probe req/resp, auth/assoc and deauth. Data frames are NOT visible, so this
  * cannot capture a WPA handshake payload.
  *
- * Enable with: insmod/boot param biscuit_monitor=1 (default off).
+ * Enable with: insmod/boot param biscuit_monitor=1. Default ON here so the
+ * radiotap0 monitor/injection netdev exists out of the box once the in-kernel
+ * auto-bring-up (wmt_detect.c) probes wlan0 - no userspace step needed.
  */
-int biscuit_monitor;
+int biscuit_monitor = 1;
 module_param(biscuit_monitor, int, 0644);
 MODULE_PARM_DESC(biscuit_monitor, "expose received 802.11 management frames on radiotap0");
 

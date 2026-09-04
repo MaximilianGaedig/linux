@@ -2466,6 +2466,57 @@ void wmt_dev_send_cmd_to_daemon(UINT32 cmd)
 	send_command_to_daemon(cmd);
 }
 
+/*
+ * biscuit: in-kernel WiFi bring-up, no userspace launcher needed.
+ *
+ * Replicates exactly what stock userspace (6620_launcher) does on /dev/stpwmt to
+ * turn WiFi on: SET_STP_MODE(0x23) -> WMT_OPID_HIF_CONF, then FUNC_ONOFF_CTRL
+ * wifi-on. This is the tail of the WMT_IOCTL_SET_STP_MODE + WMT_IOCTL_FUNC_ONOFF
+ * ioctl handlers, lifted out so the connectivity auto-up kthread can call it.
+ *
+ * MUST be called only AFTER do_connectivity_driver_init() has created the WMT
+ * (i.e. /dev/stpwmt exists). Returns 0 once the WiFi function is ON.
+ */
+int wmt_lib_biscuit_wifi_up(void)
+{
+	P_OSAL_OP pOp;
+	MTK_WCN_BOOL bRet;
+	P_WMT_HIF_CONF pHif;
+	INT32 iRet;
+
+	/* SET_STP_MODE(0x23) = STP_BTIF_FULL + FM_COMM, as stock's launcher sends */
+	iRet = wmt_lib_set_hif(0x23);
+	if (0 != iRet) {
+		WMT_ERR_FUNC("biscuit-wifiup: wmt_lib_set_hif fail (%d)\n", iRet);
+		return -1;
+	}
+
+	pOp = wmt_lib_get_free_op();
+	if (!pOp) {
+		WMT_ERR_FUNC("biscuit-wifiup: wmt_lib_get_free_op fail\n");
+		return -1;
+	}
+	pOp->op.opId = WMT_OPID_HIF_CONF;
+	pHif = wmt_lib_get_hif();
+	osal_memcpy(&pOp->op.au4OpData[0], pHif, sizeof(WMT_HIF_CONF));
+	pOp->op.u4InfoBit = WMT_OP_HIF_BIT;
+	pOp->signal.timeoutValue = 0;
+	bRet = wmt_lib_put_act_op(pOp);
+	if (MTK_WCN_BOOL_FALSE == bRet) {
+		WMT_ERR_FUNC("biscuit-wifiup: WMT_OPID_HIF_CONF fail\n");
+		return -1;
+	}
+
+	/* FUNC_ONOFF_CTRL(0x80000003) = WiFi function ON */
+	bRet = mtk_wcn_wmt_func_on(WMTDRV_TYPE_WIFI);
+	if (MTK_WCN_BOOL_FALSE == bRet) {
+		WMT_ERR_FUNC("biscuit-wifiup: mtk_wcn_wmt_func_on(WIFI) fail\n");
+		return -1;
+	}
+	WMT_INFO_FUNC("biscuit-wifiup: WiFi function ON ok\n");
+	return 0;
+}
+
 static int WMT_init(void)
 {
 	dev_t devID = MKDEV(gWmtMajor, 0);
