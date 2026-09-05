@@ -206,15 +206,40 @@
 			gpios = <&pio 50 GPIO_ACTIVE_LOW>;
 			debounce-interval = <20>;
 		};
+
+		/*
+		 * Stock biscuit.dtsi wires this as a plain gpio-keys button on
+		 * GPIO37 (volumedn@114, gpios = <&pio 37 1>), NOT through the KPD
+		 * matrix - our &keypad node below had pinmuxed this same pin to
+		 * KPCOL1 and claimed it as a MATRIX_KEY, which is a real pinmux
+		 * conflict with this node's plain-GPIO claim on the same pin.
+		 * Moved here to match stock exactly; see keypad_pins_default.
+		 */
+		key-volume-down {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&pio 37 GPIO_ACTIVE_LOW>;
+			debounce-interval = <20>;
+		};
 	};
 };
 
 &keypad {
-	linux,keymap = <MATRIX_KEY(0x00, 0x00, KEY_ASSISTANT)
-			MATRIX_KEY(0x00, 0x01, KEY_VOLUMEDOWN)>;
+	/*
+	 * KEY_VOLUMEDOWN removed - see key-volume-down in gpio-keys above.
+	 * KEY_ASSISTANT is unverified: stock reads the Dot/Assistant button
+	 * through Amazon's proprietary kpd.c hw-scan-code table
+	 * (mediatek,kpd-hw-init-map = <138 ...>), a driver dropped entirely in
+	 * this mainline port (no drivers/input/keyboard/mediatek/kpd.c,
+	 * CONFIG_KEYBOARD_MTK_PMIC unset). Whether pin 36/KPCOL0 carries the
+	 * same physical button wired to a plain matrix contact, or something
+	 * else entirely, is unconfirmed - needs a press tested against evtest
+	 * once evdev is enabled, not assumed.
+	 */
+	linux,keymap = <MATRIX_KEY(0x00, 0x00, KEY_ASSISTANT)>;
 
 	keypad,num-rows = <1>;
-	keypad,num-columns = <2>;
+	keypad,num-columns = <1>;
 	debounce-delay-ms = <20>;
 
 	pinctrl-names = "default";
@@ -244,7 +269,8 @@
 &pio {
 	gpio_keys_pins_default: gpio-keys-pins {
 		pins {
-			pinmux = <MT8163_PIN_50_EINT18__FUNC_GPIO50>;
+			pinmux = <MT8163_PIN_50_EINT18__FUNC_GPIO50>,
+				 <MT8163_PIN_37_KPCOL1__FUNC_GPIO37>;
 			bias-pull-up;
 			input-enable;
 		};
@@ -252,8 +278,7 @@
 
 	keypad_pins_default: keypad-pins {
 		pins {
-			pinmux = <MT8163_PIN_36_KPCOL0__FUNC_KPCOL0>,
-				 <MT8163_PIN_37_KPCOL1__FUNC_KPCOL1>;
+			pinmux = <MT8163_PIN_36_KPCOL0__FUNC_KPCOL0>;
 			input-enable;
 		};
 	};
