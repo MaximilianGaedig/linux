@@ -229,12 +229,10 @@
 	 * KEY_VOLUMEDOWN removed - see key-volume-down in gpio-keys above.
 	 * KEY_ASSISTANT is unverified: stock reads the Dot/Assistant button
 	 * through Amazon's proprietary kpd.c hw-scan-code table
-	 * (mediatek,kpd-hw-init-map = <138 ...>), a driver dropped entirely in
-	 * this mainline port (no drivers/input/keyboard/mediatek/kpd.c,
-	 * CONFIG_KEYBOARD_MTK_PMIC unset). Whether pin 36/KPCOL0 carries the
-	 * same physical button wired to a plain matrix contact, or something
-	 * else entirely, is unconfirmed - needs a press tested against evtest
-	 * once evdev is enabled, not assumed.
+	 * (mediatek,kpd-hw-init-map = <138 ...>). Whether pin 36/KPCOL0 carries
+	 * the same physical button wired to a plain matrix contact, or
+	 * something else entirely, is unconfirmed - needs a press tested
+	 * against evtest once evdev is enabled, not assumed.
 	 */
 	linux,keymap = <MATRIX_KEY(0x00, 0x00, KEY_ASSISTANT)>;
 
@@ -246,6 +244,25 @@
 	pinctrl-0 = <&keypad_pins_default>;
 
 	status = "okay";
+};
+
+&mt6323keys {
+	/*
+	 * Stock has no separate power button - this board wires the PMIC's
+	 * dedicated hardware PWRKEY comparator pin to the physical mute
+	 * switch instead, and its own vendor kpd.c driver remaps that slot to
+	 * KEY_MUTE (mediatek,kpd-sw-pwrkey = <113> in Amazon's biscuit.dtsi).
+	 * Confirmed via the stock button_config.json used by their userspace
+	 * buttond: "mute" is keyCode 113 (KEY_MUTE) EV_KEY, matching exactly.
+	 * mtk-pmic-keys.c is mainline's driver for this same PMIC hardware -
+	 * same physical pin/comparator/IRQ, just the standard upstream path
+	 * instead of Amazon's vendor kpd.c. "home" (the PMIC's second,
+	 * separate comparator pin) is left at its inherited default; nothing
+	 * on this board is confirmed wired to it.
+	 */
+	power {
+		linux,keycodes = <KEY_MUTE>;
+	};
 };
 
 &mt6323_vusb_reg {
