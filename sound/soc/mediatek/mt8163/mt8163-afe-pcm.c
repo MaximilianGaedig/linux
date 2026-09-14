@@ -560,12 +560,14 @@ static int mt8163_afe_runtime_resume(struct device *dev)
 	struct mtk_base_afe *afe = dev_get_drvdata(dev);
 	int ret;
 
+	/*
+	 * mt8163_afe_enable_clock() selects APB 3.0 and ungates the audsys
+	 * register block (see the comment there); by the time it returns the
+	 * AFE bank is reachable, so the AFE_ON write below lands.
+	 */
 	ret = mt8163_afe_enable_clock(afe);
 	if (ret)
 		return ret;
-
-	/* set APB 3.0 */
-	regmap_set_bits(afe->regmap, AUDIO_TOP_CON0, APB3_SEL);
 
 	/* enable AFE */
 	regmap_set_bits(afe->regmap, AFE_DAC_CON0, AFE_ON);
@@ -709,6 +711,19 @@ static int mt8163_afe_pcm_dev_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_warn(dev, "mtk_afe_combine_sub_dai fail, ret %d\n", ret);
 		goto err_pm_disable;
+	}
+
+	/* biscuit-dbg: dump the combined DAI array so DT "sound-dai = <&afe N>"
+	 * indices can be matched to real DAI names without guesswork. */
+	{
+		int di;
+
+		for (di = 0; di < afe->num_dai_drivers; di++)
+			dev_err(dev, "biscuit-dai[%d]: name=%s id=%d pb=%d cap=%d\n",
+				di, afe->dai_drivers[di].name,
+				afe->dai_drivers[di].id,
+				afe->dai_drivers[di].playback.channels_max,
+				afe->dai_drivers[di].capture.channels_max);
 	}
 
 	afe->mtk_afe_hardware = &mt8163_afe_hardware;
