@@ -10,14 +10,190 @@
 
 #include "mt8163-amazon-common.dtsi"
 #include "mt8163-headless.dtsi"
+#include "mt8163-amazon-biscuit-peripherals.dtsi"
 
 / {
 	model = "Amazon Echo Dot (2016)";
 	compatible = "amazon,biscuit", "mediatek,mt8163";
 	chassis-type = "embedded";
-
 	/* Needed by stock bootloader */
 	version = "evt";
+
+	/*
+	 * The 12-LED RGB light ring, grouped.
+	 *
+	 * The IS31FL3236 driver exposes the ring as 36 independent
+	 * single-colour channels (biscuit:ringN:{red,green,blue}), labelled in
+	 * mt8163-amazon-biscuit-peripherals.dtsi. leds-group-multicolor fuses
+	 * each ring's three channels into one LED_COLOR_ID_MULTI device so a
+	 * colour and a single brightness can be set per physical LED, which is
+	 * how the ring is meant to be driven.
+	 *
+	 * This grouping was dropped once before because the appended DTB grew
+	 * past the stock bootloader's IDME/FDT-injection size limit and was
+	 * silently discarded. We no longer boot that way - u-boot loads the DTB
+	 * from raw sectors of the recovery partition - so it can come back.
+	 */
+	led-ring-mc {
+		compatible = "simple-bus";
+
+		led-ring1 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring1";
+			leds = <&ring1_red>, <&ring1_green>, <&ring1_blue>; };
+		led-ring2 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring2";
+			leds = <&ring2_red>, <&ring2_green>, <&ring2_blue>; };
+		led-ring3 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring3";
+			leds = <&ring3_red>, <&ring3_green>, <&ring3_blue>; };
+		led-ring4 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring4";
+			leds = <&ring4_red>, <&ring4_green>, <&ring4_blue>; };
+		led-ring5 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring5";
+			leds = <&ring5_red>, <&ring5_green>, <&ring5_blue>; };
+		led-ring6 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring6";
+			leds = <&ring6_red>, <&ring6_green>, <&ring6_blue>; };
+		led-ring7 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring7";
+			leds = <&ring7_red>, <&ring7_green>, <&ring7_blue>; };
+		led-ring8 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring8";
+			leds = <&ring8_red>, <&ring8_green>, <&ring8_blue>; };
+		led-ring9 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring9";
+			leds = <&ring9_red>, <&ring9_green>, <&ring9_blue>; };
+		led-ring10 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring10";
+			leds = <&ring10_red>, <&ring10_green>, <&ring10_blue>; };
+		led-ring11 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring11";
+			leds = <&ring11_red>, <&ring11_green>, <&ring11_blue>; };
+		led-ring12 { compatible = "leds-group-multicolor"; color = <LED_COLOR_ID_RGB>; function = "ring12";
+			leds = <&ring12_red>, <&ring12_green>, <&ring12_blue>; };
+	};
+
+	/*
+	 * Board thermistors. Amazon's downstream driver models these as a
+	 * proprietary "virtual_sensor_thermistor", but the hardware is plain:
+	 * three 10k NTCs, each pulled up to 1.8V through 10k into an AUXADC
+	 * input (their mtk_ts_board_biscuit.h: pull_up_R=10000,
+	 * pull_up_voltage=1800, channels AUX_IN 0/14/15).
+	 *
+	 * Their comments claim "100K" but the parts are 10k: the same header
+	 * gives 195652 ohm as the -40C reference, and 195652 is exactly the
+	 * first entry of mainline's ncpXXxh103 table (a 100k part is ~4M at
+	 * -40C). Measured, the three channels sit at 611-646mV, which through
+	 * R = pullup_ohm * V / (pullup_uv - V) - the very formula their
+	 * mtk_ts_bts.c used - is ~5.4k, i.e. ~37C on a 10k curve and a
+	 * nonsensical ~105C on a 100k one. So: murata,ncp15xh103.
+	 */
+	thermistor0: thermistor-0 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 0>;
+	};
+
+	thermistor1: thermistor-1 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 14>;
+	};
+
+	thermistor2: thermistor-2 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 15>;
+	};
+	/*
+	 * External speaker amplifier enable. Amazon's stock audio driver
+	 * asserts this by selecting the "extamp-pullhigh" pinctrl state
+	 * (AudDrv_GPIO_EXTAMP_Select(1)); "extamp-pulllow" drives it low to
+	 * mute. Mainline's mt8163 pinctrl (pinctrl-mtk-common) does not
+	 * implement PIN_CONFIG_OUTPUT, so an output-high pinctrl group would be
+	 * silently ignored here - drive the pin through a fixed regulator
+	 * instead, which requests the GPIO after the gpiochip is up (a gpio-hog
+	 * fails with -EPROBE_DEFER during gpiochip_add and takes the whole
+	 * pinctrl driver down with it).
+	 *
+	 * The pin is GPIO 122, not 124. biscuit.dtsi is the pre-EVT board file
+	 * and puts extamp on 124, but both shipping board files override that
+	 * group: biscuit_evt.dts:45-60 and biscuit_min_evt.dts:45-60 redefine
+	 * aud_pins_extamp_high/_low as MT8163_PIN_122_MSDC1_CLK__FUNC_GPIO122,
+	 * and introduce GPIO 124 as a separate signal - the DAC mux, see
+	 * ext_spk_dacmux below. Driving 124 therefore left the amplifier's
+	 * enable line untouched in MSDC1_CLK mode, which is why the aic32x4
+	 * could be register-for-register identical to stock and still silent.
+	 */
+	ext_spk_amp: regulator-ext-spk-amp {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-amp";
+		gpio = <&pio 122 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		/*
+		 * Deliberately not always-on. The amplifier has audible
+		 * self-noise with nothing driving it, so holding it enabled
+		 * makes the speaker hiss continuously. Stock enables it only
+		 * while a speaker stream is open and refcounts it
+		 * (AudioALSACodecDeviceOutExtSpeakerAmp::open/close writes
+		 * Ext_Speaker_Amp_Switch On/Off); the machine driver does the
+		 * same from its DAPM supply widget.
+		 */
+	};
+
+	/*
+	 * DAC output mux (stock: aud_pins_extamp_dacmux_high/_low, added in
+	 * biscuit_evt.dts:62-76, exposed to userspace as the mixer control
+	 * "Audio_DacMux_Setting"). Stock never selects either state at boot and
+	 * initialises its shadow to false, so the pad keeps its reset default;
+	 * mirror that by leaving this regulator off unless something asks for
+	 * it, rather than pinning it high the way the old 124 amp node did.
+	 */
+	/*
+	 * Second amplifier enable, on GPIO 124.
+	 *
+	 * The extracted OTA device tree (amzn0_full.dts) is the authority for
+	 * this exact board: its audio node's "extamp-pullhigh"/"extamp-pulllow"
+	 * pinctrl states drive GPIO 124 (pins = <0x7c00>), and GPIO 122 is never
+	 * referenced anywhere in it. The pre-EVT source files put extamp on 122,
+	 * which is where our first ext_spk_amp came from, but the shipped
+	 * firmware uses 124 - so drive both, DAPM-gated the same way, until a
+	 * listen test says which one actually gates the amp. Named separately so
+	 * the machine driver can pull it up as its own supply widget.
+	 */
+	ext_spk_amp2: regulator-ext-spk-amp2 {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-amp2";
+		gpio = <&pio 124 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	/*
+	 * External amplifier gain select, GPIOs 28 and 29.
+	 *
+	 * Stock's AudDrv_GPIO_EXTAMP_Gain_Set(3) drives both high for gain 3 on
+	 * every speaker-on (audexampgain3: pins <0x1c00>=GPIO28 and <0x1d00>=
+	 * GPIO29, both output-high). Our port drove neither, leaving the pads
+	 * floating - an amplifier gain input left to float can sit anywhere,
+	 * including a mute/shutdown code. Hold both high (gain 3) for the whole
+	 * session via always-on regulators; the gain input is harmless while the
+	 * amp enable is de-asserted, so it does not need DAPM gating. Regulators
+	 * (not gpio-hogs) so the pinctrl gpiochip is fully up before the pad is
+	 * requested - a hog on &pio takes the whole pinctrl driver down.
+	 */
+	ext_spk_gain_a: regulator-ext-spk-gain-a {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-gain-a";
+		gpio = <&pio 28 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	ext_spk_gain_b: regulator-ext-spk-gain-b {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-gain-b";
+		gpio = <&pio 29 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
 
 	gpio-keys {
 		compatible = "gpio-keys";
@@ -30,15 +206,38 @@
 			gpios = <&pio 50 GPIO_ACTIVE_LOW>;
 			debounce-interval = <20>;
 		};
+
+		/*
+		 * Stock biscuit.dtsi wires this as a plain gpio-keys button on
+		 * GPIO37 (volumedn@114, gpios = <&pio 37 1>), NOT through the KPD
+		 * matrix - our &keypad node below had pinmuxed this same pin to
+		 * KPCOL1 and claimed it as a MATRIX_KEY, which is a real pinmux
+		 * conflict with this node's plain-GPIO claim on the same pin.
+		 * Moved here to match stock exactly; see keypad_pins_default.
+		 */
+		key-volume-down {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&pio 37 GPIO_ACTIVE_LOW>;
+			debounce-interval = <20>;
+		};
 	};
 };
 
 &keypad {
-	linux,keymap = <MATRIX_KEY(0x00, 0x00, KEY_ASSISTANT)
-			MATRIX_KEY(0x00, 0x01, KEY_VOLUMEDOWN)>;
+	/*
+	 * KEY_VOLUMEDOWN removed - see key-volume-down in gpio-keys above.
+	 * KEY_ASSISTANT is unverified: stock reads the Dot/Assistant button
+	 * through Amazon's proprietary kpd.c hw-scan-code table
+	 * (mediatek,kpd-hw-init-map = <138 ...>). Whether pin 36/KPCOL0 carries
+	 * the same physical button wired to a plain matrix contact, or
+	 * something else entirely, is unconfirmed - needs a press tested
+	 * against evtest once evdev is enabled, not assumed.
+	 */
+	linux,keymap = <MATRIX_KEY(0x00, 0x00, KEY_ASSISTANT)>;
 
 	keypad,num-rows = <1>;
-	keypad,num-columns = <2>;
+	keypad,num-columns = <1>;
 	debounce-delay-ms = <20>;
 
 	pinctrl-names = "default";
@@ -47,12 +246,31 @@
 	status = "okay";
 };
 
+&mt6323keys {
+	/*
+	 * Stock has no separate power button - this board wires the PMIC's
+	 * dedicated hardware PWRKEY comparator pin to the physical mute
+	 * switch instead, and its own vendor kpd.c driver remaps that slot to
+	 * KEY_MUTE (mediatek,kpd-sw-pwrkey = <113> in Amazon's biscuit.dtsi).
+	 * Confirmed via the stock button_config.json used by their userspace
+	 * buttond: "mute" is keyCode 113 (KEY_MUTE) EV_KEY, matching exactly.
+	 * mtk-pmic-keys.c is mainline's driver for this same PMIC hardware -
+	 * same physical pin/comparator/IRQ, just the standard upstream path
+	 * instead of Amazon's vendor kpd.c. "home" (the PMIC's second,
+	 * separate comparator pin) is left at its inherited default; nothing
+	 * on this board is confirmed wired to it.
+	 */
+	power {
+		linux,keycodes = <KEY_MUTE>;
+	};
+};
+
 &mt6323_vusb_reg {
 	regulator-always-on;
 };
 
 &thermal {
-	status = "disabled";
+	status = "okay";
 };
 
 &u2phy0 {
@@ -68,7 +286,8 @@
 &pio {
 	gpio_keys_pins_default: gpio-keys-pins {
 		pins {
-			pinmux = <MT8163_PIN_50_EINT18__FUNC_GPIO50>;
+			pinmux = <MT8163_PIN_50_EINT18__FUNC_GPIO50>,
+				 <MT8163_PIN_37_KPCOL1__FUNC_GPIO37>;
 			bias-pull-up;
 			input-enable;
 		};
@@ -76,9 +295,363 @@
 
 	keypad_pins_default: keypad-pins {
 		pins {
-			pinmux = <MT8163_PIN_36_KPCOL0__FUNC_KPCOL0>,
-				 <MT8163_PIN_37_KPCOL1__FUNC_KPCOL1>;
+			pinmux = <MT8163_PIN_36_KPCOL0__FUNC_KPCOL0>;
 			input-enable;
 		};
 	};
+};
+
+/*
+ * amazon-common.dtsi declares all 512MB (0x40000000 + 0x20000000), but the
+ * top of that range is not ours: LK reports mblock[0] as 0x1f800000, the ATF
+ * log buffer sits at 0x5f800000, and everything from 0x5fa00000 up is locked
+ * by the EMI MPU - the kernel faults if it actually touches it.
+ *
+ * Override rather than add a second node: the kernel walks every node with
+ * device_type = "memory" and adds them all to memblock, so a new one would
+ * declare the same RAM twice and reintroduce the range we are trying to
+ * exclude.
+ */
+&{/memory} {
+	reg = <0 0x40000000 0 0x1f800000>;
+};
+
+/*
+ * Keep the rails the stock kernel keeps.
+ *
+ * Nothing in this devicetree claims these as supplies yet, so
+ * regulator_init_complete() switches them off as "unused" - the log line
+ * "va: disabling / vgp2: disabling / vcamaf: disabling" is the kernel
+ * cutting power to peripherals we are trying to talk to. Once that happens
+ * the IS31FL3236 stops ACKing on i2c0 (write returns -ENXIO) and the
+ * TLV320 codecs report invalid supply voltages.
+ *
+ * biscuit.dtsi in the FireOS 3.18 source marks all of these always-on, so
+ * mirror it rather than guess which peripheral sits on which rail. These
+ * can be narrowed later by giving each consumer a proper *-supply phandle.
+ */
+&mt6323_va_reg        { regulator-always-on; };
+&mt6323_vgp1_reg      { regulator-always-on; };
+&mt6323_vgp2_reg      { regulator-always-on; };
+&mt6323_vcamaf_reg    { regulator-always-on; };
+&mt6323_vmch_reg      { regulator-always-on; };
+&mt6323_vemc3v3_reg   { regulator-always-on; };
+&mt6323_vio18_reg     { regulator-always-on; };
+&mt6323_vio28_reg     { regulator-always-on; };
+&mt6323_vm_reg        { regulator-always-on; };
+&mt6323_vmc_reg       { regulator-always-on; };
+/*
+ * MT6625L combo chip power rails - none of mt6323.dtsi's regulator nodes
+ * for these are always-on, and nothing enables them until the WMT
+ * userspace power-on ioctl runs, well after mmc1's own boot-time SDIO
+ * probe has already given up on an unpowered chip. Force them up from
+ * boot so the chip is actually alive by the time mmc core probes it.
+ */
+/*
+ * The four connectivity rails are NOT always-on.
+ *
+ * They used to be, from the very first bring-up commit, on the theory
+ * that the combo chip simply needed power present.  But the WMT platform
+ * driver enable/disable-manages all four itself (reg_VCN18/reg_VCN28 in
+ * mtk_wcn_consys_hw_reg_ctrl(), reg_VCN33_BT/reg_VCN33_WIFI in the BT and
+ * WiFi func paths), so "always-on" added nothing on the way up and broke
+ * the way down: the regulator core refuses to drop an always-on rail, so
+ * regulator_disable() in the power-off path silently did nothing.
+ *
+ * The consequence is that CONSYS was never actually power-cycled - not by
+ * a WMT func off/on, and not by a warm reboot either, since the PMIC keeps
+ * its state across an AP restart.  Only physically unplugging the device
+ * ever dropped these rails.  That is why a soft re-init wedges the chip
+ * after a few cycles (each "power off" leaves the MCU running on live
+ * rails with its clock pulled out from under it) and why cold and warm
+ * boots behave differently at all.
+ *
+ * regulator-boot-on records that the bootloader leaves them enabled, so
+ * the core does not glitch them off before the driver claims them.
+ */
+&mt6323_vcn18_reg      { regulator-boot-on; };
+&mt6323_vcn28_reg      { regulator-boot-on; };
+&mt6323_vcn33_bt_reg   { regulator-boot-on; };
+&mt6323_vcn33_wifi_reg { regulator-boot-on; };
+
+/*
+ * MT6625L combo WiFi/BT/GPS. The CONSYS subsystem block is described in
+ * mt8163.dtsi but left disabled there, since only boards that actually
+ * populate the combo chip should probe it.
+ */
+&consys {
+	/*
+	 * Re-enabled: bisection showed the earlier hang persisted even with
+	 * this node disabled, so it was never actually the cause - the real
+	 * blocker was the missing btif/btif_tx/btif_rx nodes (see mt8163.dtsi).
+	 *
+	 * pinctrl-names/pinctrl-N are already set correctly by
+	 * mt8163-amazon-common.dtsi (default/wifi_reset_init/
+	 * consys_pins_default) - don't repeat them here, an override with a
+	 * shorter pinctrl-names list would drop the "consys_pins_default"
+	 * state mtk_wmt_probe() looks up by name.
+	 */
+	status = "okay";
+};
+
+/*
+ * AFE (audio front end). Disabled by default in mt8163.dtsi since only
+ * boards that actually populate audio codecs should probe it - biscuit has
+ * a full mic array + speaker codec, so turn it on here.
+ */
+&afe {
+	status = "okay";
+	#sound-dai-cells = <1>;
+
+	/* Mux the speaker I2S port (I2S1: pins 46/47/48 + MCLK 15) out to the
+	 * aic32x4; without this the AFE clocks I2S1 internally but the pads
+	 * stay GPIOs and no audio reaches the codec. */
+	pinctrl-names = "default";
+	/*
+	 * No pinctrl here at all.
+	 *
+	 * The I2S1 pads (72/73/74) are owned by the mic-array FPGA driver,
+	 * which muxes them with its own "active" state - two consumers
+	 * claiming the same pins makes pinctrl fail and takes the whole sound
+	 * card down. The amplifier gain pins cannot be driven from pinctrl
+	 * either: mainline's pinctrl-mtk-common implements no
+	 * PIN_CONFIG_OUTPUT, so an "output-high" group fails with
+	 * "pin_config_group_set op failed" and leaves the card in deferred
+	 * probe forever. They are requested as GPIOs by the machine driver.
+	 */
+};
+
+/*
+ * Sound card. MT8163 has no in-tree ASoC machine driver, so wire the AFE's
+ * I2S CPU DAIs to codecs with the generic simple-audio-card binding instead
+ * of writing one.
+ *
+ * Speaker: DL1 (front-end playback memif) -> AFE I2S0 backend -> aic32x4 on
+ * i2c2. Confirmed against Amazon's own stock machine driver: their
+ * "TI_DAC_Playback" dai_link uses cpu_dai_name = MT_SOC_DL1DAI_NAME, i.e.
+ * the same DL1 front-end.
+ *
+ * Mic array: NOT wired through the AFE at all. Reverse-engineering Amazon's
+ * stock dai_link table (mt_soc_machine.c) showed the real capture path is
+ * "AMZN_SPI_Capture": cpu_dai_name = platform_name = AMZN_MT_SPI_PCM, a
+ * fully custom driver (amzn-spi-pcm/) that bit-bangs a "dough" FPGA over
+ * SPI. The four aic3x mic codecs output I2S into that FPGA - not into the
+ * SoC - which mixes/packages all channels and hands finished frames back to
+ * the SoC over SPI0. See mt8163-amazon-biscuit-peripherals.dtsi for the
+ * FPGA node and drivers/spi mt8163-spi-fpga-pcm.c for the driver this
+ * links against. mic0_codec (i2c0@0x18) is kept as the codec side purely
+ * because Amazon's own link pairs it that way (codec_name =
+ * "tlv320aic3101.0-0018") - it is presumably used for control/gain only,
+ * since audio samples never actually cross I2C.
+ */
+/ {
+	/*
+	 * The mic array's master clock.
+	 *
+	 * Physically this is the CMMCLK pad, driven by the camera SENINF timing
+	 * generator and divided down to 9.6MHz (see mt8163-spi-fpga-pcm.c,
+	 * which programs SENINF_TG1_*). There is no Linux clock provider for
+	 * it, so model it as a fixed clock at the frequency that block is
+	 * programmed to produce - the ADC3101s need a truthful rate to compute
+	 * their PLL dividers from. The old nodes claimed clk26m, which is not
+	 * what the pin carries.
+	 */
+	/*
+	 * The speaker codec's master clock.
+	 *
+	 * The speaker codec and the mic ADCs share ONE master clock: the
+	 * CMMCLK pad (pin 119), driven by the camera SENINF divider at 9.6MHz.
+	 * Amazon's machine driver hands the aic32x4 mt_soc_mclk_freq, which is
+	 * AIC31XX_FREQ_9600000, exactly as it does for the ADCs - and their
+	 * device tree never muxes pin 15 at all, so I2S1_MCK is not involved.
+	 * The node used to claim clk26m, so the codec computed PLL dividers
+	 * for a 26MHz clock it never receives.
+	 */
+	spk_mclk: spk-mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <9600000>;
+		clock-output-names = "spk_mclk";
+	};
+
+	mic_mclk: mic-mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <9600000>;
+		clock-output-names = "mic_mclk";
+	};
+
+	sound: sound {
+		compatible = "amazon,biscuit-audio";
+		mediatek,platform = <&afe>;
+		/*
+		 * Enabled by a DAPM supply widget so the amplifier is powered
+		 * only while a playback stream is up - it hisses audibly when
+		 * held on with nothing driving it, and stock refcounts it the
+		 * same way.
+		 */
+		ext-spk-amp-supply = <&ext_spk_amp>;
+		ext-spk-amp2-supply = <&ext_spk_amp2>;
+		/*
+		 * MT8163's AFE splits playback into a front-end memif (DL1)
+		 * and a separate I2S back-end DAI; only a DPCM card can bind
+		 * them. simple-audio-card built a plain DL1<->codec link, which
+		 * left the I2S port unconfigured so nothing was ever clocked
+		 * out of the SoC pins and the speaker stayed silent.
+		 *
+		 * I2S DAIs here are unidirectional: I2S0/I2S2 capture,
+		 * I2S1/I2S3 playback - so the speaker back-end is I2S1.
+		 * Combined DAI indices: DL1=0 DL2=1 VUL=2 AWB=3
+		 *                       I2S0=4 I2S1=5 I2S2=6 I2S3=7
+		 */
+		mediatek,fe-dai = <&afe 0>;    /* DL1 front-end memif */
+		mediatek,be-dai = <&afe 5>;    /* I2S1 playback back-end */
+		mediatek,audio-codec = <&aic32x4_codec>;
+		/*
+		 * Mic array: a self-contained capture component (CPU DAI and
+		 * PCM platform in one), not an AFE back end - see the comment
+		 * above and mt8163-spi-fpga-pcm.c.
+		 */
+		amazon,mic-fpga = <&spi_pcm_fpga>;
+		/*
+		 * Only the first ADC is named here. It is the TDM bit- and
+		 * frame-clock master for the whole array; the other three are
+		 * slaves on the same bus, exactly as Amazon's own machine
+		 * driver wires it (their "AMZN_SPI_Capture" link names only
+		 * tlv320aic3101.0-0018).
+		 */
+		amazon,mic-codec = <&mic0_codec>, <&mic1_codec>,
+				   <&mic2_codec>, <&mic3_codec>;
+		/*
+		 * 3.5mm line-out insertion detect. Amazon's downstream "accdet"
+		 * is a full MediaTek headset block (mic-bias comparator + 3
+		 * button ADC decode via the MT6323 PMIC), which mainline has no
+		 * mt8163 driver for - but the part that matters on a line-OUT
+		 * jack is just presence, and that is a plain GPIO (their
+		 * accdet-gpio = <&pio 26 0>, EINT4). Wire it as an ASoC jack.
+		 */
+		amazon,hp-det-gpios = <&pio 26 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		/*
+		 * aud_pins_spk_i2s1 routes I2S1 to pins 46/47/48, the pads the
+		 * speaker codec listens on. Without it the AFE clocks I2S1 out
+		 * to the FPGA pads only and the codec never sees a bit clock.
+		 */
+		pinctrl-0 = <&hp_det_pins>, <&aud_pins_spk_i2s1>;
+	};
+};
+
+/*
+ * Mic-array FPGA. SPI0 is otherwise unused on this board.
+ */
+&spi {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi_pins_default>;
+	/* Software chip-select: keeps CS low across the entire bitstream
+	 * transfer while the FPGA is being configured (see spi-pins comment). */
+	cs-gpios = <&pio 53 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	spi_pcm_fpga: audio-fpga@0 {
+		compatible = "amazon,biscuit-spi-pcm";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+		#sound-dai-cells = <0>;
+
+		reset-gpios = <&pio 43 GPIO_ACTIVE_LOW>;
+
+		pinctrl-names = "idle", "active", "mclk";
+		pinctrl-0 = <&aud_pins_i2s1_idle>;
+		pinctrl-1 = <&aud_pins_i2s1_active>;
+		pinctrl-2 = <&aud_pins_fpga_mclk>;
+
+		/*
+		 * FPGA reference clock = the CMMCLK pad, which on MT8163 is
+		 * driven by the camera SENINF (sensor interface) timing
+		 * generator, NOT by CAMTG_SEL alone. Matching Amazon's stock
+		 * mt_amzn_mclk.c (GPL kernel source): the driver must power the
+		 * ISP domain, enable the imgsys sensor clocks, set CAMTG_SEL to
+		 * UNIVPLL_D26 (48 MHz), and program the SENINF TG1 divider to
+		 * emit 9.6 MHz on the pad. Without the SENINF programming the
+		 * FPGA gets no clock and reads back revision 0.
+		 *
+		 * mclk      = CAMTG_SEL (set to 48 MHz in the driver)
+		 * sen_tg    = the SENINF timing generator that drives the pad
+		 * sen_cam/larb2_smi/cam_smi = imgsys register-bus/sensor clocks
+		 *             needed to reach the SENINF registers (ISP domain)
+		 */
+		clocks = <&topckgen CLK_TOP_CAMTG_SEL>,
+			 <&imgsys CLK_IMG_SEN_TG>,
+			 <&imgsys CLK_IMG_SEN_CAM>,
+			 <&imgsys CLK_IMG_LARB2_SMI>,
+			 <&imgsys CLK_IMG_CAM_SMI>;
+		clock-names = "mclk", "sen_tg", "sen_cam", "larb2_smi", "cam_smi";
+		power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
+	};
+};
+
+/*
+ * Firmware for the mic-array FPGA (bitstream/config, not a Linux driver
+ * module). Amazon's biscuit_defconfig: CONFIG_EXTRA_FIRMWARE =
+ * "i2s_to_spi_v34.bin". Not yet extracted from the stock Fire OS
+ * partitions - request_firmware() will fail until
+ * /lib/firmware/i2s_to_spi_v34.bin is populated on the target rootfs.
+ */
+
+/*
+ * BTIF (HCI transport for the MT6625L combo chip). See the comment on the
+ * node in mt8163.dtsi for why this specifically was blocking boot.
+ */
+&btif {
+	status = "okay";
+};
+
+&btif_tx {
+	status = "okay";
+};
+&btif_rx {
+	status = "okay";
+};
+
+/*
+ * There is deliberately no "mediatek,connectivity-combo" node here.
+ *
+ * wmt_gpio_init() looks such a node up by of_find_compatible_node() and, if
+ * it finds one, claims gpio_combo_rst_pin / gpio_combo_pmu_en_pin as plain
+ * GPIOs and drives them. On this board those are pins 60 (WB_RSTB) and 65
+ * (WB_SEN), and requesting them as GPIOs muxes both pads out of their WB_*
+ * function and parks them at a static level.
+ *
+ * Amazon never does that. Their whole treatment of the four WB pins is the
+ * wifi_reset_init pinctrl group (biscuit.dtsi:757-765), which sets RSTB,
+ * SCLK, SDATA and SEN to "input-enable; bias-pull-up" - released, pulled up,
+ * never driven - and re-selects that state on every CONSYS power-on. Stock's
+ * DTS contains no connectivity-combo node at all, so stock's wmt_gpio_init()
+ * takes its early return and every gpio_num stays DEFAULT_PIN_ID.
+ *
+ * But the node cannot simply be deleted: on this board it is what powers the
+ * chip at all. _wmt_detect_pwr_on() (wmt_detect_pwr.c:108,153) returns early
+ * unless both gpio_nums are valid, and its _wmt_detect_output_high(PMU_EN) is
+ * the actual chip enable - remove the node and the WMT function-on fails with
+ * EFAULT and no wlan0 appears. Measured, twice.
+ *
+ * So keep the node and drive the sequence, then hand the pads back: the
+ * pinctrl_select_state("wifi_reset_init") added to
+ * mtk_wcn_consys_hw_reg_ctrl() (matching stock mtk_wcn_consys_hw.c:419-433)
+ * re-muxes 60/65 to their WB_* function as pulled-up inputs on every
+ * power-on, so they end in stock's state instead of being pinned low by a
+ * gpiod that never lets go. Holding WB_SEN low is the only board-level
+ * divergence found that could gate the 2.4 GHz front end while leaving BT
+ * (which does not pass through the WiFi FEM) and 5 GHz working.
+ */
+/ {
+	connectivity-combo {
+		compatible = "mediatek,connectivity-combo";
+		gpio_combo_rst_pin = <&pio 60 0>;
+		gpio_combo_pmu_en_pin = <&pio 65 0>;
+	};
+};
+
+&auxadc {
+	status = "okay";
 };
