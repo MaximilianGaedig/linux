@@ -97,6 +97,8 @@
 #define ADC3XXX_INTERFACE_CTRL_1		ADC3XXX_REG(0, 27)
 #define ADC3XXX_CH_OFFSET_1			ADC3XXX_REG(0, 28)
 #define ADC3XXX_INTERFACE_CTRL_2		ADC3XXX_REG(0, 29)
+/* Keep BCLK/WCLK driven while the codec is powered down. */
+#define ADC3XXX_BCLK_WCLK_ACTIVE		BIT(2)
 #define ADC3XXX_BCLK_N_DIV			ADC3XXX_REG(0, 30)
 #define ADC3XXX_INTERFACE_CTRL_3		ADC3XXX_REG(0, 31)
 #define ADC3XXX_INTERFACE_CTRL_4		ADC3XXX_REG(0, 32)
@@ -106,6 +108,10 @@
 #define ADC3XXX_ADC_FLAG			ADC3XXX_REG(0, 36)
 #define ADC3XXX_CH_OFFSET_2			ADC3XXX_REG(0, 37)
 #define ADC3XXX_I2S_TDM_CTRL			ADC3XXX_REG(0, 38)
+/* I2S_TDM_CTRL bits */
+#define ADC3XXX_TDM_EARLY_3STATE		0x02
+#define ADC3XXX_TDM_CHANNEL_DIS_SHIFT		2
+#define ADC3XXX_TDM_CHANNEL_MASK		0x3
 /* 39-41 Reserved */
 #define ADC3XXX_INTR_FLAG_1			ADC3XXX_REG(0, 42)
 #define ADC3XXX_INTR_FLAG_2			ADC3XXX_REG(0, 43)
@@ -119,6 +125,9 @@
 #define ADC3XXX_GPIO2_CTRL			ADC3XXX_REG(0, 51)
 #define ADC3XXX_GPIO1_CTRL			ADC3XXX_REG(0, 52)
 #define ADC3XXX_DOUT_CTRL			ADC3XXX_REG(0, 53)
+/* DOUT_CTRL bits */
+#define ADC3XXX_DOUT_PRIMARY			(0x1 << 1)
+#define ADC3XXX_DOUT_BUS_KEEPER_DIS		BIT(4)
 /* 54-56 Reserved */
 #define ADC3XXX_SYNC_CTRL_1			ADC3XXX_REG(0, 57)
 #define ADC3XXX_SYNC_CTRL_2			ADC3XXX_REG(0, 58)
@@ -210,6 +219,20 @@
 #define ADC3XXX_WCLK_MASTER		0x04
 
 /* Interface register masks */
+/*
+ * Release DOUT outside this part's own slots.
+ *
+ * Distinct from the early-3-state bit in I2S_TDM_CTRL, which only moves
+ * the release one BCLK earlier: without THIS bit the part drives the data
+ * line for the whole frame regardless of slot configuration, so on a bus
+ * shared by four ADCs whichever one wins overwrites every other slot with
+ * its own data. Amazon's driver sets it unconditionally for DSP mode
+ * (AIC31XX_3STATES, same register, same bit); mainline never had it, which
+ * is why every microphone slot read as an exact digital zero while the
+ * clocks, framing and gains all measured correct.
+ */
+#define ADC3XXX_IFACE_3STATE		0x01
+
 #define ADC3XXX_FORMAT_MASK		0xc0
 #define ADC3XXX_FORMAT_SHIFT		6
 #define ADC3XXX_WLENGTH_MASK		0x30
@@ -327,6 +350,13 @@ struct adc3xxx {
 	int master;
 	u8 page_no;
 	int use_pll;
+	/* TDM frame geometry, from .set_tdm_slot; 0 slots => plain stereo */
+	int tdm_slots;
+	int tdm_slot_width;
+	/* TDM bus setup, replayed once the clocks are up (see below) */
+	bool tdm_valid;
+	u8 tdm_ctrl;
+	u8 tdm_offset;
 	struct gpio_chip gpio_chip;
 };
 
@@ -495,6 +525,23 @@ static const struct adc3xxx_rate_divs adc3xxx_divs[] = {
 	/* 16k rate */
 	{ 12000000, 16000, 1, 1, 7, 1680, 21, 2, 128 },
 	{ 12288000, 16000, 1, 1, 7, 0000, 21, 2, 128 },
+	/*
+	 * 9.6MHz MCLK, as fed to the four-ADC mic array on the Amazon Echo
+	 * Dot 2: there the master clock is the SoC's CMMCLK pad, driven by the
+	 * camera SENINF timing generator and divided down from 48MHz, so none
+	 * of the usual audio-crystal rates above apply.
+	 *
+	 * These are Amazon's own dividers for this MCLK and rate, and the
+	 * choice matters for more than fs. It fixes ADC_CLK, which is also
+	 * where BCLK comes from:
+	 *   PLL     = MCLK * R * J.D / P = 9.6MHz * 1 * 48 / 5 = 92.16MHz
+	 *   ADC_CLK = PLL / NADC         = 92.16MHz / 15       =  6.144MHz
+	 *   fs      = ADC_CLK / (MADC * AOSR) = 6.144MHz / (3 * 128) = 16000Hz
+	 * An arithmetically equivalent set with NADC=21, MADC=2 also yields
+	 * 16kHz but leaves ADC_CLK at 4.096MHz, and no integer BDIV off that
+	 * can produce the 384-BCLK frame this board's TDM bus needs.
+	 */
+	{  9600000, 16000, 5, 1, 48, 0, 15, 3, 128 },
 	/* 22.05k rate */
 	{ 12000000, 22050, 1, 1, 7, 560, 15, 2, 128 },
 	/* 32k rate */
@@ -537,6 +584,49 @@ static int adc3xxx_get_divs(struct device *dev, int mclk, int rate, int pll_mode
 	dev_info(dev, "Master clock rate %d and sample rate %d is not supported\n",
 		 mclk, rate);
 	return -EINVAL;
+}
+
+/*
+ * Re-apply the TDM bus setup once the ADC clock is actually running.
+ *
+ * .set_tdm_slot runs from hw_params, long before anything clocks this part,
+ * and the vendor driver deliberately does not configure the bus there: it
+ * parks DOUT in Hi-Z, sets the dividers, enables the clock, waits, and only
+ * then writes the TDM control and slot offset before releasing DOUT. Writing
+ * them into an unclocked part and hoping they stick is the one ordering
+ * difference left against stock, so replay them here, after the clock is up
+ * and settled.
+ */
+static int adc3xxx_tdm_settle(struct snd_soc_dapm_widget *w,
+			      struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
+
+	if (!adc3xxx->tdm_valid)
+		return 0;
+
+	/* Let the divider chain settle before the bus is reconfigured. */
+	msleep(100);
+
+	/*
+	 * Park DOUT in Hi-Z first. Stock disables every part's DOUT at the top
+	 * of hw_params, programs the bus, and only re-enables it at the end, so
+	 * no part is driving while slot assignments are in flux and none of
+	 * them latches a half-written configuration.
+	 */
+	snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				ADC3XXX_DOUT_BUS_KEEPER_DIS);
+
+	snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
+				adc3xxx->tdm_ctrl);
+	snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1,
+				adc3xxx->tdm_offset);
+	snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				ADC3XXX_DOUT_BUS_KEEPER_DIS |
+				ADC3XXX_DOUT_PRIMARY);
+
+	return 0;
 }
 
 static int adc3xxx_pll_delay(struct snd_soc_dapm_widget *w,
@@ -882,7 +972,7 @@ static const struct snd_soc_dapm_widget adc3xxx_dapm_widgets[] = {
 			    0, adc3xxx_pll_delay, SND_SOC_DAPM_POST_PMU),
 
 	SND_SOC_DAPM_SUPPLY("ADC_CLK", ADC3XXX_ADC_NADC, ADC3XXX_ENABLE_NADC_SHIFT,
-			    0, NULL, 0),
+			    0, adc3xxx_tdm_settle, SND_SOC_DAPM_POST_PMU),
 	SND_SOC_DAPM_SUPPLY("ADC_MOD_CLK", ADC3XXX_ADC_MADC, ADC3XXX_ENABLE_MADC_SHIFT,
 			    0, NULL, 0),
 
@@ -1196,6 +1286,7 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dapm_context *dapm = snd_soc_component_to_dapm(dai->component);
 	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
 	int i, width = 16;
+	unsigned int frame_bits;
 	u8 iface_len, bdiv;
 
 	i = adc3xxx_get_divs(component->dev, adc3xxx->sysclk,
@@ -1228,6 +1319,40 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	}
 	snd_soc_component_update_bits(component, ADC3XXX_INTERFACE_CTRL_1,
 				      ADC3XXX_WLENGTH_MASK, iface_len);
+	if (!adc3xxx->master && adc3xxx->tdm_slots) {
+		/*
+		 * A slave on a shared TDM bus takes its clock from the bus.
+		 *
+		 * Every part here sees the same master clock, so each could
+		 * run its own PLL and arrive at the right sample rate on
+		 * paper - but those PLLs are independent, and they drift
+		 * against the word clock the bus master is actually driving.
+		 * The part then converts happily and lands its samples in
+		 * slots that have already moved on. Clock the slaves from
+		 * BCLK instead, which is what the bus master generates, so
+		 * they cannot drift relative to it. NADC is 1 because
+		 * CODEC_CLKIN is already the master's ADC clock divided by
+		 * its BCLK divider; MADC and AOSR stay as computed.
+		 */
+		snd_soc_component_write(component, ADC3XXX_CLKGEN_MUX,
+					ADC3XXX_CODEC_CLKIN_BCLK <<
+					ADC3XXX_CODEC_CLKIN_SHIFT);
+		if (adc3xxx->use_pll) {
+			snd_soc_dapm_del_routes(dapm, adc3xxx_pll_intercon,
+						ARRAY_SIZE(adc3xxx_pll_intercon));
+			adc3xxx->use_pll = 0;
+		}
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_NADC,
+					      ADC3XXX_NADC_MASK, 1);
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_MADC,
+					      ADC3XXX_MADC_MASK,
+					      adc3xxx_divs[i].madc);
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_AOSR,
+					      ADC3XXX_AOSR_MASK,
+					      adc3xxx_divs[i].aosr);
+		return 0;
+	}
+
 	if (adc3xxx_divs[i].pll_p) { /* If PLL used for this mode */
 		adc3xxx_setup_pll(component, i);
 		snd_soc_component_write(component, ADC3XXX_CLKGEN_MUX, ADC3XXX_USE_PLL);
@@ -1254,9 +1379,31 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	/* AOSR */
 	snd_soc_component_update_bits(component, ADC3XXX_ADC_AOSR,
 				      ADC3XXX_AOSR_MASK, adc3xxx_divs[i].aosr);
-	/* BDIV N Value */
-	/* BCLK is (by default) set up to be derived from ADC_CLK */
-	bdiv = (adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc) / (2 * width);
+	/*
+	 * BDIV N Value
+	 *
+	 * BCLK is (by default) derived from ADC_CLK, and it has to clock out a
+	 * whole frame - not just this part's own two channels. On a TDM bus
+	 * several parts share the line and answer in different slots, so the
+	 * frame is slots * slot_width bits wide; dividing for two channels
+	 * makes the master emit a frame short enough that every slot past the
+	 * first is never clocked at all, and a receiver sees a live bus
+	 * carrying nothing it can assemble.
+	 */
+	/*
+	 * Clear the digital mute. This register resets to 0x88, both channels
+	 * muted, and mainline only ever exposes it as a mixer control - so a
+	 * system without userspace to open it records silence from otherwise
+	 * perfectly configured hardware. Amazon writes 0 here unconditionally.
+	 */
+	snd_soc_component_write(component, ADC3XXX_ADC_FGA, 0);
+
+	frame_bits = adc3xxx->tdm_slots ?
+		     adc3xxx->tdm_slots * adc3xxx->tdm_slot_width :
+		     2 * width;
+	bdiv = (adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc) / frame_bits;
+	if (!bdiv)
+		bdiv = 1;
 	snd_soc_component_update_bits(component, ADC3XXX_BCLK_N_DIV,
 				      ADC3XXX_BDIV_MASK, bdiv);
 
@@ -1327,10 +1474,10 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 		format = ADC3XXX_FORMAT_I2S;
 		break;
 	case SND_SOC_DAIFMT_DSP_A | SND_SOC_DAIFMT_IB_NF:
-		format = ADC3XXX_FORMAT_DSP;
+		format = ADC3XXX_FORMAT_DSP | ADC3XXX_IFACE_3STATE;
 		break;
 	case SND_SOC_DAIFMT_DSP_B | SND_SOC_DAIFMT_IB_NF:
-		format = ADC3XXX_FORMAT_DSP;
+		format = ADC3XXX_FORMAT_DSP | ADC3XXX_IFACE_3STATE;
 		break;
 	case SND_SOC_DAIFMT_RIGHT_J | SND_SOC_DAIFMT_NB_NF:
 		format = ADC3XXX_FORMAT_RJF;
@@ -1350,22 +1497,121 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	else if (!master && adc3xxx->master)
 		snd_soc_dapm_del_routes(dapm, adc3xxx_bclk_out_intercon,
 					ARRAY_SIZE(adc3xxx_bclk_out_intercon));
+	if (master)
+		snd_soc_component_update_bits(component,
+					      ADC3XXX_INTERFACE_CTRL_2,
+					      ADC3XXX_BCLK_WCLK_ACTIVE,
+					      ADC3XXX_BCLK_WCLK_ACTIVE);
+
 	adc3xxx->master = master;
 
 	/* set clock direction and format */
 	ret = snd_soc_component_update_bits(component,
 					    ADC3XXX_INTERFACE_CTRL_1,
-					    ADC3XXX_CLKDIR_MASK | ADC3XXX_FORMAT_MASK,
+					    ADC3XXX_CLKDIR_MASK | ADC3XXX_FORMAT_MASK |
+					    ADC3XXX_IFACE_3STATE,
 					    clkdir | format);
 	if (ret < 0)
 		return ret;
 	return 0;
 }
 
+/*
+ * Place this part's channels in a shared TDM frame.
+ *
+ * Several of these parts can sit on one data line, each driving its own pair
+ * of slots; register 28 says how many BCLK cycles after the frame sync this
+ * one should start driving. It defaults to zero, so without this every part
+ * on the bus answers in slot 0 at once and drives the line against its
+ * neighbours - the clocks look perfectly healthy on a scope while the
+ * receiver never recovers a valid frame.
+ *
+ * The mask is the DAI's rx_mask, so the first set bit is this part's first
+ * slot; the offset is that slot index times the slot width, in bits.
+ */
+static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
+				    unsigned int tx_mask, unsigned int rx_mask,
+				    int slots, int slot_width)
+{
+	struct snd_soc_component *component = dai->component;
+	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
+	unsigned int offset, first, unused;
+	int ret;
+
+	/* No slots claimed: leave the part where it is. */
+	if (!rx_mask)
+		return 0;
+
+	if (slot_width <= 0)
+		return -EINVAL;
+
+	adc3xxx->tdm_slots = slots;
+	adc3xxx->tdm_slot_width = slot_width;
+
+	first = __ffs(rx_mask);
+	offset = first * slot_width;
+	if (offset > 255) {
+		dev_err(component->dev,
+			"TDM offset %u out of range (slot %u, width %d)\n",
+			offset, first, slot_width);
+		return -EINVAL;
+	}
+
+	/*
+	 * Release the data line outside our own slots.
+	 *
+	 * Without early 3-state every part on the bus drives DOUT for the
+	 * whole frame instead of just its own slots, so they fight each other
+	 * continuously and the receiver reads a dead line - clocks present,
+	 * frames arriving, every sample zero.
+	 *
+	 * The same register disables channels this part is not meant to
+	 * supply: the mask's two bits say which of this ADC's own left/right
+	 * slots are claimed, and the register wants the complement. A part
+	 * that keeps driving an unclaimed slot collides with whatever else
+	 * owns it.
+	 */
+	unused = (~(rx_mask >> first)) & ADC3XXX_TDM_CHANNEL_MASK;
+
+	dev_dbg(component->dev, "TDM slot offset %u BCLKs, disabled channels 0x%x\n",
+		offset, unused);
+
+	/*
+	 * Turn the bus keeper off and keep DOUT as the primary data output.
+	 *
+	 * The keeper holds the line at its last level whenever nothing is
+	 * driving it, which is exactly the situation early 3-state creates on
+	 * a shared bus. With four parts each keeping the line, the slots they
+	 * have released are held rather than left free for whoever owns them,
+	 * and the receiver reads a constant value - zero, here - no matter how
+	 * correct the clocks, slots and gains are. The two settings only make
+	 * sense together.
+	 */
+	adc3xxx->tdm_ctrl = (unused << ADC3XXX_TDM_CHANNEL_DIS_SHIFT) |
+			    ADC3XXX_TDM_EARLY_3STATE;
+	adc3xxx->tdm_offset = offset;
+	adc3xxx->tdm_valid = true;
+
+	ret = snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				      ADC3XXX_DOUT_BUS_KEEPER_DIS |
+				      ADC3XXX_DOUT_PRIMARY);
+	if (ret)
+		return ret;
+
+	ret = snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
+				      adc3xxx->tdm_ctrl);
+	if (ret)
+		return ret;
+
+	return snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1,
+				       adc3xxx->tdm_offset);
+}
+
 static const struct snd_soc_dai_ops adc3xxx_dai_ops = {
 	.hw_params	= adc3xxx_hw_params,
 	.set_sysclk	= adc3xxx_set_dai_sysclk,
 	.set_fmt	= adc3xxx_set_dai_fmt,
+	.set_tdm_slot	= adc3xxx_set_dai_tdm_slot,
 };
 
 static struct snd_soc_dai_driver adc3xxx_dai = {
@@ -1408,7 +1654,17 @@ static int adc3xxx_i2c_probe(struct i2c_client *i2c)
 		return -ENOMEM;
 	adc3xxx->dev = dev;
 
-	adc3xxx->rst_pin = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	/*
+	 * Optional, not mandatory.
+	 *
+	 * On this board (Amazon Echo Dot 2 mic array) four ADC3101s share a
+	 * single enable line and a single MCLK, exactly as Amazon's own device
+	 * tree describes them: only the first codec carries the gpio, the other
+	 * three carry nothing but their I2C address. A Linux gpiod is an
+	 * exclusive resource, so the three slaves cannot each claim the same
+	 * pin - and making this mandatory would fail their probe outright.
+	 */
+	adc3xxx->rst_pin = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(adc3xxx->rst_pin)) {
 		return dev_err_probe(dev, PTR_ERR(adc3xxx->rst_pin),
 				     "Failed to request rst_pin\n");
