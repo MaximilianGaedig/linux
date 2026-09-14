@@ -1,0 +1,97 @@
+/*
+* Copyright (C) 2011-2014 MediaTek Inc.
+*
+* This program is free software: you can redistribute it and/or modify it under the terms of the
+* GNU General Public License version 2 as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+* without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+* See the GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License along with this program.
+* If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#ifdef DFT_TAG
+#undef DFT_TAG
+#endif
+#define DFT_TAG         "[WLAN-MOD-INIT]"
+
+#include "wmt_detect.h"
+#include "wlan_drv_init.h"
+
+
+int do_wlan_drv_init(int chip_id)
+{
+	int i_ret = 0;
+
+#if IS_MODULE(CONFIG_MTK_COMBO_WIFI)
+	/*
+	 * CONFIG_MTK_COMBO_WIFI is tristate. Built as a module it is
+	 * CONFIG_MTK_COMBO_WIFI_MODULE, so the old "#ifdef
+	 * CONFIG_MTK_COMBO_WIFI" fell through to the else branch and this
+	 * function did nothing but log "CONFIG_MTK_COMBO_WIFI is not defined" -
+	 * /dev/stpwmt appeared, the modules loaded, and wlan0 was never
+	 * created.
+	 *
+	 * In module mode there is genuinely nothing to call from here: both
+	 * mtk_wcn_wmt_wifi_init() and mtk_wcn_wlan_gen2_init() now live in
+	 * modules and run from their own module_init at insmod time. Calling
+	 * them from this built-in translation unit would not even link.
+	 */
+	WMT_DETECT_INFO_FUNC("WLAN gen2 is a module (chip 0x%x); it registers itself at insmod\n",
+			     chip_id);
+#elif IS_BUILTIN(CONFIG_MTK_COMBO_WIFI)
+	int ret = 0;
+
+	WMT_DETECT_INFO_FUNC("start to do wlan module init 0x%x\n", chip_id);
+
+	/* WMT-WIFI char dev init */
+	ret = mtk_wcn_wmt_wifi_init();
+	WMT_DETECT_INFO_FUNC("WMT-WIFI char dev init, ret:%d\n", ret);
+	i_ret += ret;
+
+	switch (chip_id) {
+	case 0x6630:
+	case 0x6797:
+#ifdef MTK_WCN_WLAN_GEN3
+		/* WLAN driver init */
+		ret = mtk_wcn_wlan_gen3_init();
+		WMT_DETECT_INFO_FUNC("WLAN-GEN3 driver init, ret:%d\n", ret);
+		i_ret += ret;
+#else
+		WMT_DETECT_ERR_FUNC("WLAN-GEN3 driver is not supported, please check CONFIG_MTK_COMBO_CHIP\n");
+		i_ret = -1;
+#endif
+		break;
+
+	default:
+#if defined(MTK_WCN_WLAN_GEN2) && !defined(BISCUIT_WLAN_GEN2_IS_MODULE)
+		/* WLAN driver init */
+		ret = mtk_wcn_wlan_gen2_init();
+		WMT_DETECT_INFO_FUNC("WLAN-GEN2 driver init, ret:%d\n", ret);
+		i_ret += ret;
+#elif defined(BISCUIT_WLAN_GEN2_IS_MODULE)
+		/*
+		 * wlan/gen2 is a loadable module: it runs its own module_init
+		 * and registers with WMT from there, so there is nothing to
+		 * call here and nothing to fail.
+		 */
+		WMT_DETECT_INFO_FUNC("WLAN-GEN2 is a module, it will register itself\n");
+#else
+		WMT_DETECT_ERR_FUNC("WLAN-GEN2 driver is not supported, please check CONFIG_MTK_COMBO_CHIP\n");
+		i_ret = -1;
+#endif
+		break;
+	}
+
+	WMT_DETECT_INFO_FUNC("finish wlan module init\n");
+
+#else
+
+	WMT_DETECT_INFO_FUNC("CONFIG_MTK_COMBO_WIFI is not defined\n");
+
+#endif
+
+	return i_ret;
+}
