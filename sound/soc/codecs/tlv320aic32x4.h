@@ -203,6 +203,11 @@ int aic32x4_register_clocks(struct device *dev, const char *mclk_name);
 /* AIC32X4_CMMODE */
 #define AIC32X4_LDOIN_18_36		BIT(0)
 #define AIC32X4_LDOIN2HP		BIT(1)
+/*
+ * Headphone common-mode. Amazon's driver sets these two bits every time it
+ * touches CMMODE; mainline never sets them at all.
+ */
+#define AIC32X4_HP_CMMODE		(BIT(4) | BIT(5))
 
 /* AIC32X4_MICBIAS */
 #define AIC32X4_MICBIAS_LDOIN		BIT(3)
@@ -233,5 +238,8 @@ int aic32x4_register_clocks(struct device *dev, const char *mclk_name);
 #define AIC32X4_MIN_DOSR_FREQ		2800000
 #define AIC32X4_MAX_CODEC_CLKIN_FREQ    110000000
 #define AIC32X4_MAX_PLL_CLKIN		20000000
+/* The PLL only locks with its output inside this window. */
+#define AIC32X4_MIN_PLL_CLKOUT		80000000
+#define AIC32X4_MAX_PLL_CLKOUT		110000000
 
 #endif				/* _TLV320AIC32X4_H */
