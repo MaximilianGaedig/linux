@@ -647,8 +647,8 @@
 / {
 	connectivity-combo {
 		compatible = "mediatek,connectivity-combo";
-		gpio_combo_rst_pin = <&pio 60 0>;
-		gpio_combo_pmu_en_pin = <&pio 65 0>;
+		gpio_combo_rst_pin-gpios = <&pio 60 GPIO_ACTIVE_HIGH>;
+		gpio_combo_pmu_en_pin-gpios = <&pio 65 GPIO_ACTIVE_HIGH>;
 	};
 };
 

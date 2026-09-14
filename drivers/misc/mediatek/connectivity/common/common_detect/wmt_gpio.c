@@ -239,12 +239,11 @@ INT32 wmt_gpio_init(struct platform_device *pdev)
 {
 	INT32 iret = 0;
 	UINT32 i, j;
-	struct device_node *node;
+	struct gpio_desc *gpiod;
 
-	node = of_find_compatible_node(NULL, NULL, "mediatek,connectivity-combo");
-	if (!node) {
+	if (!pdev->dev.of_node) {
 		for (i = 0; i < GPIO_PIN_ID_MAX; i++)
-			gpio_ctrl_info.gpio_ctrl_state[i].gpio_num = DEFAULT_PIN_ID;
+			gpio_ctrl_info.gpio_ctrl_state[i].gpiod = NULL;
 		pr_err("wmt_gpio:can't find device tree node!\n");
 		iret = -1;
 		goto err;
@@ -253,11 +252,12 @@ INT32 wmt_gpio_init(struct platform_device *pdev)
 	gpio_ctrl_info.pinctrl_info = devm_pinctrl_get(&pdev->dev);
 	if (gpio_ctrl_info.pinctrl_info) {
 		for (i = 0; i < GPIO_PIN_ID_MAX; i++) {
-			gpio_ctrl_info.gpio_ctrl_state[i].gpio_num = of_get_named_gpio(node,
-					gpio_pin_name[i], 0);
-			if (gpio_ctrl_info.gpio_ctrl_state[i].gpio_num < 0)
-				gpio_ctrl_info.gpio_ctrl_state[i].gpio_num = DEFAULT_PIN_ID;
-			if (DEFAULT_PIN_ID != gpio_ctrl_info.gpio_ctrl_state[i].gpio_num) {
+			gpiod = devm_gpiod_get_optional(&pdev->dev, gpio_pin_name[i], GPIOD_ASIS);
+			if (IS_ERR(gpiod))
+				return dev_err_probe(&pdev->dev, PTR_ERR(gpiod),
+						     "wmt_gpio:failed to get %s\n", gpio_pin_name[i]);
+			gpio_ctrl_info.gpio_ctrl_state[i].gpiod = gpiod;
+			if (gpiod) {
 				for (j = 0; j < GPIO_STATE_MAX; j++) {
 					if (0 != strlen(gpio_state_name[i][j])) {
 						gpio_ctrl_info.gpio_ctrl_state[i].gpio_state[j] =
@@ -283,18 +283,16 @@ INT32 wmt_gpio_init(struct platform_device *pdev)
 		 * inputs, the state stock leaves them in.
 		 */
 
-		if (DEFAULT_PIN_ID != gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num) {
-			gpio_direction_output(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num,
-					0);
+		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpiod) {
+			gpiod_direction_output(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpiod, 0);
 			pr_err("wmt_gpio:set GPIO_COMBO_PMU_EN_PIN out to 0: %d!\n",
-					gpio_get_value(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_num));
+					gpiod_get_value_cansleep(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpiod));
 		}
 
-		if (DEFAULT_PIN_ID != gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num) {
-			gpio_direction_output(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num,
-					0);
+		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpiod) {
+			gpiod_direction_output(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpiod, 0);
 			pr_err("wmt_gpio:set GPIO_COMBO_RST_PIN out to 0: %d!\n",
-					gpio_get_value(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpio_num));
+					gpiod_get_value_cansleep(gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_RST_PIN].gpiod));
 		}
 
 		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpio_state[GPIO_PULL_DIS]) {
@@ -366,8 +364,8 @@ INT32 wmt_gpio_deinit(VOID)
 	UINT32 j;
 
 	for (i = 0; i < GPIO_PIN_ID_MAX; i++) {
-		gpio_ctrl_info.gpio_ctrl_state[i].gpio_num = DEFAULT_PIN_ID;
-		if (DEFAULT_PIN_ID != gpio_ctrl_info.gpio_ctrl_state[i].gpio_num) {
+		gpio_ctrl_info.gpio_ctrl_state[i].gpiod = NULL;
+		if (gpio_ctrl_info.gpio_ctrl_state[i].gpiod) {
 			for (j = 0; j < GPIO_STATE_MAX; j++) {
 				if (0 != strlen(gpio_state_name[i][j]))
 					gpio_ctrl_info.gpio_ctrl_state[i].gpio_state[j] = NULL;

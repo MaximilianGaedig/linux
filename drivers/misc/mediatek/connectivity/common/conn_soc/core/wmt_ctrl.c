@@ -384,16 +384,14 @@ INT32 wmt_ctrl_ul_cmd(P_DEV_WMT pWmtDev, const UINT8 *pCmdStr)
 #if 0
 	INIT_COMPLETION(pWmtDev->cmd_comp);
 	pWmtDev->cmd_result = -1;
-	strncpy(pWmtDev->cCmd, pCmdStr, NAME_MAX);
-	pWmtDev->cCmd[NAME_MAX] = '\0';
+	strscpy(pWmtDev->cCmd, pCmdStr);
 	wake_up_interruptible(&pWmtDev->cmd_wq);
 #endif
 
 	pCmdSignal = &pWmtDev->cmdResp;
 	osal_signal_init(pCmdSignal);
 	pCmdSignal->timeoutValue = 2000;
-	osal_strncpy(pWmtDev->cCmd, pCmdStr, NAME_MAX);
-	pWmtDev->cCmd[NAME_MAX] = '\0';
+	osal_strscpy(pWmtDev->cCmd, pCmdStr, osal_sizeof(pWmtDev->cCmd));
 
 	pCmdReq = &pWmtDev->cmdReq;
 
