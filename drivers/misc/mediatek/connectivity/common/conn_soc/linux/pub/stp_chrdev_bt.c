@@ -443,6 +443,21 @@ mtk_bt_hci_send(struct hci_dev *hdev, struct sk_buff *skb)
 	return 0;
 }
 
+/* MediaTek vendor command, same as btmtk_set_bdaddr(); applied on reset. */
+static int
+mtk_bt_hci_set_bdaddr(struct hci_dev *hdev, const bdaddr_t *bdaddr)
+{
+	struct sk_buff *skb;
+
+	skb = __hci_cmd_sync(hdev, 0xfc1a, sizeof(bdaddr_t), bdaddr,
+			     HCI_INIT_TIMEOUT);
+	if (IS_ERR(skb))
+		return PTR_ERR(skb);
+	kfree_skb(skb);
+
+	return 0;
+}
+
 static int
 mtk_bt_hci_flush(struct hci_dev *hdev)
 {
@@ -514,6 +529,7 @@ int mtk_bt_hci_init(void)
 	mtk_hci.hdev->close = mtk_bt_hci_close;
 	mtk_hci.hdev->send = mtk_bt_hci_send;
 	mtk_hci.hdev->flush = mtk_bt_hci_flush;
+	mtk_hci.hdev->set_bdaddr = mtk_bt_hci_set_bdaddr;
 	mtk_hci.hdev->notify = mtk_bt_hci_notify;
 	SET_HCIDEV_DEV(mtk_hci.hdev, stpbt_dev);
 
