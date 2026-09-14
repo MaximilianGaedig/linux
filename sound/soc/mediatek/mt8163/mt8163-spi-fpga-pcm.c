@@ -227,11 +227,10 @@ static int biscuit_spi_capture_thread(void *data)
 {
 	struct biscuit_spi_pcm *priv = data;
 	struct snd_pcm_substream *ss = priv->substream;
-	struct sched_param param = { .sched_priority = MAX_RT_PRIO - 2 };
 	struct dough_frame *tx_df;
 	unsigned long flags;
 
-	sched_setscheduler(current, SCHED_FIFO, &param);
+	sched_set_fifo(current);
 
 	tx_df = kzalloc(sizeof(*tx_df), GFP_KERNEL);
 	if (!tx_df)
