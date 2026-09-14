@@ -29,11 +29,7 @@ static struct snd_soc_jack_gpio biscuit_hp_gpio = {
 	.name = "hp-det",
 	.report = SND_JACK_LINEOUT,
 	.debounce_time = 200,
-	/*
-	 * ACTIVE_LOW in DT means "inserted = pin low"; invert so the ASoC
-	 * jack reports LINEOUT present when the plug is in.
-	 */
-	.invert = 1,
+	/* Polarity comes from the DT flags: the detect pin reads high when plugged. */
 };
 
 static const struct snd_soc_dapm_widget biscuit_widgets[] = {

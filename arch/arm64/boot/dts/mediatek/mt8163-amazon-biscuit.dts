@@ -530,7 +530,7 @@
 		 * jack is just presence, and that is a plain GPIO (their
 		 * accdet-gpio = <&pio 26 0>, EINT4). Wire it as an ASoC jack.
 		 */
-		amazon,hp-det-gpios = <&pio 26 GPIO_ACTIVE_LOW>;
+		amazon,hp-det-gpios = <&pio 26 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		/*
 		 * aud_pins_spk_i2s1 routes I2S1 to pins 46/47/48, the pads the
