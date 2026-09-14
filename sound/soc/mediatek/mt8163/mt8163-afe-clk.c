@@ -4,6 +4,7 @@
  * Copyright (c) 2025-2026 Ben Grisdale <bengris32@protonmail.ch>
  */
 
+#include <linux/delay.h>
 #include <linux/device.h>
 
 #include "mt8163-afe-regs.h"
@@ -70,12 +71,57 @@ int mt8163_init_clock(struct mtk_base_afe *afe)
 int mt8163_afe_enable_clock(struct mtk_base_afe *afe)
 {
 	struct mt8163_afe_private *priv = afe->platform_priv;
-	int ret;
+	unsigned int val = 0;
+	int ret, i;
 
-	/* Bulk prepare and enable base clocks. */
-	ret = clk_bulk_prepare_enable(MT8163_BASE_CLK_NUM, priv->base_clocks);
+	/*
+	 * Enable the feeder clocks that make the audsys register block
+	 * reachable first: the infra APB clock, the audio internal bus and the
+	 * audio functional mux (indices 0 .. TOP_I2S-1). These live outside the
+	 * audsys, so enabling them never touches AUDIO_TOP_CON0.
+	 */
+	ret = clk_bulk_prepare_enable(MT8163_BASE_CLK_TOP_I2S, priv->base_clocks);
 	if (ret) {
-		dev_err(afe->dev, "Failed to enable base clocks: %d.\n", ret);
+		dev_err(afe->dev, "Failed to enable AFE feeder clocks: %d.\n", ret);
+		return ret;
+	}
+
+	/*
+	 * Select APB 3.0 with a blind write *before* anything does a
+	 * read-modify-write on AUDIO_TOP_CON0.
+	 *
+	 * The remaining base clocks (top_i2s, afe, adc, dac, dac_predis) are
+	 * audsys gates that live in AUDIO_TOP_CON0, and the CCF enables them
+	 * with an RMW. If the first access to the block after the AUDIO power
+	 * domain resumes returns 0, that RMW writes back 0 - clearing APB3_SEL
+	 * and dropping the register interface into a mode where every later
+	 * access is lost. The AFE bank then reads 0 forever, the DL1 DMA never
+	 * advances and no audio reaches the codec (measured: intermittent per
+	 * stream start, unrecoverable once missed).
+	 *
+	 * A blind write does not depend on a prior read, so it can establish
+	 * APB 3.0 mode from cold; retry until it reads back to ride out the
+	 * power-on settle. This mirrors the vendor driver's AudDrv_Clk_AllOn()
+	 * / Auddrv_Bus_Init().
+	 */
+	for (i = 0; i < 100; i++) {
+		regmap_write(afe->regmap, AUDIO_TOP_CON0, APB3_SEL);
+		regmap_read(afe->regmap, AUDIO_TOP_CON0, &val);
+		if (val & APB3_SEL)
+			break;
+		udelay(50);
+	}
+	if (!(val & APB3_SEL))
+		dev_err(afe->dev,
+			"AFE audsys register bank not responding (0x%x)\n", val);
+
+	/* Now the audsys clock gates themselves are safe to enable. */
+	ret = clk_bulk_prepare_enable(MT8163_BASE_CLK_NUM - MT8163_BASE_CLK_TOP_I2S,
+				      &priv->base_clocks[MT8163_BASE_CLK_TOP_I2S]);
+	if (ret) {
+		dev_err(afe->dev, "Failed to enable AFE audsys clocks: %d.\n", ret);
+		clk_bulk_disable_unprepare(MT8163_BASE_CLK_TOP_I2S,
+					   priv->base_clocks);
 		return ret;
 	}
 
