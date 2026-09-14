@@ -314,18 +314,39 @@ hex_dump(char *prefix, char *p, int len)
 	pr_err("\n");
 }
 
+#define MTK_BT_HCI_OPEN_TRIES 120
+
+static void mtk_bt_hci_receive(const UINT8 *data, INT32 size);
+
 static int
 mtk_bt_hci_open(struct hci_dev *hdev)
 {
 	int err = 0;
+	int tries;
 
 #if MTK_BT_DEBUG == 1
 	pr_err("# %s\n", __func__);
 #endif
 
-	err = mtk_wcn_wmt_func_on(WMTDRV_TYPE_BT);
+	/*
+	 * The BT core opens the device as soon as it is registered, which for
+	 * a module can be before the WMT core has finished bringing up the
+	 * combo chip and exported its callbacks. Give it time to come up.
+	 */
+	for (tries = 0; tries < MTK_BT_HCI_OPEN_TRIES; tries++) {
+		err = mtk_wcn_wmt_func_on(WMTDRV_TYPE_BT);
+		if (err == MTK_WCN_BOOL_TRUE)
+			break;
+		msleep(500);
+	}
 	if (err != MTK_WCN_BOOL_TRUE) {
 		pr_err("%s func on failed with %d\n", __func__, err);
+		return -ENODEV;
+	}
+
+	/* Registering at init can race the STP core the same way. */
+	if (mtk_wcn_stp_register_if_rx(mtk_bt_hci_receive)) {
+		mtk_wcn_wmt_func_off(WMTDRV_TYPE_BT);
 		return -ENODEV;
 	}
 
@@ -497,8 +518,6 @@ int mtk_bt_hci_init(void)
 	SET_HCIDEV_DEV(mtk_hci.hdev, stpbt_dev);
 
         hci_set_drvdata(mtk_hci.hdev, &mtk_hci);       
-
-	mtk_wcn_stp_register_if_rx(mtk_bt_hci_receive);
 
 	hci_err = hci_register_dev(mtk_hci.hdev);
 	if (hci_err) {
