@@ -1247,7 +1247,8 @@ INT32 mtk_wcn_consys_hw_restore(struct device *device)
 }
 
 /*Reserved memory by device tree!*/
-int reserve_memory_consys_fn(struct reserved_mem *rmem)
+static int __init reserve_memory_consys_fn(unsigned long node,
+					   struct reserved_mem *rmem)
 {
 	WMT_PLAT_WARN_FUNC(" name: %s, base: 0x%llx, size: 0x%llx\n", rmem->name,
 			   (unsigned long long)rmem->base, (unsigned long long)rmem->size);
@@ -1255,7 +1256,11 @@ int reserve_memory_consys_fn(struct reserved_mem *rmem)
 	return 0;
 }
 
-RESERVEDMEM_OF_DECLARE(reserve_memory_test, "mediatek,consys-reserve-memory", reserve_memory_consys_fn);
+static const struct reserved_mem_ops consys_rmem_ops = {
+	.node_init = reserve_memory_consys_fn,
+};
+
+RESERVEDMEM_OF_DECLARE(consys, "mediatek,consys-reserve-memory", &consys_rmem_ops);
 
 
 /*
