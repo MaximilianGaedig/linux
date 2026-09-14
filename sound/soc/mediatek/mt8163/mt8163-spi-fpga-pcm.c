@@ -976,11 +976,18 @@ static const struct of_device_id biscuit_spi_pcm_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, biscuit_spi_pcm_of_match);
 
+static const struct spi_device_id biscuit_spi_pcm_id[] = {
+	{ "biscuit-spi-pcm" },
+	{ }
+};
+MODULE_DEVICE_TABLE(spi, biscuit_spi_pcm_id);
+
 static struct spi_driver biscuit_spi_pcm_driver = {
 	.driver = {
 		.name = "biscuit-spi-pcm",
 		.of_match_table = biscuit_spi_pcm_of_match,
 	},
+	.id_table = biscuit_spi_pcm_id,
 	.probe = biscuit_spi_pcm_probe,
 	.remove = biscuit_spi_pcm_remove,
 };
