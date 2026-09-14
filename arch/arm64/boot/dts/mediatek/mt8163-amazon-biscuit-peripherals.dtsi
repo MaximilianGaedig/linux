@@ -246,11 +246,6 @@
 		reg = <0x29>;
 	};
 
-	tsl2540@39 {
-		compatible = "amstaos,tsl2540";
-		reg = <0x39>;
-	};
-
 	/*
 	 * Mic array: four TLV320ADC3101 stereo ADCs on a shared TDM bus.
 	 *
