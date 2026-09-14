@@ -180,11 +180,6 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 	void __iomem *b = priv->seninf;
 	u32 clkcnt, clkf_pol, clkf_edge, v;
 
-	/* mclk_enable_reg(1): TG1_PH_CNT |= 0x20000000 */
-	v = readl(b + SENINF_TG1_PH_CNT);
-	v |= SENINF_TG1_MCLK_EN;
-	writel(v, b + SENINF_TG1_PH_CNT);
-
 	/*
 	 * mclk_divider_reg: clkcnt = 48M/out - 1, so 12MHz gives 3.
 	 *
@@ -200,8 +195,12 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 	clkf_pol = !(clkcnt & 0x1);
 	clkf_edge = clkcnt > 1 ? ((clkcnt + 1) >> 1) : 1;
 
-	/* PCEN = 1 */
-	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 31), 31, 1);
+	/*
+	 * Program the divider before enabling the timing generator: a divider
+	 * written while it is already running does not take effect until
+	 * TG1_PH_CNT is written again, which left the pad at half the rate and
+	 * the whole mic array sampling at 8kHz instead of 16kHz.
+	 */
 	/* clear top clock gating (clear 0xc00, set 0x300) */
 	seninf_wr_mask(b, SENINF_TOP_CTRL, 0xc00, 0, 0x300);
 	/* SEN_CK divider: CLKFL=clkf_edge, CLKRS=0, CLKCNT=clkcnt */
@@ -213,6 +212,10 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 	seninf_wr_mask(b, SENINF_TG1_PH_CNT, 0x4, 2, clkf_pol);
 	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 6), 6, 0);
 	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 28), 28, 0);
+	/* mclk_enable_reg(1) and PCEN last, once the divider is in place */
+	v = readl(b + SENINF_TG1_PH_CNT);
+	v |= SENINF_TG1_MCLK_EN | (1u << 31);
+	writel(v, b + SENINF_TG1_PH_CNT);
 	/* enable SENINF1 mux + block */
 	seninf_wr_mask(b, SENINF1_MUX_CTRL, (1u << 31), 31, 1);
 	seninf_wr_mask(b, SENINF1_CTRL, 0x1, 0, 1);
