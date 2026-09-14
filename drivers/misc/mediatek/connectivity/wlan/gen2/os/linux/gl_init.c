@@ -3836,7 +3836,17 @@ static VOID exitWlan(void)
 
 }				/* end of exitWlan() */
 
-#ifdef MTK_WCN_BUILT_IN_DRIVER
+/*
+ * MTK_WCN_BUILT_IN_DRIVER is set tree-wide by the connectivity Makefile and
+ * swaps module_init for an entry point that common_detect's dispatcher calls -
+ * which only happens when this driver is built in. As a module
+ * (CONFIG_MTK_COMBO_WIFI=m) nothing calls mtk_wcn_wlan_gen2_init(), so the
+ * mt-wifi platform driver is never registered, HifAhbPltmProbe() never hands
+ * its probe callback to WMT, and the WiFi function-on fails with "null pointer
+ * mtk_wcn_wlan_probe". Keep the real module_init in that case, as
+ * wmt_chrdev_wifi.c already does.
+ */
+#if defined(MTK_WCN_BUILT_IN_DRIVER) && !IS_MODULE(CONFIG_MTK_COMBO_WIFI)
 
 int mtk_wcn_wlan_gen2_init(void)
 {

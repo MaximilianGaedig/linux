@@ -900,7 +900,12 @@ static void BT_exit(void)
 	BT_INFO_FUNC("%s driver removed\n", BT_DRIVER_NAME);
 }
 
-#ifdef MTK_WCN_REMOVE_KERNEL_MODULE
+/*
+ * Same as wmt_chrdev_wifi.c: MTK_WCN_REMOVE_KERNEL_MODULE is set tree-wide, so
+ * as a module (CONFIG_MTK_COMBO_BT=m) this would compile without module_init
+ * and /dev/stpbt would never be created.
+ */
+#if defined(MTK_WCN_REMOVE_KERNEL_MODULE) && !IS_MODULE(CONFIG_MTK_COMBO_BT)
 
 int mtk_wcn_stpbt_drv_init(void)
 {
