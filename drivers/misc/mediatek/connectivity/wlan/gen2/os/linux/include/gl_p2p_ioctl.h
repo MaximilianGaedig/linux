@@ -490,18 +490,18 @@ int mtk_p2p_cfg80211_change_iface(struct wiphy *wiphy,
  *     multi-radio-per-wiphy support).  One radio here, so also ignored.
  */
 int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
-			     struct net_device *ndev, int link_id,
+			     struct wireless_dev *wdev, int link_id,
 			     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params);
 
 int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
-			     struct net_device *ndev, int link_id,
+			     struct wireless_dev *wdev, int link_id,
 			     u8 key_index,
 			     bool pairwise,
 			     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
 );
 
 int mtk_p2p_cfg80211_del_key(struct wiphy *wiphy,
-			     struct net_device *ndev, int link_id,
+			     struct wireless_dev *wdev, int link_id,
 			     u8 key_index, bool pairwise, const u8 *mac_addr);
 
 int
@@ -509,7 +509,7 @@ mtk_p2p_cfg80211_set_default_key(struct wiphy *wiphy,
 				 struct net_device *netdev, int link_id,
 				 u8 key_index, bool unicast, bool multicast);
 
-int mtk_p2p_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev,
+int mtk_p2p_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 					const u8 *mac, struct station_info *sinfo);
 
 int mtk_p2p_cfg80211_set_wiphy_params(struct wiphy *wiphy, int radio_idx, u32 changed);
@@ -528,7 +528,8 @@ int mtk_p2p_cfg80211_change_bss(struct wiphy *wiphy, struct net_device *dev, str
 
 int mtk_p2p_cfg80211_remain_on_channel(struct wiphy *wiphy,
 				       struct wireless_dev *wdev,
-				       struct ieee80211_channel *chan, unsigned int duration, u64 *cookie);
+				       struct ieee80211_channel *chan, unsigned int duration, u64 *cookie,
+				       const u8 *rx_addr);
 
 int mtk_p2p_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request);
 
@@ -556,7 +557,7 @@ int mtk_p2p_cfg80211_mgmt_tx(struct wiphy *wiphy,
 
 int mtk_p2p_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *dev, unsigned int link_id);
 
-int mtk_p2p_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev, struct station_del_parameters *params);
+int mtk_p2p_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params);
 //int mtk_p2p_cfg80211_del_station(struct wiphy *wiphy, struct net_device *dev, const u8 *mac);
 
 int mtk_p2p_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,

@@ -232,7 +232,7 @@ extern UINT32 osal_strlen(const char *str);
 extern INT32 osal_strcmp(const char *dst, const char *src);
 extern INT32 osal_strncmp(const char *dst, const char *src, UINT32 len);
 extern char *osal_strcpy(char *dst, const char *src);
-extern char *osal_strncpy(char *dst, const char *src, UINT32 len);
+extern INT32 osal_strscpy(char *dst, const char *src, UINT32 len);
 extern char *osal_strcat(char *dst, const char *src);
 extern char *osal_strncat(char *dst, const char *src, UINT32 len);
 extern char *osal_strchr(const char *str, UINT8 c);

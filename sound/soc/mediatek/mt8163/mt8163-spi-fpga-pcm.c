@@ -555,8 +555,8 @@ static int biscuit_spi_pcm_copy(struct snd_soc_component *component,
 	return 0;
 }
 
-static int biscuit_spi_pcm_construct(struct snd_soc_component *component,
-				      struct snd_soc_pcm_runtime *rtd)
+static int biscuit_spi_pcm_new(struct snd_soc_component *component,
+			       struct snd_soc_pcm_runtime *rtd)
 {
 	return snd_pcm_set_managed_buffer_all(rtd->pcm, SNDRV_DMA_TYPE_CONTINUOUS,
 					       NULL, SPI_BUFFER_BYTES, SPI_BUFFER_BYTES);
@@ -570,7 +570,7 @@ static const struct snd_soc_component_driver biscuit_spi_pcm_component = {
 	.trigger	= biscuit_spi_pcm_trigger,
 	.pointer	= biscuit_spi_pcm_pointer,
 	.copy		= biscuit_spi_pcm_copy,
-	.pcm_construct	= biscuit_spi_pcm_construct,
+	.pcm_new	= biscuit_spi_pcm_new,
 };
 
 static struct snd_soc_dai_driver biscuit_spi_pcm_dai = {

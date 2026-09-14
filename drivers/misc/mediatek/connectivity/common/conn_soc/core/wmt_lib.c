@@ -198,7 +198,7 @@ INT32 wmt_lib_init(VOID)
 	pThraed = &gDevWmt.thread;
 
 	/* Create mtk_wmtd thread */
-	osal_strncpy(pThraed->threadName, "mtk_wmtd", sizeof(pThraed->threadName));
+	osal_strscpy(pThraed->threadName, "mtk_wmtd", sizeof(pThraed->threadName));
 	pThraed->pThreadData = (VOID *) pDevWmt;
 	pThraed->pThreadFunc = (VOID *) wmtd_thread;
 	iRet = osal_thread_create(pThraed);
@@ -401,7 +401,7 @@ P_OSAL_EVENT wmt_lib_get_cmd_event(VOID)
 
 INT32 wmt_lib_set_patch_name(PUINT8 cPatchName)
 {
-	osal_strncpy(gDevWmt.cPatchName, cPatchName, NAME_MAX);
+	osal_strscpy(gDevWmt.cPatchName, cPatchName, osal_sizeof(gDevWmt.cPatchName));
 	return 0;
 }
 

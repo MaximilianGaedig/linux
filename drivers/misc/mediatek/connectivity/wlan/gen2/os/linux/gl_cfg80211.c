@@ -185,7 +185,7 @@ mtk_cfg80211_change_iface(struct wiphy *wiphy,
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_add_key(struct wiphy *wiphy,
-		     struct net_device *ndev, int link_id,
+		     struct wireless_dev *wdev, int link_id,
 		     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
 {
 	PARAM_KEY_T rKey;
@@ -264,7 +264,7 @@ mtk_cfg80211_add_key(struct wiphy *wiphy,
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_get_key(struct wiphy *wiphy,
-		     struct net_device *ndev, int link_id,
+		     struct wireless_dev *wdev, int link_id,
 		     u8 key_index,
 		     bool pairwise,
 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *))
@@ -291,7 +291,7 @@ mtk_cfg80211_get_key(struct wiphy *wiphy,
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, int link_id,
+int mtk_cfg80211_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
 			 u8 key_index, bool pairwise, const u8 *mac_addr)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -368,7 +368,7 @@ mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, int l
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, int link_id,
+int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
 				      u8 key_index)
 {
 	return 0;
@@ -384,7 +384,7 @@ int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *ne
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac, struct station_info *sinfo)
+int mtk_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_info *sinfo)
 {
 #define LINKSPEED_MAX_RANGE_11BGN 3000
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -530,7 +530,7 @@ int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
+int mtk_cfg80211_change_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 				const u8 *mac, struct station_parameters *params)
 {
 #if (CFG_SUPPORT_TDLS == 1)
@@ -644,7 +644,7 @@ int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
+int mtk_cfg80211_add_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 				const u8 *mac, struct station_parameters *params)
 {
 #if (CFG_SUPPORT_TDLS == 1)
@@ -743,7 +743,7 @@ int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
  *		must implement if you have add_station().
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, struct station_del_parameters *params)
+int mtk_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params)
 //int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac)
 {
 	return 0;
@@ -1513,7 +1513,8 @@ void mtk_cfg80211_update_mgmt_frame_registrations(IN struct wiphy *wiphy,
 int mtk_cfg80211_remain_on_channel(struct wiphy *wiphy,
 				   struct wireless_dev *wdev,
 				   struct ieee80211_channel *chan,
-				   unsigned int duration, u64 *cookie)
+				   unsigned int duration, u64 *cookie,
+				   const u8 *rx_addr)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	INT_32 i4Rslt = -EINVAL;

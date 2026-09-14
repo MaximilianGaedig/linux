@@ -2168,8 +2168,8 @@ static INT32 mtk_wcn_soc_patch_info_prepare(VOID)
 	osal_memset(&gBiscuitPatchInfo, 0, osal_sizeof(gBiscuitPatchInfo));
 	for (i = 0; i < BISCUIT_WMT_PATCH_NUM; i++) {
 		gBiscuitPatchInfo[i].dowloadSeq = i + 1;
-		osal_strncpy(gBiscuitPatchInfo[i].patchName, patch_names[i],
-			     osal_sizeof(gBiscuitPatchInfo[i].patchName) - 1);
+		osal_strscpy(gBiscuitPatchInfo[i].patchName, patch_names[i],
+			     osal_sizeof(gBiscuitPatchInfo[i].patchName));
 	}
 
 	wmt_lib_set_patch_num(BISCUIT_WMT_PATCH_NUM);
