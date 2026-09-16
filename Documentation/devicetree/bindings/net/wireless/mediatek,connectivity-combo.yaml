@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/net/wireless/mediatek,connectivity-combo.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek connectivity combo chip control GPIOs
+
+maintainers:
+  - Maximilian Gaedig <mg@maximiliangaedig.com>
+
+description:
+  Board-level control lines of an external MediaTek connectivity combo chip
+  such as the MT6625L, used by the WMT driver to power up and reset the chip
+  before CONSYS talks to it.
+
+properties:
+  compatible:
+    const: mediatek,connectivity-combo
+
+  gpio_combo_pmu_en_pin-gpios:
+    maxItems: 1
+    description: Combo chip PMU enable
+
+  gpio_combo_rst_pin-gpios:
+    maxItems: 1
+    description: Combo chip reset
+
+  interrupts:
+    maxItems: 1
+    description: WiFi interrupt of an SDIO-attached combo chip
+
+required:
+  - compatible
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+
+    connectivity-combo {
+        compatible = "mediatek,connectivity-combo";
+        gpio_combo_rst_pin-gpios = <&pio 60 GPIO_ACTIVE_HIGH>;
+        gpio_combo_pmu_en_pin-gpios = <&pio 65 GPIO_ACTIVE_HIGH>;
+    };
