@@ -780,81 +780,81 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 	 * Letting MADC grow brings the integer-mode points into range.
 	 */
 	for (madc = min_madc; madc <= 128; ++madc) {
-	max_nadc = AIC32X4_MAX_CODEC_CLKIN_FREQ / (madc * aosr * sample_rate);
+		max_nadc = AIC32X4_MAX_CODEC_CLKIN_FREQ / (madc * aosr * sample_rate);
 
-	for (nadc = max_nadc; nadc > 0; --nadc) {
-		adc_clock_rate = nadc * madc * aosr * sample_rate;
-		for (dosr = max_dosr; dosr >= min_dosr;
-				dosr -= dosr_increment) {
-			min_mdac = DIV_ROUND_UP((32 * dac_resource_class), dosr);
-			max_ndac = AIC32X4_MAX_CODEC_CLKIN_FREQ /
-					(min_mdac * dosr * sample_rate);
-			for (mdac = min_mdac; mdac <= 128; ++mdac) {
-				for (ndac = max_ndac; ndac > 0; --ndac) {
-					dac_clock_rate = ndac * mdac * dosr *
-							sample_rate;
-					if (dac_clock_rate == adc_clock_rate) {
-						/*
-						 * CODEC_CLKIN comes from the
-						 * PLL here, so a rate below
-						 * its minimum is not one the
-						 * hardware can be given.
-						 */
-						if (dac_clock_rate < AIC32X4_MIN_PLL_CLKOUT)
-							continue;
-						if (clk_round_rate(clocks[0].clk, dac_clock_rate) == 0)
-							continue;
+		for (nadc = max_nadc; nadc > 0; --nadc) {
+			adc_clock_rate = nadc * madc * aosr * sample_rate;
+			for (dosr = max_dosr; dosr >= min_dosr;
+					dosr -= dosr_increment) {
+				min_mdac = DIV_ROUND_UP((32 * dac_resource_class), dosr);
+				max_ndac = AIC32X4_MAX_CODEC_CLKIN_FREQ /
+						(min_mdac * dosr * sample_rate);
+				for (mdac = min_mdac; mdac <= 128; ++mdac) {
+					for (ndac = max_ndac; ndac > 0; --ndac) {
+						dac_clock_rate = ndac * mdac * dosr *
+								sample_rate;
+						if (dac_clock_rate == adc_clock_rate) {
+							/*
+							 * CODEC_CLKIN comes from the
+							 * PLL here, so a rate below
+							 * its minimum is not one the
+							 * hardware can be given.
+							 */
+							if (dac_clock_rate < AIC32X4_MIN_PLL_CLKOUT)
+								continue;
+							if (clk_round_rate(clocks[0].clk, dac_clock_rate) == 0)
+								continue;
 
-						/*
-						 * Only accept a CODEC_CLKIN the
-						 * PLL can really produce.
-						 *
-						 * clk_round_rate() on this mux
-						 * answers for the mux, not for
-						 * the PLL behind it, so a rate
-						 * the PLL has to refuse still
-						 * looks available here. The
-						 * set then quietly fails, the
-						 * PLL keeps whatever it had
-						 * from probe, and the whole
-						 * divider chain below is
-						 * computed for a frequency the
-						 * part is not running at.
-						 * Check what actually stuck.
-						 */
-						if (clk_set_rate(clocks[0].clk,
-								 dac_clock_rate))
-							continue;
-						if (clk_get_rate(clocks[0].clk) !=
-						    dac_clock_rate)
-							continue;
+							/*
+							 * Only accept a CODEC_CLKIN the
+							 * PLL can really produce.
+							 *
+							 * clk_round_rate() on this mux
+							 * answers for the mux, not for
+							 * the PLL behind it, so a rate
+							 * the PLL has to refuse still
+							 * looks available here. The
+							 * set then quietly fails, the
+							 * PLL keeps whatever it had
+							 * from probe, and the whole
+							 * divider chain below is
+							 * computed for a frequency the
+							 * part is not running at.
+							 * Check what actually stuck.
+							 */
+							if (clk_set_rate(clocks[0].clk,
+									 dac_clock_rate))
+								continue;
+							if (clk_get_rate(clocks[0].clk) !=
+							    dac_clock_rate)
+								continue;
 
-						clk_set_rate(clocks[1].clk,
-							sample_rate * aosr *
-							madc);
-						clk_set_rate(clocks[2].clk,
-							sample_rate * aosr);
-						aic32x4_set_aosr(component,
-							aosr);
+							clk_set_rate(clocks[1].clk,
+								sample_rate * aosr *
+								madc);
+							clk_set_rate(clocks[2].clk,
+								sample_rate * aosr);
+							aic32x4_set_aosr(component,
+								aosr);
 
-						clk_set_rate(clocks[3].clk,
-							sample_rate * dosr *
-							mdac);
-						clk_set_rate(clocks[4].clk,
-							sample_rate * dosr);
-						aic32x4_set_dosr(component,
-							dosr);
+							clk_set_rate(clocks[3].clk,
+								sample_rate * dosr *
+								mdac);
+							clk_set_rate(clocks[4].clk,
+								sample_rate * dosr);
+							aic32x4_set_dosr(component,
+								dosr);
 
-						clk_set_rate(clocks[5].clk,
-							sample_rate * channels *
-							bit_depth);
+							clk_set_rate(clocks[5].clk,
+								sample_rate * channels *
+								bit_depth);
 
-						return 0;
+							return 0;
+						}
 					}
 				}
 			}
 		}
-	}
 	}
 
 	dev_err(component->dev,
