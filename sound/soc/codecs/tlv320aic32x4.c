@@ -876,10 +876,15 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 	struct aic32x4_priv *aic32x4 = snd_soc_component_get_drvdata(component);
 	u8 iface1_reg = 0;
 	u8 dacsetup_reg = 0;
+	int ret;
 
-	aic32x4_setup_clocks(component, params_rate(params),
+	ret = aic32x4_setup_clocks(component, params_rate(params),
 			     params_channels(params),
 			     params_physical_width(params));
+	if (ret) {
+		dev_err(component->dev, "Failed to set up clocks: %d\n", ret);
+		return ret;
+	}
 
 	switch (params_physical_width(params)) {
 	case 16:
