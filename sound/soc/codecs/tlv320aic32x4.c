@@ -41,6 +41,7 @@ struct aic32x4_priv {
 	bool swapdacs;
 	struct gpio_desc *rstn_gpio;
 	const char *mclk_name;
+	struct clk *mclk;
 
 	struct regulator *supply_ldo;
 	struct regulator *supply_iov;
@@ -595,20 +596,47 @@ const struct regmap_config aic32x4_regmap_config = {
 };
 EXPORT_SYMBOL(aic32x4_regmap_config);
 
+/*
+ * Select the PLL input and give its rate.
+ *
+ * clk_id is the PLL_CLKIN mux setting: AIC32X4_PLL_CLKIN_MCLK (0, so what
+ * generic cards pass) or AIC32X4_PLL_CLKIN_BCKL. With BCLK, freq is the
+ * bit clock rate the bus master drives, and aic32x4_setup_clocks() then
+ * derives the PLL settings from it. Boards without a usable MCLK need
+ * this, as the codec cannot run the DAC from anything but CODEC_CLKIN.
+ */
 static int aic32x4_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 				  int clk_id, unsigned int freq, int dir)
 {
 	struct snd_soc_component *component = codec_dai->component;
-	struct clk *mclk;
+	struct aic32x4_priv *aic32x4 = snd_soc_component_get_drvdata(component);
+	struct clk *input;
 	struct clk *pll;
+	int ret;
 
 	pll = devm_clk_get(component->dev, "pll");
 	if (IS_ERR(pll))
 		return PTR_ERR(pll);
 
-	mclk = clk_get_parent(pll);
+	switch (clk_id) {
+	case AIC32X4_PLL_CLKIN_MCLK:
+		input = aic32x4->mclk ?: clk_get_parent(pll);
+		break;
+	case AIC32X4_PLL_CLKIN_BCKL:
+		input = devm_clk_get(component->dev, "bclk");
+		if (IS_ERR(input))
+			return PTR_ERR(input);
+		break;
+	default:
+		dev_err(component->dev, "Unsupported PLL input %d\n", clk_id);
+		return -EINVAL;
+	}
 
-	return clk_set_rate(mclk, freq);
+	ret = clk_set_rate(input, freq);
+	if (ret)
+		return ret;
+
+	return clk_set_parent(pll, input);
 }
 
 static int aic32x4_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
@@ -1304,6 +1332,11 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 	if (ret < 0)
 		return -EINVAL;
 	aic32x4->mclk_name = of_clk_get_parent_name(np, ret);
+
+	aic32x4->mclk = devm_clk_get(aic32x4->dev, "mclk");
+	if (IS_ERR(aic32x4->mclk))
+		return dev_err_probe(aic32x4->dev, PTR_ERR(aic32x4->mclk),
+				     "Failed to get mclk\n");
 
 	aic32x4->swapdacs = false;
 	aic32x4->micpga_routing = 0;
