@@ -411,4 +411,69 @@
 			bias-disable;
 		};
 	};
+
+	/*
+	 * SPI0 bus pins (CS/CLK/MISO/MOSI) to the mic-array FPGA. Missing
+	 * from mt8163.dtsi - unlike i2c0/i2c2 above, no board populates SPI
+	 * there yet, so there is no shared "spi_pads"-equivalent group to
+	 * reuse. Pin numbers/drive-strength cross-referenced from
+	 * biscuit.dtsi's spi_pads (which just tweaks drive-strength on a
+	 * group already defined in Amazon's mt8163.dtsi).
+	 */
+	spi_pins_default: spi-pins {
+		pins {
+			/* CS is driven as a GPIO (cs-gpios on &spi) so it stays
+			 * asserted for the whole SPI message. The controller's
+			 * hardware CS can drop between internal FIFO/DMA chunks
+			 * of a large transfer, which corrupts the FPGA's
+			 * configuration stream (the bitstream must be clocked in
+			 * as one continuous CS-low sequence). */
+			pinmux = <MT8163_PIN_53_SPI_CS__FUNC_GPIO53>,
+				 <MT8163_PIN_54_SPI_CK__FUNC_SPI_CLK>,
+				 <MT8163_PIN_55_SPI_MI__FUNC_SPI_MI>,
+				 <MT8163_PIN_56_SPI_MO__FUNC_SPI_MO>;
+			bias-disable;
+			drive-strength = <MTK_DRIVE_2mA>;
+		};
+	};
+
+	/*
+	 * Mic-array FPGA (Amazon calls it "dough": an Altera/Lattice part that
+	 * takes I2S from the four aic3x codecs above, mixes/packages all
+	 * channels, and hands the result to the SoC over SPI - the AFE's I2S1
+	 * pins here are NOT used for PCM data, they only carry BCK/LRCK/DO as
+	 * a timing reference the FPGA locks its own I2S capture to. Real
+	 * sample data comes back over &spi. Pin numbers and the two-state
+	 * (idle vs active) dance during firmware load are taken directly from
+	 * biscuit.dtsi's aud_pins_i2s1_mode0/1.
+	 */
+	aud_pins_i2s1_idle: audi2s1idle {
+		pins {
+			pinmux = <MT8163_PIN_72_I2S_DATA_IN__FUNC_GPIO72>,
+				 <MT8163_PIN_73_I2S_LRCK__FUNC_GPIO73>,
+				 <MT8163_PIN_74_I2S_BCK__FUNC_GPIO74>;
+		};
+	};
+
+	aud_pins_i2s1_active: audi2s1active {
+		pins {
+			pinmux = <MT8163_PIN_72_I2S_DATA_IN__FUNC_I2S1_DO>,
+				 <MT8163_PIN_73_I2S_LRCK__FUNC_I2S1_LRCK>,
+				 <MT8163_PIN_74_I2S_BCK__FUNC_I2S1_BCK>;
+			drive-strength = <MTK_DRIVE_4mA>;
+		};
+	};
+
+	/*
+	 * FPGA reference clock. biscuit.dtsi drives this off the camera
+	 * clock generator (CONFIG_SND_I2S_MCLK is unset on this board, so
+	 * the driver takes the "cmmclk-mclk" path, not the dedicated
+	 * i2s-mclk one) - there is no camera on this board, the pin is free.
+	 */
+	aud_pins_fpga_mclk: audfpgamclk {
+		pins {
+			pinmux = <MT8163_PIN_119_CMMCLK__FUNC_CMMCLK>;
+			drive-strength = <MTK_DRIVE_4mA>;
+		};
+	};
 };
