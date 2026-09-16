@@ -593,7 +593,17 @@ static int adc3xxx_tdm_settle(struct snd_soc_dapm_widget *w,
 	if (!adc3xxx->tdm_valid)
 		return 0;
 
-	/* Let the divider chain settle before the bus is reconfigured. */
+	/*
+	 * Wait before the bus is reconfigured. The datasheet only asks for
+	 * 10ms after PLL power-up, which PLL_CLK already waits for. This
+	 * delay comes from the vendor driver for the Echo Dot 2 mic array,
+	 * which enables the bus master's NADC and then waits 100ms, "to
+	 * allow ADC clocks to synchronize", before it writes the slot setup
+	 * and enables DOUT. A clock slave's CODEC_CLKIN is the master's BCLK,
+	 * which only starts once the master's dividers are up. Its minimum
+	 * has not been measured, so the vendor value is kept; it costs 100ms
+	 * of stream start-up per part.
+	 */
 	msleep(100);
 
 	/* Park DOUT in Hi-Z while the slot configuration is written. */
