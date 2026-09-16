@@ -159,7 +159,9 @@ static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 	u64 multiplier;
 
 	/*
-	 * The PLL only locks with its output inside the documented window.
+	 * The datasheet requires 80MHz <= PLL_CLKIN * R * J.D / P <= 110MHz.
+	 * aic32x4_setup_clocks() walks CODEC_CLKIN down from 110MHz and skips
+	 * rates the PLL rejects, so this only rules out out-of-spec settings.
 	 */
 	if (rate < AIC32X4_MIN_PLL_CLKOUT || rate > AIC32X4_MAX_PLL_CLKOUT)
 		return -1;
