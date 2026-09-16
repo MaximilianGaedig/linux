@@ -158,10 +158,7 @@ static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 	u32 try_p;
 
 	/*
-	 * The PLL output has to land in the part's documented window; running
-	 * it outside means it does not lock, and an unlocked PLL is silent
-	 * rather than noisy - the interface still clocks and hw_params still
-	 * succeeds.
+	 * The PLL only locks with its output inside the documented window.
 	 */
 	if (rate < AIC32X4_MIN_PLL_CLKOUT || rate > AIC32X4_MAX_PLL_CLKOUT)
 		return -1;
