@@ -51,6 +51,16 @@
 	regulator-always-on;
 };
 
+&watchdog {
+	/*
+	 * No bark interrupt. With it, mtk_wdt runs in dual (pretimeout) mode,
+	 * where the first stage is half the timeout - exactly the interval
+	 * systemd uses to ping (RuntimeWatchdogSec / 2). Pings then race the
+	 * stage boundary, and the board reset every ~2 minutes of uptime.
+	 */
+	/delete-property/ interrupts;
+};
+
 &thermal {
 	status = "disabled";
 };
