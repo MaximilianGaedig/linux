@@ -1086,7 +1086,7 @@ static int aic32x4_component_probe(struct snd_soc_component *component)
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36)
 		tmp_reg |= AIC32X4_LDOIN_18_36;
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
-		tmp_reg |= AIC32X4_LDOIN2HP;
+		tmp_reg |= AIC32X4_LDOIN2HP | AIC32X4_HP_CMMODE;
 	snd_soc_component_write(component, AIC32X4_CMMODE, tmp_reg);
 
 	/* Mic PGA routing */
@@ -1239,7 +1239,7 @@ static int aic32x4_tas2505_component_probe(struct snd_soc_component *component)
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36)
 		tmp_reg |= AIC32X4_LDOIN_18_36;
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
-		tmp_reg |= AIC32X4_LDOIN2HP;
+		tmp_reg |= AIC32X4_LDOIN2HP | AIC32X4_HP_CMMODE;
 	snd_soc_component_write(component, AIC32X4_CMMODE, tmp_reg);
 
 	/*
