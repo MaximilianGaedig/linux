@@ -1408,7 +1408,17 @@ static int adc3xxx_i2c_probe(struct i2c_client *i2c)
 		return -ENOMEM;
 	adc3xxx->dev = dev;
 
-	adc3xxx->rst_pin = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+	/*
+	 * Optional, not mandatory.
+	 *
+	 * On this board (Amazon Echo Dot 2 mic array) four ADC3101s share a
+	 * single enable line and a single MCLK, exactly as Amazon's own device
+	 * tree describes them: only the first codec carries the gpio, the other
+	 * three carry nothing but their I2C address. A Linux gpiod is an
+	 * exclusive resource, so the three slaves cannot each claim the same
+	 * pin - and making this mandatory would fail their probe outright.
+	 */
+	adc3xxx->rst_pin = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(adc3xxx->rst_pin)) {
 		return dev_err_probe(dev, PTR_ERR(adc3xxx->rst_pin),
 				     "Failed to request rst_pin\n");
