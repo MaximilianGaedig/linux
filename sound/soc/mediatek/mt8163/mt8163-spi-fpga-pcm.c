@@ -2,7 +2,7 @@
 /*
  * Mic-array capture for the Amazon Echo Dot 2nd Gen (biscuit).
  *
- * The four aic3x mic codecs are NOT wired to the SoC's audio front end.
+ * The four TLV320ADC3101 mic ADCs are not wired to the SoC's audio front end.
  * Their I2S output feeds a small FPGA ("dough" in Amazon's own source) that
  * mixes/packages all channels and streams finished frames back to the SoC
  * over SPI0 instead. This driver ports that transport: reset the FPGA, load
@@ -169,15 +169,7 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 	u32 clkcnt, clkf_pol, clkf_edge, v;
 
 	/*
-	 * mclk_divider_reg: clkcnt = 48M/out - 1, so 12MHz gives 3.
-	 *
-	 * Amazon runs this pad at 9.6MHz, but this clock is shared with the
-	 * two audio codecs and mainline's aic32x4 cannot use 9.6MHz at all:
-	 * its PLL solver (clk_aic32x4_pll_calc_muldiv) finds no valid p/r for
-	 * that input, so hw_params fails with -EINVAL at every sample rate.
-	 * 12MHz is an exact divide of the same 48MHz source, is a standard
-	 * MCLK the aic32x4 handles, and is already present in the ADC3101
-	 * divider table for the 16kHz the mic array runs at.
+	 * mclk_divider_reg: clkcnt = 48MHz / out - 1.
 	 */
 	clkcnt = (FPGA_MCLK_SRC_HZ / FPGA_MCLK_OUT_HZ) - 1;
 	clkf_pol = !(clkcnt & 0x1);
@@ -185,9 +177,8 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 
 	/*
 	 * Program the divider before enabling the timing generator: a divider
-	 * written while it is already running does not take effect until
-	 * TG1_PH_CNT is written again, which left the pad at half the rate and
-	 * the whole mic array sampling at 8kHz instead of 16kHz.
+	 * written while it is running only takes effect once TG1_PH_CNT is
+	 * written again.
 	 */
 	/* clear top clock gating (clear 0xc00, set 0x300) */
 	seninf_wr_mask(b, SENINF_TOP_CTRL, 0xc00, 0, 0x300);
@@ -227,10 +218,9 @@ static int biscuit_spi_capture_thread(void *data)
 		int ret;
 
 		/*
-		 * Idle until trigger says go.  The thread now outlives a
-		 * single start/stop so that trigger - which ASoC calls with
-		 * the PCM group lock held and interrupts disabled - never has
-		 * to create or destroy it.
+		 * Idle until trigger sets priv->running. The thread lives from
+		 * open to close, so trigger (atomic context) never has to create
+		 * or stop it.
 		 */
 		if (!READ_ONCE(priv->running)) {
 			set_current_state(TASK_INTERRUPTIBLE);
@@ -253,16 +243,10 @@ static int biscuit_spi_capture_thread(void *data)
 		}
 
 		/*
-		 * Arm the part once its I2S input is genuinely clocking.
-		 *
-		 * Both existing arming points are too early: probe runs before
-		 * any codec is configured, and .open runs before hw_params, so
-		 * in both the status frame still reports i2s_inactive=1. The
-		 * part latches "no I2S" when the command arrives and never
-		 * starts framing, which is how it ends up reporting frames
-		 * ready while handing back an entirely zero payload. The first
-		 * read where i2s_inactive clears is the earliest moment the
-		 * command can mean anything, so send it there.
+		 * (Re-)send the I2S mode command once the status frame reports
+		 * the I2S input active. The FPGA only starts framing if the
+		 * command arrives while its I2S input is clocked, which is not
+		 * yet the case at probe or open time.
 		 */
 		if (!priv->armed_live && !priv->rx_buf->dsf.i2s_inactive) {
 			u8 cmd[32] = { DOUGH_FW_I2S };
@@ -348,26 +332,13 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	spin_lock_init(&priv->lock);
 
 	/*
-	 * Start the SPI reader here rather than in trigger().
-	 *
-	 * trigger() is called from snd_pcm_action_lock_irq() with the stream
-	 * group lock held and interrupts disabled, so it may not sleep - and
-	 * kthread_run() does.  Creating the thread there produced a
-	 * "sleeping function called from invalid context" splat, the creation
-	 * failed, and the very first read returned -EIO with zero frames
-	 * captured.  open() is allowed to sleep, so the thread is created
-	 * once here and simply parked until trigger flips priv->running.
+	 * Start the SPI reader here rather than in trigger(), which runs in
+	 * atomic context where kthread_run() cannot be called. The thread idles
+	 * until trigger sets priv->running.
 	 */
 	/*
-	 * Re-issue the I2S-mode command now, at stream start.
-	 *
-	 * probe() sends this once, but at that point nothing is clocking the
-	 * FPGA's I2S inputs - its own status frame reports i2s_inactive=1 and
-	 * dac_inactive=1 there. Once the ADCs and the playback path are
-	 * running those both clear, yet the part still hands back
-	 * num_audio_frames=0: it latched "no I2S" when the command arrived and
-	 * never starts framing. Telling it again once the clocks are live is
-	 * what actually arms capture.
+	 * Re-send the I2S mode command at stream start. The command sent at
+	 * probe time arrives before the FPGA's I2S inputs are clocked.
 	 */
 	{
 		u8 i2s_cmd[32] = { DOUGH_FW_I2S };
@@ -605,31 +576,16 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	}
 
 	/*
-	 * Put the FPGA into slave-SPI configuration mode.
+	 * Put the iCE40 into slave-SPI configuration mode.
 	 *
-	 * This part is a Lattice iCE40UL1K-SWG16 - the bitstream says so in
-	 * plain ASCII ("Part: iCE40UL1K-SWG16", iCEcube2, May 2016) ahead of
-	 * the 7E AA 99 7E preamble at offset 106.  An iCE40 samples its
-	 * configuration mode from SPI_SS_B at the moment CRESET_B is released:
-	 * SS_B low selects slave SPI, where the host clocks the bitstream in;
-	 * SS_B high selects master SPI, where the FPGA tries to boot itself
-	 * from an external configuration flash.  There is no such flash on this
-	 * board.
-	 *
-	 * What this code did before was toggle CRESET_B on its own.  The SPI
-	 * core only asserts chip-select around an actual transfer, so SS_B was
-	 * high for the entire reset pulse and the FPGA came up every time in
-	 * master mode, looking for a flash that does not exist.  It then
-	 * ignored the bitstream we clocked at it and answered every register
-	 * read with zeros - exactly the "revision 0" we have been chasing,
-	 * with a bitstream that was correct all along.
-	 *
-	 * The sequence below is the one mainline's own iCE40 FPGA manager uses
-	 * (drivers/fpga/ice40-spi.c): take the bus, drop CRESET_B, run a
-	 * zero-length transfer whose cs_change keeps SS_B asserted afterwards,
-	 * release CRESET_B while SS_B is still low, then a second transfer
-	 * whose completion releases SS_B once the FPGA has finished clearing
-	 * its configuration memory.
+	 * The configuration mode is sampled from SPI_SS_B when CRESET_B is
+	 * released: SS_B low selects slave SPI (host sends the bitstream), SS_B
+	 * high selects master SPI (boot from external flash, which this board
+	 * does not have). The SPI core only asserts SS_B around a transfer, so
+	 * follow drivers/fpga/ice40-spi.c: lock the bus, drop CRESET_B, run a
+	 * zero-length transfer with cs_change to keep SS_B asserted, release
+	 * CRESET_B, then a second transfer whose completion releases SS_B once
+	 * the FPGA has cleared its configuration memory.
 	 */
 	{
 		struct spi_message msg;
@@ -657,9 +613,7 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 		spi_message_add_tail(&assert_cs_then_reset_delay, &msg);
 		cret = spi_sync_locked(spi, &msg);
 
-		/* Release CRESET_B with SS_B still asserted - this is the bit
-		 * that selects slave SPI rather than master SPI.
-		 */
+		/* Release CRESET_B with SS_B asserted: selects slave SPI. */
 		gpiod_set_value_cansleep(priv->reset_gpio, 0);
 
 		if (!cret) {
@@ -674,24 +628,15 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	msleep(FPGA_RESET_MS);
 
 	/*
-	 * biscuit-dbg: is the FPGA alive BEFORE any bitstream load? If it boots
-	 * a base design from NVCM it should answer here; all-zero means it needs
-	 * an external config. Also re-read SENINF to confirm the clock config
-	 * survived the reset.
+	 * Status read ahead of the bitstream load. The result is not used; the
+	 * transfer is part of the configuration sequence as tested on hardware.
 	 */
 	dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
 
 	/*
-	 * Firmware-missing must NOT be fatal. This FPGA only carries the
-	 * mic-array capture path; the speaker playback path (AFE DL1 -> I2S0 ->
-	 * aic32x4) is entirely independent of it. If we returned an error here
-	 * when /lib/firmware/i2s_to_spi_v34.bin is absent, this component's DAI
-	 * would never register, the simple-audio-card that references it would
-	 * fail to parse, and the whole sound card - speaker included - would
-	 * disappear. So on firmware failure we warn, skip the FPGA bring-up
-	 * (revision read / I2S mode), and still register the component; the mic
-	 * capture DAI then exists but is non-functional until the firmware is
-	 * dropped in and the device re-probed.
+	 * A missing bitstream is not fatal: the FPGA only carries mic-array
+	 * capture, while speaker playback is independent of it. Register the
+	 * component anyway so the sound card still forms.
 	 */
 	ret = biscuit_spi_pcm_load_firmware(priv);
 	if (ret < 0) {
@@ -703,8 +648,7 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 
 	msleep(FPGA_RESET_MS);
 
-	/* biscuit-dbg: retry the rev-read many times with full dumps to see if
-	 * the FPGA ever responds, and whether MISO is consistently idle-0. */
+	/* Poll the status frame until the loaded design reports its revision. */
 	{
 		int att;
 
@@ -717,13 +661,8 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	}
 
 	/*
-	 * Every FPGA bring-up step below is best-effort for the same reason as
-	 * the firmware load above: a failure here only costs mic-array capture,
-	 * so warn and still register the component rather than taking the whole
-	 * sound card (speaker included) down with a fatal probe error. Observed
-	 * on this board: the "dough" FPGA reads back revision 0 (no response on
-	 * SPI0) even with the firmware present, so without this the card never
-	 * forms.
+	 * The remaining FPGA bring-up is best-effort for the same reason: a
+	 * failure only costs mic-array capture.
 	 */
 	ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
 	if (ret < 0) {
@@ -740,14 +679,9 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	dev_info(dev, "FPGA revision %u\n", rx_df->dsf.fpga_rev);
 
 	/*
-	 * MCLK comes up only NOW, matching Amazon's stock probe order exactly
-	 * (amzn-mt-spi-pcm.c): the off command, reset pulse, bitstream load and
-	 * revision read all happen with the CMMCLK pad still unmuxed, and only
-	 * after the revision verifies does the stock driver call
-	 * AudDrv_GPIO_MCLK_Select() / restore I2S. The FPGA therefore does NOT
-	 * need its reference clock to answer on SPI - that clock is for the I2S
-	 * audio path. Bringing it up earlier (as this driver used to) deviates
-	 * from stock, so do it here.
+	 * The reference clock is only needed for the I2S audio path, not for SPI
+	 * access, so bring it up after the revision has been verified, in the
+	 * same order as the vendor driver.
 	 */
 	/*
 	 * Power on the ISP power domain so the imgsys/SENINF register space is
@@ -761,11 +695,9 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	}
 
 	/*
-	 * Full FPGA reference-clock bring-up, matching Amazon's stock
-	 * mt_amzn_mclk.c. The CMMCLK pad is driven by the camera SENINF timing
-	 * generator, not CAMTG_SEL alone: enable the imgsys sensor clocks, set
-	 * CAMTG_SEL to 48 MHz (UNIVPLL_D26), then program the SENINF divider to
-	 * emit 9.6 MHz. Without this the FPGA has no clock and reads revision 0.
+	 * The CMMCLK pad is driven by the camera SENINF timing generator: enable
+	 * the imgsys sensor clocks, set CAMTG_SEL to 48MHz (UNIVPLL_D26), then
+	 * program the SENINF divider to emit 9.6MHz.
 	 */
 	ret = clk_prepare_enable(priv->sen_tg);
 	if (ret)
@@ -796,7 +728,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	/* Route/divide the 48 MHz reference to 9.6 MHz out the CMMCLK pad. */
 	biscuit_fpga_seninf_program(priv);
 
-
 	/* Restore I2S1 to its FPGA-facing function now the codecs can drive it. */
 	ret = pinctrl_select_state(priv->pinctrl, priv->state_active);
 	if (ret) {
@@ -808,7 +739,7 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	if (ret < 0)
 		dev_warn(dev, "failed to put FPGA in I2S mode (%d); mic capture non-functional\n", ret);
 
-	/* biscuit-dbg: does the FPGA answer once MCLK + I2S are up? */
+	/* Wait for the FPGA to answer with the clocks and I2S mode active. */
 	{
 		int a;
 
