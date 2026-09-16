@@ -57,6 +57,34 @@ properties:
     minItems: 5
     maxItems: 5
 
+  ti,micbias-ldoin-2075mv:
+    type: boolean
+    description:
+      Power MICBIAS from LDOIN and set it to 2.075V.
+
+  ti,avdd-dvdd-weak-disable:
+    type: boolean
+    description:
+      Disable the weak internal connection between AVDD and DVDD. Set this
+      once AVDD is supplied externally or by the internal LDO.
+
+  ti,avdd-ldo-enable:
+    type: boolean
+    description:
+      Enable the internal AVDD LDO. Implied when ldoin-supply is given
+      without av-supply.
+
+  ti,ldoin-range-1v8-3v6:
+    type: boolean
+    description:
+      LDOIN is in the 1.8V..3.6V range. Without this property the
+      1.5V..1.8V range is assumed.
+
+  ti,hp-ldoin-powered:
+    type: boolean
+    description:
+      Power the headphone output drivers from LDOIN rather than AVDD.
+
   ti,hp-common-mode-microvolt:
     description:
       Common-mode voltage of the headphone outputs. 1.65V is only valid with
