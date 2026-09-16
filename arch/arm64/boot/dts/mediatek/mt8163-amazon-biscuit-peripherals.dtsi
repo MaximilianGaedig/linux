@@ -383,6 +383,17 @@
 		reset-gpios = <&pio 51 GPIO_ACTIVE_LOW>;
 		clocks = <&spk_mclk>;
 		clock-names = "mclk";
+		/*
+		 * MFP2 is the external amplifier's mute line: a GPIO output,
+		 * driven low (unmuted).
+		 */
+		aic32x4-gpio-func = <
+			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
+			0x04 /* MFP2 AIC32X4_MFP_GPIO_ENABLED | AIC32X4_MFP2_GPIO_OUT_LOW */
+			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
+			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
+			0xff /* AIC32X4_MFPX_DEFAULT_VALUE */
+		>;
 	};
 };
 
