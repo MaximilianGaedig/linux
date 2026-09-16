@@ -1267,11 +1267,16 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 	if (!aic32x4_setup)
 		return -ENOMEM;
 
-	/*
-	 * Analogue power configuration (AIC32X4_PWR_*), otherwise only
-	 * available through platform data.
-	 */
-	of_property_read_u32(np, "ti,power-cfg", &aic32x4->power_cfg);
+	if (of_property_read_bool(np, "ti,micbias-ldoin-2075mv"))
+		aic32x4->power_cfg |= AIC32X4_PWR_MICBIAS_2075_LDOIN;
+	if (of_property_read_bool(np, "ti,avdd-dvdd-weak-disable"))
+		aic32x4->power_cfg |= AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE;
+	if (of_property_read_bool(np, "ti,avdd-ldo-enable"))
+		aic32x4->power_cfg |= AIC32X4_PWR_AIC32X4_LDO_ENABLE;
+	if (of_property_read_bool(np, "ti,ldoin-range-1v8-3v6"))
+		aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36;
+	if (of_property_read_bool(np, "ti,hp-ldoin-powered"))
+		aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED;
 
 	if (!of_property_read_u32(np, "ti,hp-common-mode-microvolt", &val)) {
 		switch (val) {
