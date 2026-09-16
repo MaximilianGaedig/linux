@@ -711,7 +711,7 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 	u8 aosr;
 	u16 dosr;
 	u8 adc_resource_class, dac_resource_class;
-	u8 madc, nadc, mdac, ndac, max_nadc, min_mdac, max_ndac;
+	u8 madc, min_madc, nadc, mdac, ndac, max_nadc, min_mdac, max_ndac;
 	u8 dosr_increment;
 	u16 max_dosr, min_dosr;
 	unsigned long adc_clock_rate, dac_clock_rate;
@@ -765,11 +765,21 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 	if ((aic32x4->fmt & SND_SOC_DAIFMT_FORMAT_MASK) == SND_SOC_DAIFMT_I2S)
 		channels = 2;
 
-	madc = DIV_ROUND_UP((32 * adc_resource_class), aosr);
+	min_madc = DIV_ROUND_UP((32 * adc_resource_class), aosr);
 	max_dosr = (AIC32X4_MAX_DOSR_FREQ / sample_rate / dosr_increment) *
 			dosr_increment;
 	min_dosr = (AIC32X4_MIN_DOSR_FREQ / sample_rate / dosr_increment) *
 			dosr_increment;
+	/*
+	 * Search over MADC rather than pinning it to its minimum.
+	 *
+	 * With MADC fixed, the reachable CODEC_CLKIN values are all multiples
+	 * of madc*aosr*fs, and for some master clocks none of them has an
+	 * integer-mode PLL solution - the search then settles on a fractional
+	 * one whose PLL input is below the 10MHz the part requires for D != 0.
+	 * Letting MADC grow brings the integer-mode points into range.
+	 */
+	for (madc = min_madc; madc <= 128; ++madc) {
 	max_nadc = AIC32X4_MAX_CODEC_CLKIN_FREQ / (madc * aosr * sample_rate);
 
 	for (nadc = max_nadc; nadc > 0; --nadc) {
@@ -784,11 +794,46 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 					dac_clock_rate = ndac * mdac * dosr *
 							sample_rate;
 					if (dac_clock_rate == adc_clock_rate) {
+						/*
+						 * CODEC_CLKIN comes from the
+						 * PLL here, so a rate below
+						 * its minimum is not one the
+						 * hardware can be given.
+						 */
+						if (dac_clock_rate < AIC32X4_MIN_PLL_CLKOUT)
+							continue;
 						if (clk_round_rate(clocks[0].clk, dac_clock_rate) == 0)
 							continue;
 
-						clk_set_rate(clocks[0].clk,
-							dac_clock_rate);
+						/*
+						 * Only accept a CODEC_CLKIN the
+						 * PLL can really produce.
+						 *
+						 * clk_round_rate() on this mux
+						 * answers for the mux, not for
+						 * the PLL behind it, so a rate
+						 * the PLL has to refuse still
+						 * looks available here. The
+						 * set then quietly fails, the
+						 * PLL keeps whatever it had
+						 * from probe, and the whole
+						 * divider chain below is
+						 * computed for a frequency the
+						 * part is not running at.
+						 * Check what actually stuck.
+						 */
+						if (clk_set_rate(clocks[0].clk,
+								 dac_clock_rate))
+							continue;
+						if (clk_get_rate(clocks[0].clk) !=
+						    dac_clock_rate)
+							continue;
+
+						dev_info(component->dev,
+							 "biscuit-clk: fs=%u codec_clkin=%u nadc=%u madc=%u ndac=%u mdac=%u dosr=%u aosr=%u\n",
+							 sample_rate, dac_clock_rate,
+							 nadc, madc, ndac, mdac,
+							 dosr, aosr);
 
 						clk_set_rate(clocks[1].clk,
 							sample_rate * aosr *
@@ -815,6 +860,7 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 				}
 			}
 		}
+	}
 	}
 
 	dev_err(component->dev,
