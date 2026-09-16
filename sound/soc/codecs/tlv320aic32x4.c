@@ -771,13 +771,9 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 	min_dosr = (AIC32X4_MIN_DOSR_FREQ / sample_rate / dosr_increment) *
 			dosr_increment;
 	/*
-	 * Search over MADC rather than pinning it to its minimum.
-	 *
-	 * With MADC fixed, the reachable CODEC_CLKIN values are all multiples
-	 * of madc*aosr*fs, and for some master clocks none of them has an
-	 * integer-mode PLL solution - the search then settles on a fractional
-	 * one whose PLL input is below the 10MHz the part requires for D != 0.
-	 * Letting MADC grow brings the integer-mode points into range.
+	 * Search over MADC rather than pinning it to its minimum: with MADC
+	 * fixed, some master clocks have no integer-mode PLL solution for any
+	 * reachable CODEC_CLKIN.
 	 */
 	for (madc = min_madc; madc <= 128; ++madc) {
 		max_nadc = AIC32X4_MAX_CODEC_CLKIN_FREQ / (madc * aosr * sample_rate);
@@ -795,10 +791,8 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 								sample_rate;
 						if (dac_clock_rate == adc_clock_rate) {
 							/*
-							 * CODEC_CLKIN comes from the
-							 * PLL here, so a rate below
-							 * its minimum is not one the
-							 * hardware can be given.
+							 * CODEC_CLKIN comes from the PLL, which cannot
+							 * run below its minimum output rate.
 							 */
 							if (dac_clock_rate < AIC32X4_MIN_PLL_CLKOUT)
 								continue;
@@ -806,21 +800,9 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 								continue;
 
 							/*
-							 * Only accept a CODEC_CLKIN the
-							 * PLL can really produce.
-							 *
-							 * clk_round_rate() on this mux
-							 * answers for the mux, not for
-							 * the PLL behind it, so a rate
-							 * the PLL has to refuse still
-							 * looks available here. The
-							 * set then quietly fails, the
-							 * PLL keeps whatever it had
-							 * from probe, and the whole
-							 * divider chain below is
-							 * computed for a frequency the
-							 * part is not running at.
-							 * Check what actually stuck.
+							 * clk_round_rate() answers for the CODEC_CLKIN
+							 * mux, not for the PLL behind it. Only accept
+							 * a rate the PLL has actually been set to.
 							 */
 							if (clk_set_rate(clocks[0].clk,
 									 dac_clock_rate))
@@ -1275,13 +1257,8 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 		return -ENOMEM;
 
 	/*
-	 * Analogue power-up configuration. Mainline only accepts this through
-	 * platform data, which no OF board can reach, so it is always zero on
-	 * a DT system. The bits matter: a board whose headphone drivers run
-	 * off LDOIN needs AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED, and without it
-	 * the codec clocks a perfectly correct bitstream into an output stage
-	 * that was never powered - audibly silent, digitally flawless.
-	 * Amazon's own driver hardcodes 0x1e here for this part.
+	 * Analogue power configuration (AIC32X4_PWR_*), otherwise only
+	 * available through platform data.
 	 */
 	of_property_read_u32(np, "ti,power-cfg", &aic32x4->power_cfg);
 
