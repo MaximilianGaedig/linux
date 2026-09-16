@@ -82,3 +82,18 @@
 		};
 	};
 };
+
+/*
+ * amazon-common.dtsi declares all 512MB (0x40000000 + 0x20000000), but the
+ * top of that range is not ours: LK reports mblock[0] as 0x1f800000, the ATF
+ * log buffer sits at 0x5f800000, and everything from 0x5fa00000 up is locked
+ * by the EMI MPU - the kernel faults if it actually touches it.
+ *
+ * Override rather than add a second node: the kernel walks every node with
+ * device_type = "memory" and adds them all to memblock, so a new one would
+ * declare the same RAM twice and reintroduce the range we are trying to
+ * exclude.
+ */
+&{/memory} {
+	reg = <0 0x40000000 0 0x1f800000>;
+};
