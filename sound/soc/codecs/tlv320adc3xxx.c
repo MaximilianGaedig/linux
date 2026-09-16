@@ -1268,8 +1268,8 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dapm_context *dapm = snd_soc_component_to_dapm(dai->component);
 	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
 	int i, width = 16;
-	unsigned int frame_bits;
-	u8 iface_len, bdiv;
+	unsigned int frame_bits, clk_div, bdiv;
+	u8 iface_len;
 
 	i = adc3xxx_get_divs(component->dev, adc3xxx->sysclk,
 			     params_rate(params), adc3xxx->pll_mode);
@@ -1358,16 +1358,28 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	/*
 	 * BDIV N Value
 	 *
-	 * BCLK is (by default) derived from ADC_CLK and has to clock out the
-	 * whole frame: slots * slot_width bits on a TDM bus, not just this
-	 * part's own two channels.
+	 * BCLK is (by default) ADC_CLK / BDIV and WCLK is ADC_CLK / (MADC *
+	 * AOSR), so a frame is MADC * AOSR / BDIV bit clocks long, which has
+	 * to be a whole number. It must hold both channels of this part, or
+	 * slots * slot_width bits on a TDM bus, where every part and the
+	 * receiver have to agree on the frame length exactly.
+	 *
+	 * Use the largest BDIV that gives a whole frame at least that long.
 	 */
 	frame_bits = adc3xxx->tdm_slots ?
 		     adc3xxx->tdm_slots * adc3xxx->tdm_slot_width :
 		     2 * width;
-	bdiv = (adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc) / frame_bits;
+	clk_div = adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc;
+	bdiv = min(clk_div / frame_bits, ADC3XXX_BDIV_MASK);
+	while (bdiv > 1 && clk_div % bdiv)
+		bdiv--;
 	if (!bdiv)
 		bdiv = 1;
+	if (clk_div / bdiv < frame_bits ||
+	    (adc3xxx->tdm_slots && clk_div / bdiv != frame_bits))
+		dev_warn(component->dev,
+			 "%u-bit frame requested, MADC * AOSR = %u gives %u bits\n",
+			 frame_bits, clk_div, clk_div / bdiv);
 	snd_soc_component_update_bits(component, ADC3XXX_BCLK_N_DIV,
 				      ADC3XXX_BDIV_MASK, bdiv);
 
