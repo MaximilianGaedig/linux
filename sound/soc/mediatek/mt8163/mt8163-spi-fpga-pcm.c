@@ -54,10 +54,6 @@
  * probe(): >200ns with CRESET_B and SS_B both low, then >=1200us for the
  * FPGA to clear its configuration memory before it will accept a bitstream.
  */
-static int biscuit_fpga_tpg;
-module_param(biscuit_fpga_tpg, int, 0644);
-MODULE_PARM_DESC(biscuit_fpga_tpg, "put the FPGA in test-pattern mode instead of I2S capture");
-
 #define FPGA_CRESET_DELAY_US		1
 #define FPGA_HOUSEKEEPING_DELAY_US	1200
 
@@ -86,13 +82,7 @@ MODULE_PARM_DESC(biscuit_fpga_tpg, "put the FPGA in test-pattern mode instead of
 enum dough_fw_cmd {
 	DOUGH_FW_OFF	= 0x80,
 	DOUGH_FW_I2S	= 0x81,
-	/*
-	 * Test-pattern generator. The FPGA synthesises frames on its own,
-	 * with no I2S input needed, so this separates "the FPGA never frames"
-	 * from "the microphones are not feeding it": if capture works in TPG
-	 * mode then the SPI path, the frame layout and the ALSA plumbing are
-	 * all correct and only the mic-side I2S is at fault.
-	 */
+	/* Test-pattern generator: frames are synthesised without I2S input. */
 	DOUGH_FW_TPG	= 0x83,
 };
 
@@ -275,8 +265,7 @@ static int biscuit_spi_capture_thread(void *data)
 		 * command can mean anything, so send it there.
 		 */
 		if (!priv->armed_live && !priv->rx_buf->dsf.i2s_inactive) {
-			u8 cmd[32] = { biscuit_fpga_tpg ? DOUGH_FW_TPG
-						       : DOUGH_FW_I2S };
+			u8 cmd[32] = { DOUGH_FW_I2S };
 
 			priv->armed_live = true;
 			dough_spi_txrx(priv->spi, cmd, NULL, sizeof(cmd));
@@ -381,8 +370,7 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	 * what actually arms capture.
 	 */
 	{
-		u8 i2s_cmd[32] = { biscuit_fpga_tpg ? DOUGH_FW_TPG
-						   : DOUGH_FW_I2S };
+		u8 i2s_cmd[32] = { DOUGH_FW_I2S };
 
 		dough_spi_txrx(priv->spi, i2s_cmd, NULL, sizeof(i2s_cmd));
 	}
