@@ -35,6 +35,8 @@
 struct aic32x4_priv {
 	struct regmap *regmap;
 	u32 power_cfg;
+	bool hp_cmmode_set;
+	u8 hp_cmmode;
 	u32 micpga_routing;
 	bool swapdacs;
 	struct gpio_desc *rstn_gpio;
@@ -1062,7 +1064,11 @@ static int aic32x4_component_probe(struct snd_soc_component *component)
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36)
 		tmp_reg |= AIC32X4_LDOIN_18_36;
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
-		tmp_reg |= AIC32X4_LDOIN2HP | AIC32X4_HP_CMMODE;
+		tmp_reg |= AIC32X4_LDOIN2HP;
+	if (aic32x4->hp_cmmode_set) {
+		tmp_reg &= ~AIC32X4_HP_CMMODE_MASK;
+		tmp_reg |= aic32x4->hp_cmmode << AIC32X4_HP_CMMODE_SHIFT;
+	}
 	snd_soc_component_write(component, AIC32X4_CMMODE, tmp_reg);
 
 	/* Mic PGA routing */
@@ -1215,7 +1221,11 @@ static int aic32x4_tas2505_component_probe(struct snd_soc_component *component)
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36)
 		tmp_reg |= AIC32X4_LDOIN_18_36;
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
-		tmp_reg |= AIC32X4_LDOIN2HP | AIC32X4_HP_CMMODE;
+		tmp_reg |= AIC32X4_LDOIN2HP;
+	if (aic32x4->hp_cmmode_set) {
+		tmp_reg &= ~AIC32X4_HP_CMMODE_MASK;
+		tmp_reg |= aic32x4->hp_cmmode << AIC32X4_HP_CMMODE_SHIFT;
+	}
 	snd_soc_component_write(component, AIC32X4_CMMODE, tmp_reg);
 
 	/*
@@ -1249,6 +1259,7 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 		struct device_node *np)
 {
 	struct aic32x4_setup_data *aic32x4_setup;
+	u32 val;
 	int ret;
 
 	aic32x4_setup = devm_kzalloc(aic32x4->dev, sizeof(*aic32x4_setup),
@@ -1261,6 +1272,28 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 	 * available through platform data.
 	 */
 	of_property_read_u32(np, "ti,power-cfg", &aic32x4->power_cfg);
+
+	if (!of_property_read_u32(np, "ti,hp-common-mode-microvolt", &val)) {
+		switch (val) {
+		case 900000:
+			aic32x4->hp_cmmode = 0;
+			break;
+		case 1250000:
+			aic32x4->hp_cmmode = 1;
+			break;
+		case 1500000:
+			aic32x4->hp_cmmode = 2;
+			break;
+		case 1650000:
+			aic32x4->hp_cmmode = 3;
+			break;
+		default:
+			dev_err(aic32x4->dev,
+				"Invalid ti,hp-common-mode-microvolt: %u\n", val);
+			return -EINVAL;
+		}
+		aic32x4->hp_cmmode_set = true;
+	}
 
 	ret = of_property_match_string(np, "clock-names", "mclk");
 	if (ret < 0)

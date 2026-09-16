@@ -57,6 +57,14 @@ properties:
     minItems: 5
     maxItems: 5
 
+  ti,hp-common-mode-microvolt:
+    description:
+      Common-mode voltage of the headphone outputs. 1.65V is only valid with
+      the headphone drivers powered from LDOIN and LDOIN in the 1.8V..3.6V
+      range.
+    enum: [900000, 1250000, 1500000, 1650000]
+    default: 900000
+
 required:
   - compatible
   - reg
