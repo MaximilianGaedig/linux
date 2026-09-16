@@ -353,6 +353,17 @@
 
 / {
 	/*
+	 * The mic array's master clock.
+	 *
+	 * Physically this is the CMMCLK pad, driven by the camera SENINF timing
+	 * generator and divided down to 9.6MHz (see mt8163-spi-fpga-pcm.c,
+	 * which programs SENINF_TG1_*). There is no Linux clock provider for
+	 * it, so model it as a fixed clock at the frequency that block is
+	 * programmed to produce - the ADC3101s need a truthful rate to compute
+	 * their PLL dividers from. The old nodes claimed clk26m, which is not
+	 * what the pin carries.
+	 */
+	/*
 	 * The speaker codec's master clock.
 	 *
 	 * The speaker codec and the mic ADCs share ONE master clock: the
@@ -368,6 +379,13 @@
 		#clock-cells = <0>;
 		clock-frequency = <9600000>;
 		clock-output-names = "spk_mclk";
+	};
+
+	mic_mclk: mic-mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <9600000>;
+		clock-output-names = "mic_mclk";
 	};
 };
 
