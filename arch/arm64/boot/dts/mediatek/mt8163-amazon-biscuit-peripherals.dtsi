@@ -1,0 +1,244 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * LED ring, ambient light sensors, mic array, and audio codec for the
+ * Amazon Echo Dot 2nd Gen (biscuit).
+ *
+ * Addresses, pinmuxes and GPIO wiring cross-referenced from Amazon's own
+ * downstream 3.18.19 kernel devicetree (biscuit.dtsi) against the real
+ * hardware. tlv320aic3101 nodes use the generic "ti,tlv320aic3x" mainline
+ * compatible string (register-map compatible, no dedicated mainline driver
+ * needed).
+ */
+
+#include <dt-bindings/pinctrl/mt65xx.h>
+#include <dt-bindings/leds/common.h>
+
+/*
+ * A leds-group-multicolor grouping layer (one node per physical LED,
+ * referencing its 3 raw PWM channel children below via phandles) was
+ * tried here and removed - it never took effect at runtime (the DTB
+ * change never reached the kernel at all, root-caused to a bootloader-
+ * side IDME/FDT-injection size limit silently discarding oversized
+ * appended DTBs rather than anything wrong with the grouping itself),
+ * and its ~12 extra nodes were a meaningful chunk of that oversized
+ * DTB's bulk. The flat per-channel interface below remains the
+ * confirmed-working LED control path.
+ */
+
+&i2c0 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_default>;
+	status = "okay";
+
+	/*
+	 * The 12-LED RGB ring. Mainline's leds-is31fl32xx wants one child per
+	 * PWM channel (36 = 12 LEDs x RGB) with 'reg' as the 1-based channel
+	 * number; without children it probes with -EINVAL. The downstream
+	 * 'play-boot-animation' and 'channel-offset' properties are Amazon
+	 * extensions the mainline driver does not implement, so they are gone.
+	 *
+	 * Each channel is labeled/phandled here purely so the leds-group-
+	 * multicolor nodes above can reference them - leds-group-multicolor
+	 * disables their individual sysfs brightness files once grouped, so
+	 * userspace only ever sees the 12 clean ringN multicolor devices,
+	 * not 36 disconnected raw channels.
+	 */
+	led_ring: is31fl3236@3f {
+		compatible = "issi,is31fl3236";
+		reg = <0x3f>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		ring1_red: led@1 {
+			reg = <1>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring1:red";
+		};
+		ring1_green: led@2 {
+			reg = <2>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring1:green";
+		};
+		ring1_blue: led@3 {
+			reg = <3>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring1:blue";
+		};
+		ring2_red: led@4 {
+			reg = <4>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring2:red";
+		};
+		ring2_green: led@5 {
+			reg = <5>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring2:green";
+		};
+		ring2_blue: led@6 {
+			reg = <6>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring2:blue";
+		};
+		ring3_red: led@7 {
+			reg = <7>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring3:red";
+		};
+		ring3_green: led@8 {
+			reg = <8>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring3:green";
+		};
+		ring3_blue: led@9 {
+			reg = <9>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring3:blue";
+		};
+		ring4_red: led@a {
+			reg = <10>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring4:red";
+		};
+		ring4_green: led@b {
+			reg = <11>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring4:green";
+		};
+		ring4_blue: led@c {
+			reg = <12>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring4:blue";
+		};
+		ring5_red: led@d {
+			reg = <13>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring5:red";
+		};
+		ring5_green: led@e {
+			reg = <14>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring5:green";
+		};
+		ring5_blue: led@f {
+			reg = <15>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring5:blue";
+		};
+		ring6_red: led@10 {
+			reg = <16>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring6:red";
+		};
+		ring6_green: led@11 {
+			reg = <17>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring6:green";
+		};
+		ring6_blue: led@12 {
+			reg = <18>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring6:blue";
+		};
+		ring7_red: led@13 {
+			reg = <19>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring7:red";
+		};
+		ring7_green: led@14 {
+			reg = <20>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring7:green";
+		};
+		ring7_blue: led@15 {
+			reg = <21>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring7:blue";
+		};
+		ring8_red: led@16 {
+			reg = <22>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring8:red";
+		};
+		ring8_green: led@17 {
+			reg = <23>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring8:green";
+		};
+		ring8_blue: led@18 {
+			reg = <24>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring8:blue";
+		};
+		ring9_red: led@19 {
+			reg = <25>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring9:red";
+		};
+		ring9_green: led@1a {
+			reg = <26>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring9:green";
+		};
+		ring9_blue: led@1b {
+			reg = <27>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring9:blue";
+		};
+		ring10_red: led@1c {
+			reg = <28>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring10:red";
+		};
+		ring10_green: led@1d {
+			reg = <29>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring10:green";
+		};
+		ring10_blue: led@1e {
+			reg = <30>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring10:blue";
+		};
+		ring11_red: led@1f {
+			reg = <31>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring11:red";
+		};
+		ring11_green: led@20 {
+			reg = <32>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring11:green";
+		};
+		ring11_blue: led@21 {
+			reg = <33>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring11:blue";
+		};
+		ring12_red: led@22 {
+			reg = <34>;
+			color = <LED_COLOR_ID_RED>;
+			label = "biscuit:ring12:red";
+		};
+		ring12_green: led@23 {
+			reg = <35>;
+			color = <LED_COLOR_ID_GREEN>;
+			label = "biscuit:ring12:green";
+		};
+		ring12_blue: led@24 {
+			reg = <36>;
+			color = <LED_COLOR_ID_BLUE>;
+			label = "biscuit:ring12:blue";
+		};
+	};
+};
+
+&pio {
+	i2c0_pins_default: i2c0-pins {
+		pins {
+			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
+				 <MT8163_PIN_76_SCL0__FUNC_SCL0_0>;
+			bias-disable;
+		};
+	};
+};
