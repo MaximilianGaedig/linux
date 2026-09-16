@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/serial/mediatek,btif.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek Bluetooth interface (BTIF)
+
+maintainers:
+  - Maximilian Gaedig <mg@maximiliangaedig.com>
+
+description:
+  BTIF is a UART-like interface between the AP and the MediaTek connectivity
+  subsystem (CONSYS) that carries the Bluetooth HCI and WMT/STP traffic. The
+  BTIF controller node describes the interface itself, while the TX and RX
+  APDMA channels used for DMA transfers are described by separate
+  mediatek,btif_tx and mediatek,btif_rx nodes.
+
+properties:
+  compatible:
+    enum:
+      - mediatek,btif
+      - mediatek,btif_rx
+      - mediatek,btif_tx
+
+  reg:
+    maxItems: 1
+
+  interrupts:
+    maxItems: 1
+
+  clocks:
+    items:
+      - description: BTIF controller clock
+      - description: AP DMA clock
+
+  clock-names:
+    items:
+      - const: btifc
+      - const: apdmac
+
+required:
+  - compatible
+  - reg
+  - interrupts
+
+allOf:
+  - if:
+      properties:
+        compatible:
+          const: mediatek,btif
+    then:
+      required:
+        - clocks
+        - clock-names
+    else:
+      properties:
+        clocks: false
+        clock-names: false
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/clock/mediatek,mt8163-infracfg.h>
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #include <dt-bindings/interrupt-controller/irq.h>
+
+    soc {
+        #address-cells = <2>;
+        #size-cells = <2>;
+
+        serial@11000700 {
+            compatible = "mediatek,btif_tx";
+            reg = <0 0x11000700 0 0x80>;
+            interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_LOW>;
+        };
+
+        serial@11000780 {
+            compatible = "mediatek,btif_rx";
+            reg = <0 0x11000780 0 0x80>;
+            interrupts = <GIC_SPI 111 IRQ_TYPE_LEVEL_LOW>;
+        };
+
+        serial@1100c000 {
+            compatible = "mediatek,btif";
+            reg = <0 0x1100c000 0 0x1000>;
+            interrupts = <GIC_SPI 112 IRQ_TYPE_LEVEL_LOW>;
+            clocks = <&infracfg CLK_INFRA_BTIF>, <&infracfg CLK_INFRA_AP_DMA>;
+            clock-names = "btifc", "apdmac";
+        };
+    };
