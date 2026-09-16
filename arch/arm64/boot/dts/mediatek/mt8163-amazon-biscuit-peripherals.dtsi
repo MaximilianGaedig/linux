@@ -246,6 +246,39 @@
 	};
 };
 
+&i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2_pins_default>;
+	status = "okay";
+
+	aic32x4_codec: tlv320aic32x4@18 {
+		/*
+		 * Analogue power-up flags, the value Amazon's driver hardcodes:
+		 * AVDD_DVDD_WEAK_DISABLE | AIC32X4_LDO_ENABLE |
+		 * CMMODE_LDOIN_RANGE_18_36 | CMMODE_HP_LDOIN_POWERED.
+		 *
+		 * The last one is what matters here: this board's amplifier is
+		 * fed from the headphone drivers, and those run off LDOIN. With
+		 * power_cfg left at zero the codec produces a flawless
+		 * bitstream into an output stage that was never powered, which
+		 * is audible as nothing at all.
+		 */
+		ti,power-cfg = <0x1e>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Speaker";
+		/* 'iov' is mandatory for this driver; the rest are optional. */
+		iov-supply = <&mt6323_vio18_reg>;
+		av-supply  = <&mt6323_vio28_reg>;
+		dv-supply  = <&mt6323_vio18_reg>;
+
+		compatible = "ti,tlv320aic32x4";
+		reg = <0x18>;
+		reset-gpios = <&pio 51 GPIO_ACTIVE_LOW>;
+		clocks = <&spk_mclk>;
+		clock-names = "mclk";
+	};
+};
+
 /*
  * Mute-button privacy LED / mic-mute latch. No mainline driver exists for
  * amz_priv; needs porting from Amazon's drivers/misc/amz_priv.c. GPIO
@@ -263,6 +296,14 @@
 		pins {
 			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
 				 <MT8163_PIN_76_SCL0__FUNC_SCL0_0>;
+			bias-disable;
+		};
+	};
+
+	i2c2_pins_default: i2c2-pins {
+		pins {
+			pinmux = <MT8163_PIN_77_SDA2__FUNC_SDA2_0>,
+				 <MT8163_PIN_78_SCL2__FUNC_SCL2_0>;
 			bias-disable;
 		};
 	};
