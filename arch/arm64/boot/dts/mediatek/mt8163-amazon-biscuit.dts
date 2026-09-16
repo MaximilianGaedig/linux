@@ -19,6 +19,45 @@
 	/* Needed by stock bootloader */
 	version = "evt";
 
+	/*
+	 * Board thermistors. Amazon's downstream driver models these as a
+	 * proprietary "virtual_sensor_thermistor", but the hardware is plain:
+	 * three 10k NTCs, each pulled up to 1.8V through 10k into an AUXADC
+	 * input (their mtk_ts_board_biscuit.h: pull_up_R=10000,
+	 * pull_up_voltage=1800, channels AUX_IN 0/14/15).
+	 *
+	 * Their comments claim "100K" but the parts are 10k: the same header
+	 * gives 195652 ohm as the -40C reference, and 195652 is exactly the
+	 * first entry of mainline's ncpXXxh103 table (a 100k part is ~4M at
+	 * -40C). Measured, the three channels sit at 611-646mV, which through
+	 * R = pullup_ohm * V / (pullup_uv - V) - the very formula their
+	 * mtk_ts_bts.c used - is ~5.4k, i.e. ~37C on a 10k curve and a
+	 * nonsensical ~105C on a 100k one. So: murata,ncp15xh103.
+	 */
+	thermistor0: thermistor-0 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 0>;
+	};
+
+	thermistor1: thermistor-1 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 14>;
+	};
+
+	thermistor2: thermistor-2 {
+		compatible = "murata,ncp15xh103";
+		pullup-uv = <1800000>;
+		pullup-ohm = <10000>;
+		pulldown-ohm = <0>;
+		io-channels = <&auxadc 15>;
+	};
+
 	gpio-keys {
 		compatible = "gpio-keys";
 		pinctrl-names = "default";
@@ -104,7 +143,7 @@
 };
 
 &thermal {
-	status = "disabled";
+	status = "okay";
 };
 
 &u2phy0 {
@@ -174,3 +213,7 @@
 &mt6323_vio28_reg     { regulator-always-on; };
 &mt6323_vm_reg        { regulator-always-on; };
 &mt6323_vmc_reg       { regulator-always-on; };
+
+&auxadc {
+	status = "okay";
+};
