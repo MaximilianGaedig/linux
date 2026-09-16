@@ -80,6 +80,17 @@
 			no-map;
 		};
 
+		/*
+		 * WIFI/BT/GPS (MT6625L combo, integrated CONSYS subsystem)
+		 * firmware/ROM-patch/coredump scratch region. Size matches
+		 * Amazon's downstream biscuit.dtsi.
+		 */
+		consys_reserved_memory: consys-reserve-memory {
+			compatible = "mediatek,consys-reserve-memory";
+			no-map;
+			size = <0 0x200000>;
+			alignment = <0 0x200000>;
+		};
 	};
 
 	vgpu_1v15: regulator-vgpu {
