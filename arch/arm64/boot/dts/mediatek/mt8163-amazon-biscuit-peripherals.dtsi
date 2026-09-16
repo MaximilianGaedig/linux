@@ -368,6 +368,8 @@
 		 * is audible as nothing at all.
 		 */
 		ti,power-cfg = <0x1e>;
+		/* Amazon's driver sets the 1.65V headphone common mode. */
+		ti,hp-common-mode-microvolt = <1650000>;
 		#sound-dai-cells = <0>;
 		sound-name-prefix = "Speaker";
 		/* 'iov' is mandatory for this driver; the rest are optional. */
