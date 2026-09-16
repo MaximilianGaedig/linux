@@ -389,6 +389,63 @@
 	};
 };
 
+/*
+ * Mic-array FPGA. SPI0 is otherwise unused on this board.
+ */
+&spi {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi_pins_default>;
+	/* Software chip-select: keeps CS low across the entire bitstream
+	 * transfer while the FPGA is being configured (see spi-pins comment). */
+	cs-gpios = <&pio 53 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	spi_pcm_fpga: audio-fpga@0 {
+		compatible = "amazon,biscuit-spi-pcm";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+		#sound-dai-cells = <0>;
+
+		reset-gpios = <&pio 43 GPIO_ACTIVE_LOW>;
+
+		pinctrl-names = "idle", "active", "mclk";
+		pinctrl-0 = <&aud_pins_i2s1_idle>;
+		pinctrl-1 = <&aud_pins_i2s1_active>;
+		pinctrl-2 = <&aud_pins_fpga_mclk>;
+
+		/*
+		 * FPGA reference clock = the CMMCLK pad, which on MT8163 is
+		 * driven by the camera SENINF (sensor interface) timing
+		 * generator, NOT by CAMTG_SEL alone. Matching Amazon's stock
+		 * mt_amzn_mclk.c (GPL kernel source): the driver must power the
+		 * ISP domain, enable the imgsys sensor clocks, set CAMTG_SEL to
+		 * UNIVPLL_D26 (48 MHz), and program the SENINF TG1 divider to
+		 * emit 9.6 MHz on the pad. Without the SENINF programming the
+		 * FPGA gets no clock and reads back revision 0.
+		 *
+		 * mclk      = CAMTG_SEL (set to 48 MHz in the driver)
+		 * sen_tg    = the SENINF timing generator that drives the pad
+		 * sen_cam/larb2_smi/cam_smi = imgsys register-bus/sensor clocks
+		 *             needed to reach the SENINF registers (ISP domain)
+		 */
+		clocks = <&topckgen CLK_TOP_CAMTG_SEL>,
+			 <&imgsys CLK_IMG_SEN_TG>,
+			 <&imgsys CLK_IMG_SEN_CAM>,
+			 <&imgsys CLK_IMG_LARB2_SMI>,
+			 <&imgsys CLK_IMG_CAM_SMI>;
+		clock-names = "mclk", "sen_tg", "sen_cam", "larb2_smi", "cam_smi";
+		power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
+	};
+};
+
+/*
+ * Firmware for the mic-array FPGA (bitstream/config, not a Linux driver
+ * module). Amazon's biscuit_defconfig: CONFIG_EXTRA_FIRMWARE =
+ * "i2s_to_spi_v34.bin". Not yet extracted from the stock Fire OS
+ * partitions - request_firmware() will fail until
+ * /lib/firmware/i2s_to_spi_v34.bin is populated on the target rootfs.
+ */
+
 &auxadc {
 	status = "okay";
 };
