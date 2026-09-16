@@ -314,31 +314,26 @@ hex_dump(char *prefix, char *p, int len)
 	pr_err("\n");
 }
 
-#define MTK_BT_HCI_OPEN_TRIES 120
-
 static void mtk_bt_hci_receive(const UINT8 *data, INT32 size);
 
 static int
 mtk_bt_hci_open(struct hci_dev *hdev)
 {
 	int err = 0;
-	int tries;
 
 #if MTK_BT_DEBUG == 1
 	pr_err("# %s\n", __func__);
 #endif
 
 	/*
-	 * The BT core opens the device as soon as it is registered, which for
-	 * a module can be before the WMT core has finished bringing up the
-	 * combo chip and exported its callbacks. Give it time to come up.
+	 * The BT core opens the device as soon as it is registered, possibly
+	 * before anything has created the WMT core. Bring it up (once) here
+	 * instead of polling for someone else to.
 	 */
-	for (tries = 0; tries < MTK_BT_HCI_OPEN_TRIES; tries++) {
-		err = mtk_wcn_wmt_func_on(WMTDRV_TYPE_BT);
-		if (err == MTK_WCN_BOOL_TRUE)
-			break;
-		msleep(500);
-	}
+	if (mtk_wcn_wmt_core_up())
+		return -ENODEV;
+
+	err = mtk_wcn_wmt_func_on(WMTDRV_TYPE_BT);
 	if (err != MTK_WCN_BOOL_TRUE) {
 		pr_err("%s func on failed with %d\n", __func__, err);
 		return -ENODEV;
@@ -790,8 +785,9 @@ static int BT_open(struct inode *inode, struct file *file)
 {
 	BT_INFO_FUNC("%s: major %d minor %d pid %d\n", __func__, imajor(inode), iminor(inode), current->pid);
 
-	/* Turn on BT */
-	if (MTK_WCN_BOOL_FALSE == mtk_wcn_wmt_func_on(WMTDRV_TYPE_BT)) {
+	/* Turn on BT, creating the WMT core first if nobody has yet */
+	if (mtk_wcn_wmt_core_up() ||
+	    MTK_WCN_BOOL_FALSE == mtk_wcn_wmt_func_on(WMTDRV_TYPE_BT)) {
 		BT_WARN_FUNC("WMT turn on BT fail!\n");
 		return -ENODEV;
 	}

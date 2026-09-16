@@ -253,6 +253,7 @@ typedef enum _ENUM_WMT_ANT_RAM_STATUS_T {
 
 extern INT32 mtk_wcn_wmt_wlan_reg(P_MTK_WCN_WMT_WLAN_CB_INFO pWmtWlanCbInfo);
 extern INT32 mtk_wcn_wmt_wlan_unreg(VOID);
+extern INT32 mtk_wcn_wmt_core_up(void);
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
