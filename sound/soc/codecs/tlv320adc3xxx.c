@@ -106,6 +106,10 @@
 #define ADC3XXX_ADC_FLAG			ADC3XXX_REG(0, 36)
 #define ADC3XXX_CH_OFFSET_2			ADC3XXX_REG(0, 37)
 #define ADC3XXX_I2S_TDM_CTRL			ADC3XXX_REG(0, 38)
+/* I2S_TDM_CTRL bits */
+#define ADC3XXX_TDM_EARLY_3STATE		0x02
+#define ADC3XXX_TDM_CHANNEL_DIS_SHIFT		2
+#define ADC3XXX_TDM_CHANNEL_MASK		0x3
 /* 39-41 Reserved */
 #define ADC3XXX_INTR_FLAG_1			ADC3XXX_REG(0, 42)
 #define ADC3XXX_INTR_FLAG_2			ADC3XXX_REG(0, 43)
@@ -119,6 +123,9 @@
 #define ADC3XXX_GPIO2_CTRL			ADC3XXX_REG(0, 51)
 #define ADC3XXX_GPIO1_CTRL			ADC3XXX_REG(0, 52)
 #define ADC3XXX_DOUT_CTRL			ADC3XXX_REG(0, 53)
+/* DOUT_CTRL bits */
+#define ADC3XXX_DOUT_PRIMARY			(0x1 << 1)
+#define ADC3XXX_DOUT_BUS_KEEPER_DIS		BIT(4)
 /* 54-56 Reserved */
 #define ADC3XXX_SYNC_CTRL_1			ADC3XXX_REG(0, 57)
 #define ADC3XXX_SYNC_CTRL_2			ADC3XXX_REG(0, 58)
@@ -341,6 +348,13 @@ struct adc3xxx {
 	int master;
 	u8 page_no;
 	int use_pll;
+	/* TDM frame geometry, from .set_tdm_slot; 0 slots => plain stereo */
+	int tdm_slots;
+	int tdm_slot_width;
+	/* TDM bus setup, replayed once the clocks are up (see below) */
+	bool tdm_valid;
+	u8 tdm_ctrl;
+	u8 tdm_offset;
 	struct gpio_chip gpio_chip;
 };
 
@@ -568,6 +582,49 @@ static int adc3xxx_get_divs(struct device *dev, int mclk, int rate, int pll_mode
 	dev_info(dev, "Master clock rate %d and sample rate %d is not supported\n",
 		 mclk, rate);
 	return -EINVAL;
+}
+
+/*
+ * Re-apply the TDM bus setup once the ADC clock is actually running.
+ *
+ * .set_tdm_slot runs from hw_params, long before anything clocks this part,
+ * and the vendor driver deliberately does not configure the bus there: it
+ * parks DOUT in Hi-Z, sets the dividers, enables the clock, waits, and only
+ * then writes the TDM control and slot offset before releasing DOUT. Writing
+ * them into an unclocked part and hoping they stick is the one ordering
+ * difference left against stock, so replay them here, after the clock is up
+ * and settled.
+ */
+static int adc3xxx_tdm_settle(struct snd_soc_dapm_widget *w,
+			      struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
+
+	if (!adc3xxx->tdm_valid)
+		return 0;
+
+	/* Let the divider chain settle before the bus is reconfigured. */
+	msleep(100);
+
+	/*
+	 * Park DOUT in Hi-Z first. Stock disables every part's DOUT at the top
+	 * of hw_params, programs the bus, and only re-enables it at the end, so
+	 * no part is driving while slot assignments are in flux and none of
+	 * them latches a half-written configuration.
+	 */
+	snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				ADC3XXX_DOUT_BUS_KEEPER_DIS);
+
+	snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
+				adc3xxx->tdm_ctrl);
+	snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1,
+				adc3xxx->tdm_offset);
+	snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				ADC3XXX_DOUT_BUS_KEEPER_DIS |
+				ADC3XXX_DOUT_PRIMARY);
+
+	return 0;
 }
 
 static int adc3xxx_pll_delay(struct snd_soc_dapm_widget *w,
@@ -913,7 +970,7 @@ static const struct snd_soc_dapm_widget adc3xxx_dapm_widgets[] = {
 			    0, adc3xxx_pll_delay, SND_SOC_DAPM_POST_PMU),
 
 	SND_SOC_DAPM_SUPPLY("ADC_CLK", ADC3XXX_ADC_NADC, ADC3XXX_ENABLE_NADC_SHIFT,
-			    0, NULL, 0),
+			    0, adc3xxx_tdm_settle, SND_SOC_DAPM_POST_PMU),
 	SND_SOC_DAPM_SUPPLY("ADC_MOD_CLK", ADC3XXX_ADC_MADC, ADC3XXX_ENABLE_MADC_SHIFT,
 			    0, NULL, 0),
 
@@ -1227,6 +1284,7 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dapm_context *dapm = snd_soc_component_to_dapm(dai->component);
 	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
 	int i, width = 16;
+	unsigned int frame_bits;
 	u8 iface_len, bdiv;
 
 	i = adc3xxx_get_divs(component->dev, adc3xxx->sysclk,
@@ -1285,9 +1343,23 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	/* AOSR */
 	snd_soc_component_update_bits(component, ADC3XXX_ADC_AOSR,
 				      ADC3XXX_AOSR_MASK, adc3xxx_divs[i].aosr);
-	/* BDIV N Value */
-	/* BCLK is (by default) set up to be derived from ADC_CLK */
-	bdiv = (adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc) / (2 * width);
+	/*
+	 * BDIV N Value
+	 *
+	 * BCLK is (by default) derived from ADC_CLK, and it has to clock out a
+	 * whole frame - not just this part's own two channels. On a TDM bus
+	 * several parts share the line and answer in different slots, so the
+	 * frame is slots * slot_width bits wide; dividing for two channels
+	 * makes the master emit a frame short enough that every slot past the
+	 * first is never clocked at all, and a receiver sees a live bus
+	 * carrying nothing it can assemble.
+	 */
+	frame_bits = adc3xxx->tdm_slots ?
+		     adc3xxx->tdm_slots * adc3xxx->tdm_slot_width :
+		     2 * width;
+	bdiv = (adc3xxx_divs[i].aosr * adc3xxx_divs[i].madc) / frame_bits;
+	if (!bdiv)
+		bdiv = 1;
 	snd_soc_component_update_bits(component, ADC3XXX_BCLK_N_DIV,
 				      ADC3XXX_BDIV_MASK, bdiv);
 
@@ -1394,10 +1466,102 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	return 0;
 }
 
+/*
+ * Place this part's channels in a shared TDM frame.
+ *
+ * Several of these parts can sit on one data line, each driving its own pair
+ * of slots; register 28 says how many BCLK cycles after the frame sync this
+ * one should start driving. It defaults to zero, so without this every part
+ * on the bus answers in slot 0 at once and drives the line against its
+ * neighbours - the clocks look perfectly healthy on a scope while the
+ * receiver never recovers a valid frame.
+ *
+ * The mask is the DAI's rx_mask, so the first set bit is this part's first
+ * slot; the offset is that slot index times the slot width, in bits.
+ */
+static int adc3xxx_set_dai_tdm_slot(struct snd_soc_dai *dai,
+				    unsigned int tx_mask, unsigned int rx_mask,
+				    int slots, int slot_width)
+{
+	struct snd_soc_component *component = dai->component;
+	struct adc3xxx *adc3xxx = snd_soc_component_get_drvdata(component);
+	unsigned int offset, first, unused;
+	int ret;
+
+	/* No slots claimed: leave the part where it is. */
+	if (!rx_mask)
+		return 0;
+
+	if (slot_width <= 0)
+		return -EINVAL;
+
+	adc3xxx->tdm_slots = slots;
+	adc3xxx->tdm_slot_width = slot_width;
+
+	first = __ffs(rx_mask);
+	offset = first * slot_width;
+	if (offset > 255) {
+		dev_err(component->dev,
+			"TDM offset %u out of range (slot %u, width %d)\n",
+			offset, first, slot_width);
+		return -EINVAL;
+	}
+
+	/*
+	 * Release the data line outside our own slots.
+	 *
+	 * Without early 3-state every part on the bus drives DOUT for the
+	 * whole frame instead of just its own slots, so they fight each other
+	 * continuously and the receiver reads a dead line - clocks present,
+	 * frames arriving, every sample zero.
+	 *
+	 * The same register disables channels this part is not meant to
+	 * supply: the mask's two bits say which of this ADC's own left/right
+	 * slots are claimed, and the register wants the complement. A part
+	 * that keeps driving an unclaimed slot collides with whatever else
+	 * owns it.
+	 */
+	unused = (~(rx_mask >> first)) & ADC3XXX_TDM_CHANNEL_MASK;
+
+	dev_dbg(component->dev, "TDM slot offset %u BCLKs, disabled channels 0x%x\n",
+		offset, unused);
+
+	/*
+	 * Turn the bus keeper off and keep DOUT as the primary data output.
+	 *
+	 * The keeper holds the line at its last level whenever nothing is
+	 * driving it, which is exactly the situation early 3-state creates on
+	 * a shared bus. With four parts each keeping the line, the slots they
+	 * have released are held rather than left free for whoever owns them,
+	 * and the receiver reads a constant value - zero, here - no matter how
+	 * correct the clocks, slots and gains are. The two settings only make
+	 * sense together.
+	 */
+	adc3xxx->tdm_ctrl = (unused << ADC3XXX_TDM_CHANNEL_DIS_SHIFT) |
+			    ADC3XXX_TDM_EARLY_3STATE;
+	adc3xxx->tdm_offset = offset;
+	adc3xxx->tdm_valid = true;
+
+	ret = snd_soc_component_write(component, ADC3XXX_DOUT_CTRL,
+				      ADC3XXX_DOUT_BUS_KEEPER_DIS |
+				      ADC3XXX_DOUT_PRIMARY);
+	if (ret)
+		return ret;
+
+	ret = snd_soc_component_write(component, ADC3XXX_I2S_TDM_CTRL,
+				      adc3xxx->tdm_ctrl);
+	if (ret)
+		return ret;
+
+	return snd_soc_component_write(component, ADC3XXX_CH_OFFSET_1,
+				       adc3xxx->tdm_offset);
+}
+
 static const struct snd_soc_dai_ops adc3xxx_dai_ops = {
 	.hw_params	= adc3xxx_hw_params,
 	.set_sysclk	= adc3xxx_set_dai_sysclk,
 	.set_fmt	= adc3xxx_set_dai_fmt,
+	.set_tdm_slot	= adc3xxx_set_dai_tdm_slot,
 };
 
 static struct snd_soc_dai_driver adc3xxx_dai = {
