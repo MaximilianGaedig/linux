@@ -139,7 +139,7 @@ do { \
 		} \
 		if (kalDevRegRead(_prAdapter->prGlueInfo, _u4Offset, _pu4Value) == FALSE) {\
 			if (fgIsBusAccessFailed == FALSE) \
-				pr_err("biscuit-busfail: FIRST at MCR_RD off=0x%x\n", \
+				pr_err("bus access failed: FIRST at MCR_RD off=0x%x\n", \
 				       (unsigned int)(_u4Offset)); \
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
@@ -157,7 +157,7 @@ do { \
 		} \
 		if (kalDevRegWrite(_prAdapter->prGlueInfo, _u4Offset, _u4Value) == FALSE) {\
 			if (fgIsBusAccessFailed == FALSE) \
-				pr_err("biscuit-busfail: FIRST at MCR_WR off=0x%x val=0x%x\n", \
+				pr_err("bus access failed: FIRST at MCR_WR off=0x%x val=0x%x\n", \
 				       (unsigned int)(_u4Offset), (unsigned int)(_u4Value)); \
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			fgIsBusAccessFailed = TRUE; \
@@ -179,7 +179,7 @@ do { \
 			== FALSE) {\
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			if (fgIsBusAccessFailed == FALSE) \
-				pr_err("biscuit-busfail: FIRST at PORT_RD port=0x%x len=%u\n", \
+				pr_err("bus access failed: FIRST at PORT_RD port=0x%x len=%u\n", \
 				       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 			fgIsBusAccessFailed = TRUE; \
 			} \
@@ -201,7 +201,7 @@ do { \
 			== FALSE) {\
 			HAL_SET_FLAG(_prAdapter, ADAPTER_FLAG_HW_ERR); \
 			if (fgIsBusAccessFailed == FALSE) \
-				pr_err("biscuit-busfail: FIRST at PORT_WR port=0x%x len=%u\n", \
+				pr_err("bus access failed: FIRST at PORT_WR port=0x%x len=%u\n", \
 				       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 			fgIsBusAccessFailed = TRUE; \
 		} \
@@ -264,7 +264,7 @@ do { \
 	if (kalDevRegRead(_prAdapter->prGlueInfo, _u4Offset, _pu4Value) \
 		== FALSE) { \
 		if (!fgIsBusAccessFailed) \
-			pr_err("biscuit-busfail: MCR_RD off=0x%x\n", \
+			pr_err("bus access failed: MCR_RD off=0x%x\n", \
 			       (unsigned int)(_u4Offset)); \
 		fgIsBusAccessFailed = TRUE; \
 	} \
@@ -278,7 +278,7 @@ do { \
 	if (kalDevRegWrite(_prAdapter->prGlueInfo, _u4Offset, _u4Value) \
 		== FALSE) { \
 		if (!fgIsBusAccessFailed) \
-			pr_err("biscuit-busfail: MCR_WR off=0x%x\n", \
+			pr_err("bus access failed: MCR_WR off=0x%x\n", \
 			       (unsigned int)(_u4Offset)); \
 		fgIsBusAccessFailed = TRUE; \
 	} \
@@ -292,7 +292,7 @@ do { \
 	if (kalDevPortRead(_prAdapter->prGlueInfo, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
 		== FALSE) { \
 		if (!fgIsBusAccessFailed) \
-			pr_err("biscuit-busfail: PORT_RD port=0x%x len=%u\n", \
+			pr_err("bus access failed: PORT_RD port=0x%x len=%u\n", \
 			       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 		fgIsBusAccessFailed = TRUE; \
 	} \
@@ -315,7 +315,7 @@ do { \
 	if (kalDevPortWrite(_prAdapter->prGlueInfo, _u4Port, _u4Len, _pucBuf, _u4ValidBufSize) \
 		== FALSE) { \
 		if (!fgIsBusAccessFailed) \
-			pr_err("biscuit-busfail: PORT_WR port=0x%x len=%u\n", \
+			pr_err("bus access failed: PORT_WR port=0x%x len=%u\n", \
 			       (unsigned int)(_u4Port), (unsigned int)(_u4Len)); \
 		fgIsBusAccessFailed = TRUE; \
 	} \

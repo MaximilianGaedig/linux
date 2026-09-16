@@ -442,7 +442,6 @@ static void biscuit_dump_append(const UINT8 *p, UINT32 n)
 	if (n) {
 		memcpy(g_biscuit_dump + g_biscuit_dump_len, p, n);
 		g_biscuit_dump_len += n;
-		pr_err("btmtrace: stashed page, total=%u bytes\n", g_biscuit_dump_len);
 	}
 }
 
@@ -551,42 +550,7 @@ static INT32 _stp_btm_handler(MTKSTP_BTM_T *stp_btm, P_STP_BTM_OP pStpOp)
 		break;
 
 	case STP_OPID_BTM_PAGED_DUMP:
-		/*
-		 * BRING-UP: skip the paged coredump entirely.
-		 *
-		 * CFG_WMT_COREDUMP_ENABLE is 0 (same as Amazon's tree), so
-		 * nothing here can actually deliver a dump anywhere - the send
-		 * below bails with "coredump is disabled!". What it does do is
-		 * spin this loop polling connsys EMI shared memory while the
-		 * chip is mid-assert, and that reliably ends in a kernel panic:
-		 * KASAN/slab/irq_desc corruption from DMA the chip performs
-		 * outside its reserved window (CONSYS_EMI_MPU_SETTING is 0, so
-		 * the EMI MPU that would fence it is not programmed).
-		 *
-		 * Net effect of returning early: a chip-side firmware assert
-		 * becomes a recoverable driver error instead of taking the
-		 * whole kernel down and forcing a reboot. Revert this once the
-		 * assert itself is fixed and the EMI MPU is programmed, if the
-		 * dump contents are ever actually wanted.
-		 */
-		/*
-		 * Re-enabled. This was skipped because the dump path polls
-		 * connsys EMI shared memory while the chip is mid-assert, and
-		 * back then that corrupted kernel memory - the chip was DMA-ing
-		 * outside its reserved window because the EMI aperture register
-		 * was misprogrammed (0x15f4 instead of 0x11f4, aiming at
-		 * 0x9f400000, past the end of the RAM fitted here). That bug is
-		 * fixed, so the dump can run where it is supposed to.
-		 *
-		 * It is wanted now: the WiFi firmware starts, writes "INIT" and
-		 * 200 into its mailboxes, and then asserts during its own
-		 * initialisation. This path is the chip telling us why, and it
-		 * is the only source of that answer we have - the same image
-		 * initialises fine under FireOS on this very unit, so the reason
-		 * is something about our environment that nothing else has
-		 * surfaced.
-		 */
-		STP_BTM_INFO_FUNC("paged dump: running (re-enabled to capture the WiFi firmware assert)\n");
+		STP_BTM_INFO_FUNC("paged dump: running\n");
 
 		g_paged_dump_len = 0;
 		issue_type = STP_FW_ASSERT_ISSUE;
@@ -734,8 +698,6 @@ pr_err("btmtrace: about to read host_state, offset=%u pEmibaseaddr valid=%d\n",
 				dump_len = STP_DBG_PAGED_DUMP_BUFFER_SIZE;
 			}
 
-			pr_err("biscuit-debug: paged_dump memcpy reached: dump_vir_addr=%px dump_len=%u\n",
-			       dump_vir_addr, dump_len);
 			/*move dump info according to dump_addr & dump_len */
 #if 1
 			osal_memcpy(&g_paged_dump_buffer[0], dump_vir_addr, dump_len);

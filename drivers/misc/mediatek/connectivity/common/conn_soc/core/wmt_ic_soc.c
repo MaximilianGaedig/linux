@@ -1396,8 +1396,8 @@ static INT32 mtk_wcn_soc_sw_init(P_WMT_HIF_CONF pWmtHifConf)
 
 		iAntRet = wmt_core_reg_rw_raw(1, ANTENNA_SELECTION_REG,
 					      &u4AntVal, 0x1);
-		WMT_INFO_FUNC("biscuit-ant: select default antenna -> %d\n",
-			      iAntRet);
+		if (iAntRet)
+			WMT_ERR_FUNC("select default antenna failed (%d)\n", iAntRet);
 	}
 
 	return 0;
@@ -2301,12 +2301,6 @@ static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)
 	}
 
 	/*send wmt part patch address command */
-	pr_info("biscuit-patch: idx=%u size=%u icId=0x%x ADDRESS_CMD reg=%02x%02x%02x%02x val=%02x%02x%02x%02x\n",
-		index, patchSize, wmt_ic_ops_soc.icId,
-		WMT_PATCH_ADDRESS_CMD[11], WMT_PATCH_ADDRESS_CMD[10],
-		WMT_PATCH_ADDRESS_CMD[9], WMT_PATCH_ADDRESS_CMD[8],
-		WMT_PATCH_ADDRESS_CMD[15], WMT_PATCH_ADDRESS_CMD[14],
-		WMT_PATCH_ADDRESS_CMD[13], WMT_PATCH_ADDRESS_CMD[12]);
 	iRet =
 	    wmt_core_tx((PUINT8) &WMT_PATCH_ADDRESS_CMD[0], sizeof(WMT_PATCH_ADDRESS_CMD), &u4Res, MTK_WCN_BOOL_FALSE);
 	if (iRet || (u4Res != sizeof(WMT_PATCH_ADDRESS_CMD))) {
@@ -2420,9 +2414,6 @@ static INT32 mtk_wcn_soc_patch_dwn(UINT32 index)
 	} else {
 		osal_memcpy(&WMT_PATCH_P_ADDRESS_CMD[12], addressByte, osal_sizeof(addressByte));
 	}
-	pr_info("biscuit-patch: idx=%u P_ADDRESS val=%02x%02x%02x%02x\n", index,
-		WMT_PATCH_P_ADDRESS_CMD[15], WMT_PATCH_P_ADDRESS_CMD[14],
-		WMT_PATCH_P_ADDRESS_CMD[13], WMT_PATCH_P_ADDRESS_CMD[12]);
 	WMT_DBG_FUNC("4 bytes address command:0x%02x,0x%02x,0x%02x,0x%02x",
 		      WMT_PATCH_P_ADDRESS_CMD[12],
 		      WMT_PATCH_P_ADDRESS_CMD[13], WMT_PATCH_P_ADDRESS_CMD[14], WMT_PATCH_P_ADDRESS_CMD[15]);

@@ -218,7 +218,7 @@ P_CMD_INFO_T cmdBufAllocateCmdInfo(IN P_ADAPTER_T prAdapter, IN UINT_32 u4Length
 		 */
 		if (prTc->aucFreeBufferCount[TC4_INDEX] != 0)
 			DBGLOG(NIC, ERROR,
-			       "biscuit: CMD alloc failed with TC4 free (%d) -- stock would NOT chip-reset here, continuing\n",
+			       "CMD alloc failed with TC4 free (%d) -- stock would NOT chip-reset here, continuing\n",
 			       prTc->aucFreeBufferCount[TC4_INDEX]);
 	}
 

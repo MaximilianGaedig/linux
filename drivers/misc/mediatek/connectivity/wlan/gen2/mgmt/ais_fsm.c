@@ -2230,10 +2230,9 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 				 * cfg80211 supplied no channels.
 				 */
 				aisFsmSetChannelInfo(prAdapter, prScanReqMsg, prAisFsmInfo->eCurrentState);
-				if (prScanReqMsg->eScanChannel == SCAN_CHANNEL_SPECIFIED)
-					DBGLOG(AIS, INFO, "biscuit-scanch: %u specified channels\n",
-					       prScanReqMsg->ucChannelListNum);
-				else if (prAdapter->aePreferBand[NETWORK_TYPE_AIS_INDEX]
+				if (prScanReqMsg->eScanChannel == SCAN_CHANNEL_SPECIFIED) {
+					/* keep the explicit channel list */
+				} else if (prAdapter->aePreferBand[NETWORK_TYPE_AIS_INDEX]
 					== BAND_NULL) {
 					if (prAdapter->fgEnable5GBand == TRUE)
 						prScanReqMsg->eScanChannel = SCAN_CHANNEL_FULL;
@@ -2438,8 +2437,6 @@ VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ_V2 Sca
 		}
 		ScanReqMsg->ucChannelListNum = ucOut;
 		ScanReqMsg->eScanChannel = SCAN_CHANNEL_SPECIFIED;
-		DBGLOG(AIS, INFO, "biscuit-scanch: chunk of %u, %u/%u done\n",
-		       ucOut, prAisFsmInfo->ucScanChnlNext, prAisFsmInfo->ucScanChnlTotal);
 		return;
 	}
 
@@ -2502,9 +2499,6 @@ VOID aisFsmSetChannelInfo(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ_V2 Sca
 
 		ScanReqMsg->ucChannelListNum = ucOut;
 		ScanReqMsg->eScanChannel = SCAN_CHANNEL_SPECIFIED;
-		if (ucOut != (UINT_8) i)
-			DBGLOG(AIS, INFO, "biscuit-scanch: %d channels, sending %u per round\n",
-			       i, ucOut);
 
 		return;
 	}
