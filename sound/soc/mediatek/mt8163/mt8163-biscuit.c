@@ -187,27 +187,32 @@ SND_SOC_DAILINK_DEFS(playback_be,
 	DAILINK_COMP_ARRAY(COMP_EMPTY()),
 	DAILINK_COMP_ARRAY(COMP_DUMMY()));
 
+struct biscuit_ctl_default {
+	const char *name;
+	long value;
+};
+
 /*
- * Switch on the given card mixer controls (both channels) and resync
- * DAPM.
+ * Set card controls to their board defaults, both channels of stereo
+ * controls alike, and resync DAPM.
  */
-static void biscuit_close_mixers(struct snd_soc_card *card,
-				 const char * const *mixers, int n)
+static void biscuit_set_controls(struct snd_soc_card *card,
+				 const struct biscuit_ctl_default *ctls, int n)
 {
 	struct snd_ctl_elem_value uval;
 	struct snd_kcontrol *kctl;
 	int i;
 
 	for (i = 0; i < n; i++) {
-		kctl = snd_soc_card_get_kcontrol(card, mixers[i]);
+		kctl = snd_soc_card_get_kcontrol(card, ctls[i].name);
 		if (!kctl || !kctl->put) {
 			dev_warn(card->dev, "biscuit: no control '%s'\n",
-				 mixers[i]);
+				 ctls[i].name);
 			continue;
 		}
 		memset(&uval, 0, sizeof(uval));
-		uval.value.integer.value[0] = 1;
-		uval.value.integer.value[1] = 1;
+		uval.value.integer.value[0] = ctls[i].value;
+		uval.value.integer.value[1] = ctls[i].value;
 		kctl->put(kctl, &uval);
 	}
 	snd_soc_dapm_sync(card->dapm);
@@ -249,35 +254,8 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-/*
- * Codec output stage setup, done in prepare so it overrides what the codec
- * driver programmed in hw_params: power the HPL/HPR drivers, route both
- * DACs to them and unmute them.
- *
- * Register numbers are the flat aic32x4 map (page * 128 + offset).
- */
-static int biscuit_be_prepare(struct snd_pcm_substream *substream)
-{
-	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
-	struct snd_soc_component *comp = snd_soc_rtd_to_codec(rtd, 0)->component;
-
-	/* Analog output: power the drivers, route both DACs, lift the mutes. */
-	snd_soc_component_write(comp, 128 + 9, 0x33);	/* OUTPWRCTL: LOL/LOR + HPL/HPR on */
-	snd_soc_component_write(comp, 128 + 12, 0x08);	/* HPLROUTE: L_DAC */
-	snd_soc_component_write(comp, 128 + 13, 0x08);	/* HPRROUTE: R_DAC */
-	snd_soc_component_write(comp, 128 + 14, 0x08);	/* LOLROUTE: L_DAC */
-	snd_soc_component_write(comp, 128 + 15, 0x08);	/* LORROUTE: R_DAC */
-	snd_soc_component_write(comp, 128 + 16, 0x04);	/* HPLGAIN: unmuted */
-	snd_soc_component_write(comp, 128 + 17, 0x04);	/* HPRGAIN: unmuted */
-	snd_soc_component_write(comp, 128 + 18, 0x04);	/* LOLGAIN: unmuted */
-	snd_soc_component_write(comp, 128 + 19, 0x04);	/* LORGAIN: unmuted */
-
-	return 0;
-}
-
 static const struct snd_soc_ops biscuit_be_ops = {
 	.hw_params = biscuit_be_hw_params,
-	.prepare = biscuit_be_prepare,
 };
 
 static struct snd_soc_dai_link biscuit_dai_links[] = {
@@ -314,6 +292,16 @@ static struct snd_soc_dai_link biscuit_dai_links[] = {
 	},
 };
 
+static const struct biscuit_ctl_default biscuit_playback_defaults[] = {
+	{ "I2S1_CH1 DL1_CH1", 1 },
+	{ "I2S1_CH2 DL1_CH2", 1 },
+	{ "Speaker HPL Output Mixer L_DAC Switch", 1 },
+	{ "Speaker HPR Output Mixer R_DAC Switch", 1 },
+	{ "Speaker HP DAC Playback Switch", 1 },
+	/* -6dB + 10 steps of 1dB */
+	{ "Speaker HP Driver Gain Volume", 10 },
+};
+
 /*
  * The mic array is always listening and has no routing choice, so force
  * its input pins on; this powers the ADC clocks and the ADCs, which in
@@ -340,16 +328,14 @@ static int biscuit_late_probe(struct snd_soc_card *card)
 	snd_soc_dapm_sync(dapm);
 
 	/*
-	 * Close the AFE's DL1 -> I2S1 routing mixers. They default to off,
-	 * and without them dpcm_path_get() finds no back end when the
-	 * playback PCM is opened.
+	 * Close the playback path, which has only one possible wiring on this
+	 * board: the AFE's DL1 -> I2S1 routing mixers, without which
+	 * dpcm_path_get() finds no back end when the playback PCM is opened,
+	 * and the codec's DAC -> HPL/HPR mixers feeding the amplifier. The
+	 * HP drivers reset muted at 0dB; unmute them at +4dB.
 	 */
-	{
-		static const char * const afe_routes[] = {
-			"I2S1_CH1 DL1_CH1", "I2S1_CH2 DL1_CH2",
-		};
-		biscuit_close_mixers(card, afe_routes, ARRAY_SIZE(afe_routes));
-	}
+	biscuit_set_controls(card, biscuit_playback_defaults,
+			     ARRAY_SIZE(biscuit_playback_defaults));
 
 	/*
 	 * 3.5mm line-out presence. The detect line is a GPIO the sound node
