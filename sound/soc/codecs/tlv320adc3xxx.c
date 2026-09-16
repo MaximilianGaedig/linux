@@ -1317,6 +1317,40 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	}
 	snd_soc_component_update_bits(component, ADC3XXX_INTERFACE_CTRL_1,
 				      ADC3XXX_WLENGTH_MASK, iface_len);
+	if (!adc3xxx->master && adc3xxx->tdm_slots) {
+		/*
+		 * A slave on a shared TDM bus takes its clock from the bus.
+		 *
+		 * Every part here sees the same master clock, so each could
+		 * run its own PLL and arrive at the right sample rate on
+		 * paper - but those PLLs are independent, and they drift
+		 * against the word clock the bus master is actually driving.
+		 * The part then converts happily and lands its samples in
+		 * slots that have already moved on. Clock the slaves from
+		 * BCLK instead, which is what the bus master generates, so
+		 * they cannot drift relative to it. NADC is 1 because
+		 * CODEC_CLKIN is already the master's ADC clock divided by
+		 * its BCLK divider; MADC and AOSR stay as computed.
+		 */
+		snd_soc_component_write(component, ADC3XXX_CLKGEN_MUX,
+					ADC3XXX_CODEC_CLKIN_BCLK <<
+					ADC3XXX_CODEC_CLKIN_SHIFT);
+		if (adc3xxx->use_pll) {
+			snd_soc_dapm_del_routes(dapm, adc3xxx_pll_intercon,
+						ARRAY_SIZE(adc3xxx_pll_intercon));
+			adc3xxx->use_pll = 0;
+		}
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_NADC,
+					      ADC3XXX_NADC_MASK, 1);
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_MADC,
+					      ADC3XXX_MADC_MASK,
+					      adc3xxx_divs[i].madc);
+		snd_soc_component_update_bits(component, ADC3XXX_ADC_AOSR,
+					      ADC3XXX_AOSR_MASK,
+					      adc3xxx_divs[i].aosr);
+		return 0;
+	}
+
 	if (adc3xxx_divs[i].pll_p) { /* If PLL used for this mode */
 		adc3xxx_setup_pll(component, i);
 		snd_soc_component_write(component, ADC3XXX_CLKGEN_MUX, ADC3XXX_USE_PLL);
