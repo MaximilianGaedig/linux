@@ -71,7 +71,7 @@ int mt8163_init_clock(struct mtk_base_afe *afe)
 int mt8163_afe_enable_clock(struct mtk_base_afe *afe)
 {
 	struct mt8163_afe_private *priv = afe->platform_priv;
-	unsigned int val = 0;
+	unsigned int val = 0, pdn;
 	int ret, i;
 
 	/*
@@ -103,9 +103,24 @@ int mt8163_afe_enable_clock(struct mtk_base_afe *afe)
 	 * APB 3.0 mode from cold; retry until it reads back to ride out the
 	 * power-on settle. This mirrors the vendor driver's AudDrv_Clk_AllOn()
 	 * / Auddrv_Bus_Init().
+	 *
+	 * The same register holds the audsys clock gates, so the blind write
+	 * also decides their state, and it has to be the state the CCF
+	 * believes they are in: writing APB3_SEL alone ungates every one of
+	 * them behind its back. The AFE is the only consumer of these gates.
+	 * It releases the base clocks on runtime suspend, but the APLL supply
+	 * widgets are powered down by DAPM, which may happen only after the
+	 * device has suspended, so the 22M/24M and tuner gates can still be
+	 * held here. Gate everything else.
 	 */
+	pdn = AUD_TCON0_PDN_MASK;
+	if (priv->apll1_on)
+		pdn &= ~(AUD_TCON0_PDN_22M | AUD_TCON0_PDN_APLL_TUNER);
+	if (priv->apll2_on)
+		pdn &= ~(AUD_TCON0_PDN_24M | AUD_TCON0_PDN_APLL2_TUNER);
+
 	for (i = 0; i < 100; i++) {
-		regmap_write(afe->regmap, AUDIO_TOP_CON0, APB3_SEL);
+		regmap_write(afe->regmap, AUDIO_TOP_CON0, APB3_SEL | pdn);
 		regmap_read(afe->regmap, AUDIO_TOP_CON0, &val);
 		if (val & APB3_SEL)
 			break;
@@ -132,13 +147,22 @@ void mt8163_afe_disable_clock(struct mtk_base_afe *afe)
 {
 	struct mt8163_afe_private *priv = afe->platform_priv;
 
-	clk_bulk_disable_unprepare(MT8163_BASE_CLK_NUM, priv->base_clocks);
+	/*
+	 * Reverse of mt8163_afe_enable_clock(): the audsys gates first, while
+	 * the feeder clocks still keep the register block reachable, then the
+	 * feeders.
+	 */
+	clk_bulk_disable_unprepare(MT8163_BASE_CLK_NUM - MT8163_BASE_CLK_TOP_I2S,
+				   &priv->base_clocks[MT8163_BASE_CLK_TOP_I2S]);
+	clk_bulk_disable_unprepare(MT8163_BASE_CLK_TOP_I2S, priv->base_clocks);
 }
 
 int mt8163_apll1_enable(struct mtk_base_afe *afe)
 {
 	struct mt8163_afe_private *priv = afe->platform_priv;
 	int ret;
+
+	priv->apll1_on = true;
 
 	/* Make sure APLL is prepared and enabled. */
 	ret = clk_prepare_enable(priv->misc_clocks[MT8163_MISC_CLK_APLL1].clk);
@@ -218,12 +242,16 @@ void mt8163_apll1_disable(struct mtk_base_afe *afe)
 	clk_disable_unprepare(priv->misc_clocks[MT8163_MISC_CLK_APLL1].clk);
 	clk_disable_unprepare(priv->misc_clocks[MT8163_MISC_CLK_APLL1_TUNER].clk);
 	clk_disable_unprepare(priv->misc_clocks[MT8163_MISC_CLK_22M].clk);
+
+	priv->apll1_on = false;
 }
 
 int mt8163_apll2_enable(struct mtk_base_afe *afe)
 {
 	struct mt8163_afe_private *priv = afe->platform_priv;
 	int ret;
+
+	priv->apll2_on = true;
 
 	/* Make sure APLL2 is prepared and enabled. */
 	ret = clk_prepare_enable(priv->misc_clocks[MT8163_MISC_CLK_APLL2].clk);
@@ -303,6 +331,8 @@ void mt8163_apll2_disable(struct mtk_base_afe *afe)
 	clk_disable_unprepare(priv->misc_clocks[MT8163_MISC_CLK_APLL2].clk);
 	clk_disable_unprepare(priv->misc_clocks[MT8163_MISC_CLK_APLL2_TUNER].clk);
 	clk_disable_unprepare(priv->misc_clocks[MT8163_MISC_CLK_24M].clk);
+
+	priv->apll2_on = false;
 }
 
 int mt8163_get_apll_rate(int apll)

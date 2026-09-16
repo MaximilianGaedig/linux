@@ -105,6 +105,9 @@ struct mt8163_afe_private {
 	/* clocks */
 	struct clk_bulk_data base_clocks[MT8163_BASE_CLK_NUM];
 	struct clk_bulk_data misc_clocks[MT8163_MISC_CLK_NUM];
+	/* APLL clock chains possibly held, see mt8163_afe_enable_clock() */
+	bool apll1_on;
+	bool apll2_on;
 
 	/* dai */
 	void *dai_priv[MT8163_AFE_DAI_NUM];

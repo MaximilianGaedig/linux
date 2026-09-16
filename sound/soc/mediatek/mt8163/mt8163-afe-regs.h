@@ -272,6 +272,36 @@
 
 /* AUDIO_TOP_CON0 fields */
 #define APB3_SEL			BIT(14)
+/*
+ * Power-down (clock gate) bits, set = gated. These are owned by the audsys
+ * clock driver, see drivers/clk/mediatek/clk-mt8163-audsys.c.
+ */
+#define AUD_TCON0_PDN_AFE		BIT(2)
+#define AUD_TCON0_PDN_I2S		BIT(6)
+#define AUD_TCON0_PDN_22M		BIT(8)
+#define AUD_TCON0_PDN_24M		BIT(9)
+#define AUD_TCON0_PDN_SPDF2		BIT(11)
+#define AUD_TCON0_PDN_APLL2_TUNER	BIT(18)
+#define AUD_TCON0_PDN_APLL_TUNER	BIT(19)
+#define AUD_TCON0_PDN_HDMI		BIT(20)
+#define AUD_TCON0_PDN_SPDF		BIT(21)
+#define AUD_TCON0_PDN_ADC		BIT(24)
+#define AUD_TCON0_PDN_DAC		BIT(25)
+#define AUD_TCON0_PDN_DAC_PREDIS	BIT(26)
+#define AUD_TCON0_PDN_TML		BIT(27)
+#define AUD_TCON0_PDN_MASK		(AUD_TCON0_PDN_AFE | \
+					 AUD_TCON0_PDN_I2S | \
+					 AUD_TCON0_PDN_22M | \
+					 AUD_TCON0_PDN_24M | \
+					 AUD_TCON0_PDN_SPDF2 | \
+					 AUD_TCON0_PDN_APLL2_TUNER | \
+					 AUD_TCON0_PDN_APLL_TUNER | \
+					 AUD_TCON0_PDN_HDMI | \
+					 AUD_TCON0_PDN_SPDF | \
+					 AUD_TCON0_PDN_ADC | \
+					 AUD_TCON0_PDN_DAC | \
+					 AUD_TCON0_PDN_DAC_PREDIS | \
+					 AUD_TCON0_PDN_TML)
 
 /* AFE_DAC_CON0 fields */
 #define AWB_RETM_SHIFT			31
