@@ -829,12 +829,6 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 						    dac_clock_rate)
 							continue;
 
-						dev_info(component->dev,
-							 "biscuit-clk: fs=%u codec_clkin=%u nadc=%u madc=%u ndac=%u mdac=%u dosr=%u aosr=%u\n",
-							 sample_rate, dac_clock_rate,
-							 nadc, madc, ndac, mdac,
-							 dosr, aosr);
-
 						clk_set_rate(clocks[1].clk,
 							sample_rate * aosr *
 							madc);
