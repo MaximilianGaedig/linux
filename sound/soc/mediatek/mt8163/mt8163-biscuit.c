@@ -259,45 +259,11 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 	 * at boot and outside any stream - see the equivalent script in the
 	 * initrd, which is where this belongs.
 	 */
-	dev_info(rtd->dev, "biscuit: mic hw_params rate=%u ch=%u width=%d\n",
-		 params_rate(params), params_channels(params),
-		 snd_pcm_format_width(params_format(params)));
-	return 0;
-}
-
-/*
- * Read back what actually landed in each ADC after the whole chain has been
- * configured and powered. INTERFACE_CTRL_1 bits 3/2 are BCLK/WCLK master;
- * PLL_PROG_PR bit7 is PLL power; ADC_DIGITAL bits 7/6 power the L/R ADCs.
- * If master is not set or the ADCs are unpowered, the part cannot be
- * clocking the FPGA - which is what "i2s_inactive=1, nframes=0" says.
- */
-static int biscuit_mic_prepare(struct snd_pcm_substream *substream)
-{
-	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
-	struct snd_soc_dai *codec_dai;
-	int i;
-
-	for_each_rtd_codec_dais(rtd, i, codec_dai) {
-		struct snd_soc_component *c = codec_dai->component;
-		int ifc = snd_soc_component_read(c, 27);   /* INTERFACE_CTRL_1 */
-		int pll = snd_soc_component_read(c, 5);     /* PLL_PROG_PR */
-		int nadc = snd_soc_component_read(c, 18);   /* ADC_NADC */
-		int madc = snd_soc_component_read(c, 19);   /* ADC_MADC */
-		int adcd = snd_soc_component_read(c, 81);   /* ADC_DIGITAL */
-
-		dev_info(rtd->dev,
-			 "biscuit-micreg mic%d: IFACE1=0x%02x(master=%d) PLL_PR=0x%02x(on=%d) NADC=0x%02x MADC=0x%02x ADC_DIG=0x%02x(L=%d R=%d)\n",
-			 i, ifc & 0xff, !!(ifc & 0x0c), pll & 0xff, !!(pll & 0x80),
-			 nadc & 0xff, madc & 0xff, adcd & 0xff,
-			 !!(adcd & 0x80), !!(adcd & 0x40));
-	}
 	return 0;
 }
 
 static const struct snd_soc_ops biscuit_mic_ops = {
 	.hw_params = biscuit_mic_hw_params,
-	.prepare = biscuit_mic_prepare,
 };
 
 SND_SOC_DAILINK_DEFS(playback_be,
@@ -369,7 +335,6 @@ static void biscuit_close_mixers(struct snd_soc_card *card,
 		uval.value.integer.value[0] = 1;
 		uval.value.integer.value[1] = 1;
 		kctl->put(kctl, &uval);
-		dev_info(card->dev, "biscuit: closed '%s'\n", mixers[i]);
 	}
 	snd_soc_dapm_sync(card->dapm);
 }
@@ -421,9 +386,6 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 		dev_warn(rtd->dev, "biscuit: codec set_sysclk(%u): %d\n",
 			 mclk, ret);
 
-	dev_info(rtd->dev, "biscuit: BE hw_params rate=%u mclk=%u\n",
-		 params_rate(params), mclk);
-
 	/*
 	 * Unmute the external amplifier.
 	 *
@@ -435,13 +397,7 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 	 * the amplifier and the board stays silent no matter how correct the
 	 * digital path is.
 	 */
-	{
-		struct snd_soc_component *cmp = snd_soc_rtd_to_codec(rtd, 0)->component;
-		int wret = snd_soc_component_write(cmp, 53, 0x04);
-
-		dev_info(rtd->dev, "biscuit: amp unmute via MFP2 (reg53=0x04) -> %d\n",
-			 wret);
-	}
+	snd_soc_component_write(codec_dai->component, 53, 0x04);
 
 	return 0;
 }
@@ -606,7 +562,6 @@ static int biscuit_late_probe(struct snd_soc_card *card)
 	 * route on this board, so close them here rather than making every
 	 * user discover the mixer names.
 	 */
-	dev_info(card->dev, "biscuit: forced mic capture pins on\n");
 
 	/*
 	 * The AFE routing mixers have to be closed here, not at hw_params:
@@ -643,8 +598,6 @@ static int biscuit_late_probe(struct snd_soc_card *card)
 						     &biscuit_hp_gpio);
 			if (ret)
 				dev_warn(card->dev, "biscuit: add jack gpio: %d\n", ret);
-			else
-				dev_info(card->dev, "biscuit: line-out jack detect on\n");
 		}
 	}
 	return 0;
@@ -739,18 +692,6 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 			link->codecs->dai_name = "tlv320aic32x4-hifi";
 		}
 	}
-
-	dev_info(&pdev->dev, "biscuit-audio: FE=DL1 BE=I2S1 platform=%pOF codec=%pOF mic=%pOF\n",
-		 platform, codec, mic);
-	for_each_card_prelinks(card, i, link)
-		dev_info(&pdev->dev,
-			 "biscuit-link[%d] %-8s cpu=%s codec=%s plat=%s dyn=%d no_pcm=%d play=%d cap=%d\n",
-			 i, link->name,
-			 link->cpus ? (link->cpus->dai_name ?: "?") : "-",
-			 link->codecs ? (link->codecs->dai_name ?: "?") : "-",
-			 link->platforms ? (link->platforms->name ?: "of") : "-",
-			 link->dynamic, link->no_pcm,
-			 link->playback_only, link->capture_only);
 
 	return devm_snd_soc_register_card(&pdev->dev, card);
 }
