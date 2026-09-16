@@ -118,6 +118,13 @@ SND_SOC_DAILINK_DEFS(mic_capture,
  */
 #define BISCUIT_MIC_MCLK_HZ	9600000
 
+/*
+ * The FPGA takes a 384-bit TDM frame: 16 slots of 24 bits at 16kHz, i.e.
+ * the bus master's 6.144MHz ADC_CLK undivided (MADC * AOSR = 3 * 128). Only
+ * the first nine slots carry capture channels.
+ */
+#define BISCUIT_MIC_TDM_SLOTS	16
+
 static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params)
 {
@@ -161,7 +168,7 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 		 */
 		ret = snd_soc_dai_set_tdm_slot(codec_dai, 0,
 					       BISCUIT_MIC_RX_MASK(i),
-					       params_channels(params),
+					       BISCUIT_MIC_TDM_SLOTS,
 					       snd_pcm_format_width(params_format(params)));
 		if (ret && ret != -ENOTSUPP) {
 			dev_err(rtd->dev, "biscuit: mic%d set_tdm_slot failed: %d\n",
