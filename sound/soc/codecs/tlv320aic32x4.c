@@ -1280,6 +1280,17 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 	if (!aic32x4_setup)
 		return -ENOMEM;
 
+	/*
+	 * Analogue power-up configuration. Mainline only accepts this through
+	 * platform data, which no OF board can reach, so it is always zero on
+	 * a DT system. The bits matter: a board whose headphone drivers run
+	 * off LDOIN needs AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED, and without it
+	 * the codec clocks a perfectly correct bitstream into an output stage
+	 * that was never powered - audibly silent, digitally flawless.
+	 * Amazon's own driver hardcodes 0x1e here for this part.
+	 */
+	of_property_read_u32(np, "ti,power-cfg", &aic32x4->power_cfg);
+
 	ret = of_property_match_string(np, "clock-names", "mclk");
 	if (ret < 0)
 		return -EINVAL;
