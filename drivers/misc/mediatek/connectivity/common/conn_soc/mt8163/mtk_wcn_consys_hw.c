@@ -299,11 +299,8 @@ static INT32 mtk_wmt_probe(struct platform_device *pdev)
 					if ((val & 0x3Fu) != 0x12u) {
 						regmap_update_bits(pio_regmap, 0x710, 0x3Fu, 0x12u);
 						regmap_read(pio_regmap, 0x710, &val);
-						WMT_PLAT_ERR_FUNC("biscuit-antsel: mux was wrong, programmed ANT_SEL0/1 (0x710=0x%08x)\n",
+						WMT_PLAT_ERR_FUNC("ANT_SEL0/1 mux was wrong, programmed ANT_SEL0/1 (0x710=0x%08x)\n",
 								  val);
-					} else {
-						WMT_PLAT_INFO_FUNC("biscuit-antsel: ANT_SEL0/1 mux already correct (0x%08x)\n",
-								   val);
 					}
 				}
 			}
@@ -337,8 +334,6 @@ set_pin_exit:
 
 		if (pwrap_pdev) {
 			pmic_regmap = dev_get_regmap(&pwrap_pdev->dev, NULL);
-			WMT_PLAT_ERR_FUNC("biscuit-pmic: regmap=%p (NULL means the raw MT6323 pokes are all skipped)\n",
-					  pmic_regmap);
 			if (!pmic_regmap)
 				WMT_PLAT_ERR_FUNC("pwrap has no regmap yet\n");
 			else
@@ -411,33 +406,19 @@ set_pin_exit:
 
 static VOID mtk_wmt_remove(struct platform_device *pdev)
 {
-printk(KERN_ALERT "PMRT: mtk_wmt_remove() called! usage_count=%d disable_depth=%d runtime_status=%d\n",
-	atomic_read(&pdev->dev.power.usage_count),
-	pdev->dev.power.disable_depth,
-	pdev->dev.power.runtime_status);
 	pm_runtime_disable(&pdev->dev);
 }
 
 VOID mtk_wcn_consys_power_on(VOID)
 {
 	INT32 iRet = -1;
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
-printk(KERN_ALERT "PMRT: pre get_sync usage_count=%d disable_depth=%d runtime_status=%d\n",
-	atomic_read(&my_pdev->dev.power.usage_count),
-	my_pdev->dev.power.disable_depth,
-	my_pdev->dev.power.runtime_status);
 	iRet = pm_runtime_get_sync(&my_pdev->dev);
-printk(KERN_ALERT "PMRT: post get_sync ret=%d usage_count=%d runtime_status=%d\n",
-	iRet, atomic_read(&my_pdev->dev.power.usage_count),
-	my_pdev->dev.power.runtime_status);
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 	if (iRet)
 		WMT_PLAT_ERR_FUNC("pm_runtime_get_sync() fail(%d)\n", iRet);
 	else
 		WMT_PLAT_INFO_FUNC("pm_runtime_get_sync() CONSYS ok\n");
 
 	iRet = device_init_wakeup(&my_pdev->dev, true);
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 	if (iRet)
 		WMT_PLAT_ERR_FUNC("device_init_wakeup(true) fail.\n");
 	else
@@ -448,14 +429,7 @@ VOID mtk_wcn_consys_power_off(VOID)
 {
 	INT32 iRet = -1;
 
-printk(KERN_ALERT "PMRT: pre put_sync usage_count=%d disable_depth=%d runtime_status=%d\n",
-	atomic_read(&my_pdev->dev.power.usage_count),
-	my_pdev->dev.power.disable_depth,
-	my_pdev->dev.power.runtime_status);
 	iRet = pm_runtime_put_sync(&my_pdev->dev);
-printk(KERN_ALERT "PMRT: post put_sync ret=%d usage_count=%d runtime_status=%d\n",
-	iRet, atomic_read(&my_pdev->dev.power.usage_count),
-	my_pdev->dev.power.runtime_status);
 	if (iRet)
 		WMT_PLAT_ERR_FUNC("pm_runtime_put_sync() fail.\n");
 	else
@@ -476,7 +450,6 @@ INT32 mtk_wcn_consys_hw_reg_ctrl(UINT32 on, UINT32 co_clock_type)
 	WMT_PLAT_DBG_FUNC("CONSYS-HW-REG-CTRL(0x%08x),start\n", on);
 	if (on) {
 		WMT_PLAT_DBG_FUNC("++\n");
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		/*need PMIC driver provide new API protocol */
 		/*
 		 * 1.AP power on VCN_1V8 LDO (with PMIC_WRAP API) VCN_1V8
@@ -515,12 +488,9 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		} else {
 			WMT_PLAT_ERR_FUNC("no PMIC regmap - VCN18 stays in whatever mode it booted in\n");
 		}
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		/* VOL_DEFAULT, VOL_1200, VOL_1300, VOL_1500, VOL_1800... */
 		if (reg_VCN18) {
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			regulator_set_voltage(reg_VCN18, 1800000, 1800000);
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			if (regulator_enable(reg_VCN18))
 				WMT_PLAT_ERR_FUNC("enable VCN18 fail\n");
 			else
@@ -547,7 +517,6 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			 */
 		}
 		udelay(150);
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		if (co_clock_type) {
 			/*step0,clk buf ctrl */
 			WMT_PLAT_INFO_FUNC("co clock type(%d),turn on clk buf\n", co_clock_type);
@@ -589,11 +558,8 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		 * held, which is what the numbered step comments here always
 		 * described.
 		 */
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		reset_control_assert(rstc);
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		mtk_wcn_consys_power_on();
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 
 		/*
 		 * Disable AXI bus protection for CONNSYS.
@@ -624,13 +590,10 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 			while ((CONSYS_REG_READ(conn_reg.topckgen_base + CONSYS_TOPAXI_PROT_STA1_OFFSET)
 				& CONSYS_PROT_MASK) && u4ProtRetry--)
 				udelay(1);
-			WMT_PLAT_INFO_FUNC("biscuit-topaxi: PROT_EN=0x%08x STA1=0x%08x (mask 0x%x)%s\n",
-					   CONSYS_REG_READ(conn_reg.topckgen_base +
-							   CONSYS_TOPAXI_PROT_EN_OFFSET),
-					   CONSYS_REG_READ(conn_reg.topckgen_base +
-							   CONSYS_TOPAXI_PROT_STA1_OFFSET),
-					   (UINT32) CONSYS_PROT_MASK,
-					   u4ProtRetry ? "" : " *** TIMED OUT ***");
+			if (!u4ProtRetry)
+				WMT_PLAT_ERR_FUNC("CONNSYS AXI bus protection release timed out (STA1=0x%08x)\n",
+						  CONSYS_REG_READ(conn_reg.topckgen_base +
+								  CONSYS_TOPAXI_PROT_STA1_OFFSET));
 		}
 
 		/*
@@ -695,65 +658,15 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				 */
 				UINT32 u4End =
 				    (UINT32) ((gConEmiPhyBase + 2 * 1024 * 1024 - 1 - 0x40000000) >> 16);
-				/* d7..d0, 3 bits each; 0 = NO_PROTECTION, 5 = FORBIDDEN */
 				/*
-				 * Open this region to every domain.
-				 *
-				 * The bootloader already programs region 12
-				 * over exactly this range, granting domains 0,
-				 * 2 and 7 and forbidding the rest - and that
-				 * was assumed to be sufficient because the chip
-				 * demonstrably writes here: the download engine
-				 * places the whole firmware image.
-				 *
-				 * But the engine that writes the image and the
-				 * one that later executes it are different bus
-				 * masters. The CONNSYS MCU does the download;
-				 * the WiFi MAC is what runs the firmware, and
-				 * ~92% of that firmware lives in this DRAM
-				 * rather than inside the chip. If the MAC sits
-				 * in one of the forbidden domains it can place
-				 * its code and then be unable to fetch it,
-				 * which is what we see: the firmware starts,
-				 * writes "INIT" into its mailbox, and stops.
-				 *
-				 * Tried opening all eight domains (0 =
-				 * NO_PROTECTION everywhere) on hardware: the
-				 * registers read back 0 as asked and the
-				 * firmware still stopped in the same place.
-				 * That ruled out the permission bits but NOT
-				 * the MPU - the address window above was still
-				 * only 512KB, so every domain was being granted
-				 * access to a region that ended 0x24 bytes
-				 * before the address the firmware faults on.
-				 * Keep Amazon's permissions; the range is the
-				 * part that was wrong.
-				 */
-				/*
-				 * EXPERIMENT (biscuit): open every domain.
-				 *
-				 * Re-run of a test that was previously called
-				 * negative, but that verdict was made against
-				 * STALE DRAM - the reserved region is no-map and
-				 * survives warm reboots, so leftover firmware
-				 * bytes from an earlier boot looked like a
-				 * successful download. With the region wiped
-				 * first, the real picture is that sections 2 and
-				 * 3 land NOWHERE (0 bytes, 100% zero blocks),
-				 * while the chip's core dump - which lands
-				 * OUTSIDE the old 512KB protected window - writes
-				 * fine. That asymmetry points straight at these
-				 * permission bits, so measure it properly now
-				 * that the measurement is trustworthy.
+				 * d7..d0, 3 bits each; 0 = NO_PROTECTION,
+				 * 5 = FORBIDDEN. Same permissions the vendor
+				 * driver grants (domains 0, 2 and 7); only the
+				 * range above differs.
 				 */
 				UINT32 u4Low = (5 << 9) | (0 << 6) | (5 << 3) | 0;	/* d3,d2,d1,d0 */
 				UINT32 u4High = (0 << 9) | (5 << 6) | (5 << 3) | 5;	/* d7,d6,d5,d4 */
 				UINT32 u4Tmp, u4Tmp2;
-
-				WMT_PLAT_INFO_FUNC("biscuit-emimpu: before: MPUE2=0x%08x MPUK2=0x%08x MPUK2_2ND=0x%08x\n",
-						   readl(pucEmiReg + 0x0280),
-						   readl(pucEmiReg + 0x02b0),
-						   readl(pucEmiReg + 0x02b4));
 
 				u4Tmp = readl(pucEmiReg + 0x02b0) & 0xFFFF0000;
 				u4Tmp2 = readl(pucEmiReg + 0x02b4) & 0xFFFF0000;
@@ -763,14 +676,9 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				writel((u4Start << 16) | u4End, pucEmiReg + 0x0280);
 				writel(u4Tmp | u4Low, pucEmiReg + 0x02b0);
 				writel(u4Tmp2 | u4High, pucEmiReg + 0x02b4);
-
-				WMT_PLAT_INFO_FUNC("biscuit-emimpu: after:  MPUE2=0x%08x MPUK2=0x%08x MPUK2_2ND=0x%08x (range 0x%x-0x%x)\n",
-						   readl(pucEmiReg + 0x0280),
-						   readl(pucEmiReg + 0x02b0),
-						   readl(pucEmiReg + 0x02b4), u4Start, u4End);
 				iounmap(pucEmiReg);
 			} else {
-				WMT_PLAT_ERR_FUNC("biscuit-emimpu: ioremap of EMI failed\n");
+				WMT_PLAT_ERR_FUNC("EMI MPU: ioremap of EMI failed\n");
 			}
 		}
 
@@ -849,10 +757,8 @@ skip_emitest:
 
 				memset_io(pucAll, 0, 2 * 1024 * 1024);
 				iounmap(pucAll);
-				WMT_PLAT_INFO_FUNC("biscuit-emiwipe: zeroed all 2MB at 0x%llx before download\n",
-						   (unsigned long long)gConEmiPhyBase);
 			} else {
-				WMT_PLAT_ERR_FUNC("biscuit-emiwipe: ioremap failed\n");
+				WMT_PLAT_ERR_FUNC("EMI wipe: ioremap failed\n");
 			}
 		}
 
@@ -860,7 +766,6 @@ skip_emitest:
 		udelay(10);
 		/*enable AP bus clock : connmcu_bus_pd  API: enable_clock() ++?? */
 		clk_prepare_enable(clk_infra_conn_main);
-printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 		WMT_PLAT_DBG_FUNC("[CCF]enable clk_infra_conn_main\n");
 		/*12.poll CONNSYS CHIP ID until chipid is returned  0x18070008 */
 		while (retry-- > 0) {
@@ -971,21 +876,7 @@ printk(KERN_ALERT "DEBUG: Passed %s %d \n",__FUNCTION__,__LINE__);
 				WMT_PLAT_DBG_FUNC("disable VCN_1V8 ok\n");
 		}
 
-		/*
-		 * Report what the rails actually did, and give them time to
-		 * discharge before anyone powers the chip back up.
-		 *
-		 * These two lines are the whole point of the change: while the
-		 * rails carried "regulator-always-on" in the device tree, every
-		 * regulator_disable() above returned success and left the rail
-		 * up, so a "power cycle" was nothing of the sort.  Print the
-		 * post-disable state so that is visible rather than assumed.
-		 */
-		WMT_PLAT_INFO_FUNC("biscuit-pwr: after off: VCN18=%d VCN28=%d VCN33_BT=%d VCN33_WIFI=%d (1 = still enabled)\n",
-				   reg_VCN18 ? regulator_is_enabled(reg_VCN18) : -1,
-				   reg_VCN28 ? regulator_is_enabled(reg_VCN28) : -1,
-				   reg_VCN33_BT ? regulator_is_enabled(reg_VCN33_BT) : -1,
-				   reg_VCN33_WIFI ? regulator_is_enabled(reg_VCN33_WIFI) : -1);
+		/* give the rails time to settle before the chip is powered up again */
 		msleep(100);
 
 	}

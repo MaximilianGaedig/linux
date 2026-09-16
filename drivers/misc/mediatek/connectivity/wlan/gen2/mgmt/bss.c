@@ -630,7 +630,7 @@ bssCreateStaRecFromBssDesc(IN P_ADAPTER_T prAdapter,
 			prStaRec->ucPhyTypeSet = PHY_TYPE_SET_802_11ABG;
 		}
 		DBGLOG(BSS, WARN,
-		       "biscuit: BSS %pM ch %u had no rates (summary-only), defaulted phy=0x%x op=0x%x basic=0x%x\n",
+		       "BSS %pM ch %u had no rates (summary-only), defaulted phy=0x%x op=0x%x basic=0x%x\n",
 		       prBssDesc->aucBSSID, prBssDesc->ucChannelNum,
 		       prStaRec->ucPhyTypeSet, prStaRec->u2OperationalRateSet,
 		       prStaRec->u2BSSBasicRateSet);

@@ -1441,11 +1441,8 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 		 * to 802.3, in which case pvHeader points at an Ethernet header
 		 * and feeding it to the monitor would emit garbage that decodes
 		 * as a reserved 802.11 type. HIF_RX_HDR_FLAG_802_11_FORMAT is
-		 * the firmware telling us which it is. Count both so it is
-		 * answerable whether raw data frames are available at all.
+		 * the firmware telling us which it is.
 		 */
-		static unsigned long u4Mon80211, u4Mon8023;
-
 		/*
 		 * Use the HIF RX header's own 802.11-format bit, not
 		 * prSwRfb->u4HifRxHdrFlag. That flag is only ever written by a
@@ -1456,18 +1453,11 @@ VOID nicRxProcessDataPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb)
 		 * uc80211_Reorder_PAL_TCL bit 0, the same source the live data
 		 * path (qmHandleRxPackets) trusts to decide 802.11 vs 802.3.
 		 */
-		if (HIF_RX_HDR_GET_80211_FLAG(prHifRxHdr)) {
-			u4Mon80211++;
+		if (HIF_RX_HDR_GET_80211_FLAG(prHifRxHdr))
 			biscuitMonRxFrame(prSwRfb->pvHeader, prSwRfb->u2PacketLen,
 					  HIF_RX_HDR_GET_CHNL_NUM(prHifRxHdr),
 					  HIF_RX_HDR_GET_RF_BAND(prHifRxHdr) == BAND_5G,
 					  (INT_8) RCPI_TO_dBm(prHifRxHdr->ucRcpi));
-		} else {
-			u4Mon8023++;
-		}
-		if (((u4Mon80211 + u4Mon8023) & 0x3f) == 0)
-			DBGLOG(RX, WARN, "biscuit-mon: data frames 802.11-format=%lu 802.3-format=%lu\n",
-			       u4Mon80211, u4Mon8023);
 	}
 
 #if CFG_TCP_IP_CHKSUM_OFFLOAD || CFG_TCP_IP_CHKSUM_OFFLOAD_NDIS_60

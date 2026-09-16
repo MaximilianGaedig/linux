@@ -346,7 +346,6 @@ INT32 wmt_plat_deinit(VOID)
 	INT32 iret = 0;
 	/* 2. unreg to cmb_stub */
 	iret = mtk_wcn_cmb_stub_unreg();
-printk(KERN_ALERT "DEBUG: Passed %s %d now calling wmt wakelock deinit\n",__FUNCTION__,__LINE__);
 	/*3. wmt wakelock deinit */
 #ifdef CFG_WMT_WAKELOCK_SUPPORT
 	wakeup_source_unregister(wmtWakeLock);
@@ -354,7 +353,6 @@ printk(KERN_ALERT "DEBUG: Passed %s %d now calling wmt wakelock deinit\n",__FUNC
 	mutex_destroy(&gOsSLock);
 	WMT_PLAT_DBG_FUNC("destroy wmtWakeLock\n");
 #endif
-printk(KERN_ALERT "DEBUG: Passed %s %d now calling consys hw deinit\n",__FUNCTION__,__LINE__);
 
 	iret += mtk_wcn_consys_hw_deinit();
 

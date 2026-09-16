@@ -395,7 +395,7 @@ WLAN_STATUS authSendAuthFrame(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T prStaR
 	prMsduInfo = cnmMgtPktAlloc(prAdapter, u2EstimatedFrameLen);
 	if (prMsduInfo == NULL) {
 		DBGLOG(SAA, ERROR,
-		       "biscuit-txauth: NO PKT_INFO_T (out of mgmt tx resources)\n");
+		       "NO PKT_INFO_T (out of mgmt tx resources)\n");
 		return WLAN_STATUS_RESOURCES;
 	}
 	/* 4 <2> Compose Authentication Request frame header and fixed fields in MSDU_INfO_T. */
@@ -432,16 +432,6 @@ WLAN_STATUS authSendAuthFrame(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T prStaR
 	/* TODO(Kevin): Also release the unused tail room of the composed MMPDU */
 
 	/* 4 <6> Inform TXM  to send this Authentication frame. */
-	/*
-	 * Probe: did the AUTH request actually get queued for transmit?
-	 *
-	 * Scanning works while association times out, so the question is
-	 * whether we never transmit, or transmit and hear nothing back
-	 * (pair this with the biscuit-rxauth print on the receive side).
-	 */
-	DBGLOG(SAA, ERROR, "biscuit-txauth: enqueue AUTH seq=%u len=%u\n",
-	       u2TransactionSeqNum, prMsduInfo->u2FrameLength);
-
 	nicTxEnqueueMsdu(prAdapter, prMsduInfo);
 
 	return WLAN_STATUS_SUCCESS;
