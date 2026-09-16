@@ -287,6 +287,7 @@ extern BT_WIFI_V33_STATUS gBtWifiV33;
 ********************************************************************************
 */
 extern INT32 mtk_wcn_consys_hw_init(VOID);
+extern bool mtk_wcn_consys_hw_probed(void);
 extern INT32 mtk_wcn_consys_hw_deinit(VOID);
 extern INT32 mtk_wcn_consys_hw_pwr_off(VOID);
 extern INT32 mtk_wcn_consys_hw_pwr_on(UINT32 co_clock_type);

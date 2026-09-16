@@ -387,6 +387,12 @@ set_pin_exit:
 	return 0;
 }
 
+/* True once the consys platform device has probed (clocks, regulators, reset). */
+bool mtk_wcn_consys_hw_probed(void)
+{
+	return my_pdev && device_is_bound(&my_pdev->dev);
+}
+
 static VOID mtk_wmt_remove(struct platform_device *pdev)
 {
 	pm_runtime_disable(&pdev->dev);

@@ -36,6 +36,8 @@
 *                    E X T E R N A L   R E F E R E N C E S
 ********************************************************************************
 */
+#include <linux/completion.h>
+#include <linux/workqueue.h>
 #include "osal_typedef.h"
 
 #include <wmt_exp.h>
@@ -439,6 +441,60 @@ INT32 mtk_wcn_wmt_system_state_reset(void)
 	return 0;
 }
 
+/*
+ * Turn the WiFi function on as soon as the WLAN driver has registered its
+ * probe callback: WiFi function-on calls that callback, so registration is
+ * the earliest point it can work, and it is the same event whether wlan_gen2
+ * is built in, in the initrd, or modprobed late from the root filesystem.
+ * mtk_wcn_wmt_core_up() creates the WMT core first if nobody has yet.
+ *
+ * Runs from a work item because registration happens inside the WLAN
+ * driver's own platform probe, which the WLAN probe callback must not
+ * re-enter. Attempted once only: a failed WiFi function-on leaves the WMT
+ * wedged until reboot, so retrying just makes a bad boot worse.
+ */
+static DECLARE_COMPLETION(mtk_wcn_wmt_wifi_settled);
+
+static void mtk_wcn_wmt_wifi_up_work(struct work_struct *work)
+{
+	static bool attempted;
+	INT32 iRet;
+
+	if (attempted || !mtk_wcn_wlan_probe)
+		return;
+
+	iRet = mtk_wcn_wmt_core_up();
+	if (iRet) {
+		WMT_ERR_FUNC("WMT core not up (%d), WiFi stays off\n", iRet);
+		goto out;
+	}
+
+	attempted = true;
+	if (MTK_WCN_BOOL_FALSE == mtk_wcn_wmt_func_on(WMTDRV_TYPE_WIFI))
+		WMT_ERR_FUNC("WiFi function on failed\n");
+	else
+		WMT_INFO_FUNC("WiFi function on\n");
+out:
+	complete_all(&mtk_wcn_wmt_wifi_settled);
+}
+static DECLARE_WORK(mtk_wcn_wmt_wifi_up, mtk_wcn_wmt_wifi_up_work);
+
+/*
+ * The combo chip only starts WiFi reliably if BT is not already on: with BT
+ * up first, the WiFi start command asserts the firmware. BT therefore waits
+ * for the WiFi bring-up to have been attempted. The timeout only matters
+ * when no WLAN driver ever registers (e.g. wlan_gen2 blacklisted).
+ */
+#define MTK_WCN_WIFI_SETTLE_TIMEOUT	(30 * HZ)
+
+void mtk_wcn_wmt_wait_wifi_settled(void)
+{
+	if (!wait_for_completion_timeout(&mtk_wcn_wmt_wifi_settled,
+					 MTK_WCN_WIFI_SETTLE_TIMEOUT))
+		WMT_WARN_FUNC("no WiFi bring-up, turning BT on without it\n");
+}
+EXPORT_SYMBOL(mtk_wcn_wmt_wait_wifi_settled);
+
 INT32 mtk_wcn_wmt_wlan_reg(P_MTK_WCN_WMT_WLAN_CB_INFO pWmtWlanCbInfo)
 {
 	INT32 iRet = -1;
@@ -465,6 +521,7 @@ INT32 mtk_wcn_wmt_wlan_reg(P_MTK_WCN_WMT_WLAN_CB_INFO pWmtWlanCbInfo)
 			return -2;
 		}
 	}
+	schedule_work(&mtk_wcn_wmt_wifi_up);
 	return 0;
 }
 EXPORT_SYMBOL(mtk_wcn_wmt_wlan_reg);
