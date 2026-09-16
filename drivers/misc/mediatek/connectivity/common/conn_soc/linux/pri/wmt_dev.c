@@ -2487,13 +2487,13 @@ int wmt_lib_biscuit_wifi_up(void)
 	/* SET_STP_MODE(0x23) = STP_BTIF_FULL + FM_COMM, as stock's launcher sends */
 	iRet = wmt_lib_set_hif(0x23);
 	if (0 != iRet) {
-		WMT_ERR_FUNC("biscuit-wifiup: wmt_lib_set_hif fail (%d)\n", iRet);
+		WMT_ERR_FUNC("wifi auto-up: wmt_lib_set_hif fail (%d)\n", iRet);
 		return -1;
 	}
 
 	pOp = wmt_lib_get_free_op();
 	if (!pOp) {
-		WMT_ERR_FUNC("biscuit-wifiup: wmt_lib_get_free_op fail\n");
+		WMT_ERR_FUNC("wifi auto-up: wmt_lib_get_free_op fail\n");
 		return -1;
 	}
 	pOp->op.opId = WMT_OPID_HIF_CONF;
@@ -2503,17 +2503,17 @@ int wmt_lib_biscuit_wifi_up(void)
 	pOp->signal.timeoutValue = 0;
 	bRet = wmt_lib_put_act_op(pOp);
 	if (MTK_WCN_BOOL_FALSE == bRet) {
-		WMT_ERR_FUNC("biscuit-wifiup: WMT_OPID_HIF_CONF fail\n");
+		WMT_ERR_FUNC("wifi auto-up: WMT_OPID_HIF_CONF fail\n");
 		return -1;
 	}
 
 	/* FUNC_ONOFF_CTRL(0x80000003) = WiFi function ON */
 	bRet = mtk_wcn_wmt_func_on(WMTDRV_TYPE_WIFI);
 	if (MTK_WCN_BOOL_FALSE == bRet) {
-		WMT_ERR_FUNC("biscuit-wifiup: mtk_wcn_wmt_func_on(WIFI) fail\n");
+		WMT_ERR_FUNC("wifi auto-up: mtk_wcn_wmt_func_on(WIFI) fail\n");
 		return -1;
 	}
-	WMT_INFO_FUNC("biscuit-wifiup: WiFi function ON ok\n");
+	WMT_INFO_FUNC("wifi auto-up: WiFi function ON ok\n");
 	return 0;
 }
 
@@ -2589,7 +2589,7 @@ static int WMT_init(void)
 		 * demonstrably works afterwards, and bailing here silently
 		 * cost us every /proc debug entry.
 		 */
-		pr_err("biscuit: wmt_lib_init() FAILED (%d) - continuing anyway\n", ret);
+		pr_err("wmt_lib_init() failed (%d) - continuing anyway\n", ret);
 	}
 #if CFG_WMT_DBG_SUPPORT
 	wmt_dev_dbg_setup();

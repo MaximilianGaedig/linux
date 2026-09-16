@@ -597,8 +597,6 @@ INT32 wmt_core_init_script(struct init_script *script, INT32 count)
 	INT32 iRet;
 
 	for (i = 0; i < count; i++) {
-		pr_info("biscuit-initscript: [%d/%d] %s start (cmdSz=%u evtSz=%u)\n",
-			i, count, script[i].str, script[i].cmdSz, script[i].evtSz);
 
 		/*
 		 * A table entry with no command is a placeholder that was
@@ -609,8 +607,8 @@ INT32 wmt_core_init_script(struct init_script *script, INT32 count)
 		 * whole init script instead of one entry.
 		 */
 		if (!script[i].cmd) {
-			pr_info("biscuit-initscript: [%d/%d] %s has no command, skipped\n",
-				i, count, script[i].str);
+			WMT_DBG_FUNC("init_script %s has no command, skipped\n",
+				     script[i].str);
 			continue;
 		}
 		/* CMD */
@@ -621,12 +619,9 @@ INT32 wmt_core_init_script(struct init_script *script, INT32 count)
 				     script[i].cmdSz);
 			break;
 		}
-		pr_info("biscuit-initscript: [%d/%d] %s tx ok, waiting for rx\n", i, count, script[i].str);
 		/* EVENT BUF */
 		osal_memset(evtBuf, 0, sizeof(evtBuf));
 		iRet = wmt_core_rx(evtBuf, script[i].evtSz, &u4Res);
-		pr_info("biscuit-initscript: [%d/%d] %s rx returned iRet=%d u4Res=%u\n",
-			i, count, script[i].str, iRet, u4Res);
 		if (iRet || (u4Res != script[i].evtSz)) {
 			WMT_ERR_FUNC("WMT-CORE: read (%s) iRet(%d) evt len err(rx:%d, exp:%d)\n", script[i].str, iRet,
 				     u4Res, script[i].evtSz);
