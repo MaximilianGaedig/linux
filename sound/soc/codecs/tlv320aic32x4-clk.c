@@ -431,6 +431,66 @@ static const struct clk_ops aic32x4_bdiv_ops = {
 	.recalc_rate = clk_aic32x4_div_recalc_rate,
 };
 
+/*
+ * BCLK as a clock input. The codec does not generate this clock, the bus
+ * master does, and nothing but the DAI knows its rate, so this clock only
+ * holds the rate it was last set to (see aic32x4_set_dai_sysclk()).
+ */
+struct clk_aic32x4_bclk {
+	struct clk_hw hw;
+	unsigned long rate;
+};
+
+#define to_clk_aic32x4_bclk(_hw) container_of(_hw, struct clk_aic32x4_bclk, hw)
+
+static unsigned long clk_aic32x4_bclk_recalc_rate(struct clk_hw *hw,
+						  unsigned long parent_rate)
+{
+	return to_clk_aic32x4_bclk(hw)->rate;
+}
+
+static int clk_aic32x4_bclk_determine_rate(struct clk_hw *hw,
+					   struct clk_rate_request *req)
+{
+	return 0;
+}
+
+static int clk_aic32x4_bclk_set_rate(struct clk_hw *hw, unsigned long rate,
+				     unsigned long parent_rate)
+{
+	to_clk_aic32x4_bclk(hw)->rate = rate;
+
+	return 0;
+}
+
+static const struct clk_ops aic32x4_bclk_ops = {
+	.recalc_rate = clk_aic32x4_bclk_recalc_rate,
+	.determine_rate = clk_aic32x4_bclk_determine_rate,
+	.set_rate = clk_aic32x4_bclk_set_rate,
+};
+
+static int aic32x4_register_bclk(struct device *dev)
+{
+	struct clk_init_data init = {
+		.name = "bclk",
+		.ops = &aic32x4_bclk_ops,
+	};
+	struct clk_aic32x4_bclk *bclk;
+	int ret;
+
+	bclk = devm_kzalloc(dev, sizeof(*bclk), GFP_KERNEL);
+	if (!bclk)
+		return -ENOMEM;
+
+	bclk->hw.init = &init;
+
+	ret = devm_clk_hw_register(dev, &bclk->hw);
+	if (ret)
+		return ret;
+
+	return clk_hw_register_clkdev(&bclk->hw, init.name, dev_name(dev));
+}
+
 static struct aic32x4_clkdesc aic32x4_clkdesc_array[] = {
 	{
 		.name = "pll",
@@ -514,7 +574,11 @@ static struct clk *aic32x4_register_clk(struct device *dev,
 
 int aic32x4_register_clocks(struct device *dev, const char *mclk_name)
 {
-	int i;
+	int i, ret;
+
+	ret = aic32x4_register_bclk(dev);
+	if (ret)
+		return ret;
 
 	/*
 	 * These lines are here to preserve the current functionality of
