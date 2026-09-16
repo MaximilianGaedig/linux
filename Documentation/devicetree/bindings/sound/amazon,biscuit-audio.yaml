@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/sound/amazon,biscuit-audio.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Amazon Echo Dot (2nd generation) sound card
+
+maintainers:
+  - Maximilian Gaedig <mg@maximiliangaedig.com>
+
+description:
+  Sound card of the Amazon Echo Dot (2nd generation, "biscuit"), based on the
+  MT8163 AFE. Playback runs from the AFE DL1 front end through the I2S1 back
+  end to a TLV320AIC32x4 codec driving an external amplifier. Capture comes
+  from a microphone array FPGA read over SPI, with TLV320ADC3101 ADCs as its
+  codecs.
+
+properties:
+  compatible:
+    const: amazon,biscuit-audio
+
+  mediatek,platform:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: The MT8163 AFE
+
+  mediatek,audio-codec:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: The speaker codec
+
+  amazon,mic-fpga:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description:
+      The microphone array FPGA. Capture is disabled if it is absent.
+
+  amazon,mic-codec:
+    $ref: /schemas/types.yaml#/definitions/phandle-array
+    minItems: 1
+    maxItems: 4
+    items:
+      maxItems: 1
+    description:
+      The microphone ADCs feeding the FPGA, the TDM clock master first.
+
+  amazon,hp-det-gpios:
+    maxItems: 1
+    description: Line-out jack insertion detect
+
+  ext-spk-amp-supply:
+    description: Enable of the external speaker amplifier
+
+  ext-spk-amp2-supply:
+    description: Second enable of the external speaker amplifier
+
+  pinctrl-0: true
+
+  pinctrl-names:
+    const: default
+
+required:
+  - compatible
+  - mediatek,platform
+  - mediatek,audio-codec
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+
+    sound {
+        compatible = "amazon,biscuit-audio";
+        mediatek,platform = <&afe>;
+        mediatek,audio-codec = <&aic32x4_codec>;
+        amazon,mic-fpga = <&spi_pcm_fpga>;
+        amazon,mic-codec = <&mic0_codec>, <&mic1_codec>,
+                           <&mic2_codec>, <&mic3_codec>;
+        amazon,hp-det-gpios = <&pio 26 GPIO_ACTIVE_HIGH>;
+        ext-spk-amp-supply = <&ext_spk_amp>;
+        ext-spk-amp2-supply = <&ext_spk_amp2>;
+    };
