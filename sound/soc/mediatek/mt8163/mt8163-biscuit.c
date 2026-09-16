@@ -239,19 +239,11 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 	 */
 	ret = snd_soc_dai_set_sysclk(codec_dai, AIC32X4_PLL_CLKIN_BCKL, bclk,
 				     SND_SOC_CLOCK_IN);
-	if (ret) {
+	if (ret)
 		dev_err(rtd->dev, "biscuit: codec PLL from BCLK (%u Hz): %d\n",
 			bclk, ret);
-		return ret;
-	}
 
-	/*
-	 * Unmute the external amplifier. Its mute line is the codec's MFP2
-	 * pin, used as a GPIO output (register 53): 0x05 mutes, 0x04 unmutes.
-	 */
-	snd_soc_component_write(codec_dai->component, 53, 0x04);
-
-	return 0;
+	return ret;
 }
 
 static const struct snd_soc_ops biscuit_be_ops = {
