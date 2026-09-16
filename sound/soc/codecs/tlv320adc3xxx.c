@@ -1390,6 +1390,14 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	 * first is never clocked at all, and a receiver sees a live bus
 	 * carrying nothing it can assemble.
 	 */
+	/*
+	 * Clear the digital mute. This register resets to 0x88, both channels
+	 * muted, and mainline only ever exposes it as a mixer control - so a
+	 * system without userspace to open it records silence from otherwise
+	 * perfectly configured hardware. Amazon writes 0 here unconditionally.
+	 */
+	snd_soc_component_write(component, ADC3XXX_ADC_FGA, 0);
+
 	frame_bits = adc3xxx->tdm_slots ?
 		     adc3xxx->tdm_slots * adc3xxx->tdm_slot_width :
 		     2 * width;
