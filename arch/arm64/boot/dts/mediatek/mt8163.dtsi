@@ -22,6 +22,7 @@
 #include <dt-bindings/reset/mediatek,mt8163-infracfg.h>
 #include <dt-bindings/reset/mediatek,mt8163-mmsys.h>
 #include <dt-bindings/reset/mediatek,mt8163-wdt.h>
+#include <dt-bindings/thermal/thermal.h>
 
 / {
 	#address-cells = <2>;
@@ -127,6 +128,7 @@
 				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
 			clock-names = "cpu", "intermediate";
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 			i-cache-size = <32768>;
@@ -147,6 +149,7 @@
 				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
 			clock-names = "cpu", "intermediate";
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 			i-cache-size = <32768>;
@@ -167,6 +170,7 @@
 				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
 			clock-names = "cpu", "intermediate";
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 			i-cache-size = <32768>;
@@ -187,6 +191,7 @@
 				 <&topckgen CLK_TOP_ARMPLL_DIVIDER_PLL1_EN>;
 			clock-names = "cpu", "intermediate";
 			operating-points-v2 = <&cluster0_opp>;
+			#cooling-cells = <2>;
 			clock-frequency = <1300000000>;
 			cci-control-port = <&cci_control2>;
 			i-cache-size = <32768>;
