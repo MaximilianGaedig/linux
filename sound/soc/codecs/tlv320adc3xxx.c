@@ -495,6 +495,23 @@ static const struct adc3xxx_rate_divs adc3xxx_divs[] = {
 	/* 16k rate */
 	{ 12000000, 16000, 1, 1, 7, 1680, 21, 2, 128 },
 	{ 12288000, 16000, 1, 1, 7, 0000, 21, 2, 128 },
+	/*
+	 * 9.6MHz MCLK, as fed to the four-ADC mic array on the Amazon Echo
+	 * Dot 2: there the master clock is the SoC's CMMCLK pad, driven by the
+	 * camera SENINF timing generator and divided down from 48MHz, so none
+	 * of the usual audio-crystal rates above apply.
+	 *
+	 * These are Amazon's own dividers for this MCLK and rate, and the
+	 * choice matters for more than fs. It fixes ADC_CLK, which is also
+	 * where BCLK comes from:
+	 *   PLL     = MCLK * R * J.D / P = 9.6MHz * 1 * 48 / 5 = 92.16MHz
+	 *   ADC_CLK = PLL / NADC         = 92.16MHz / 15       =  6.144MHz
+	 *   fs      = ADC_CLK / (MADC * AOSR) = 6.144MHz / (3 * 128) = 16000Hz
+	 * An arithmetically equivalent set with NADC=21, MADC=2 also yields
+	 * 16kHz but leaves ADC_CLK at 4.096MHz, and no integer BDIV off that
+	 * can produce the 384-BCLK frame this board's TDM bus needs.
+	 */
+	{  9600000, 16000, 5, 1, 48, 0, 15, 3, 128 },
 	/* 22.05k rate */
 	{ 12000000, 22050, 1, 1, 7, 560, 15, 2, 128 },
 	/* 32k rate */
