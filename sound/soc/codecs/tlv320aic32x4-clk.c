@@ -154,8 +154,9 @@ static unsigned long clk_aic32x4_pll_calc_rate(
 static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 			unsigned long rate, unsigned long parent_rate)
 {
+	struct clk_aic32x4_pll_muldiv try;
+	bool have_frac = false;
 	u64 multiplier;
-	u32 try_p;
 
 	/*
 	 * The PLL only locks with its output inside the documented window.
@@ -171,49 +172,56 @@ static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 	 * are integer-mode ones, and those may need P > 1 to exist at all: a
 	 * 9.6MHz MCLK reaches 92.16MHz only as 9.6MHz / 5 * 48.
 	 *
-	 * The first P, counting up from 1, that gives a legal setting is used.
+	 * PLL_CLKIN / P must not exceed 20MHz, which bounds P from below.
+	 * Integer-mode settings are preferred, with the lowest such P;
+	 * otherwise the fractional setting with the lowest P is used.
 	 */
-	for (try_p = 1; try_p <= 8; try_p++) {
-		settings->p = try_p;
+	for (try.p = parent_rate / AIC32X4_MAX_PLL_CLKIN + 1; try.p <= 8;
+	     try.p++) {
+		/* Integer mode needs PLL_CLKIN / P >= 512kHz. */
+		if (parent_rate / try.p < AIC32X4_MIN_PLL_CLKIN)
+			break;
 
 		/*
 		 * We scale this figure by 10000 so that we can get the decimal
 		 * part of the multiplier. This is because we can't do floating
 		 * point math in the kernel.
 		 */
-		multiplier = (u64) rate * settings->p * 10000;
+		multiplier = (u64) rate * try.p * 10000;
 		do_div(multiplier, parent_rate);
 
 		/*
 		 * J can't be over 64, so R can scale this.
 		 * R can't be greater than 4.
 		 */
-		settings->r = ((u32) multiplier / 640000) + 1;
-		if (settings->r > 4)
+		try.r = ((u32) multiplier / 640000) + 1;
+		if (try.r > 4)
 			continue;
-		do_div(multiplier, settings->r);
+		do_div(multiplier, try.r);
 
 		/* J can't be < 1. */
 		if (multiplier < 10000)
 			continue;
 
-		settings->j = (u32) multiplier / 10000;
-		settings->d = (u32) multiplier % 10000;
+		try.j = (u32) multiplier / 10000;
+		try.d = (u32) multiplier % 10000;
 
-		if (settings->j > 63)
+		if (try.j > 63)
 			continue;
 
-		/*
-		 * A fractional D needs 10MHz <= PLL_CLKIN/P <= 20MHz; integer
-		 * mode goes down to 512kHz.
-		 */
-		if (settings->d && parent_rate / settings->p < 10000000)
-			continue;
+		if (!try.d) {
+			*settings = try;
+			return 0;
+		}
 
-		return 0;
+		/* A fractional D needs PLL_CLKIN / P >= 10MHz. */
+		if (!have_frac && parent_rate / try.p >= AIC32X4_MIN_PLL_CLKIN_FRAC) {
+			*settings = try;
+			have_frac = true;
+		}
 	}
 
-	return -1;
+	return have_frac ? 0 : -1;
 }
 
 static unsigned long clk_aic32x4_pll_recalc_rate(struct clk_hw *hw,
