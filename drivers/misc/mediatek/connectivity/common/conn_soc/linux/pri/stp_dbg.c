@@ -688,12 +688,8 @@ P_WCN_COMPRESSOR_T wcn_compressor_init(PUINT8 name, INT32 L1_buf_sz, INT32 L2_bu
 			STP_DBG_ERR_FUNC("alloc workspace failed!\n");
 			goto fail;
 		}
-		pr_err("biscuit-coredump-debug: workspace alloc'd=%p (before deflateInit2)\n",
-		       pstream->workspace);
 		zlib_deflateInit2(pstream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS,
 				  DEF_MEM_LEVEL, Z_DEFAULT_STRATEGY);
-		pr_err("biscuit-coredump-debug: workspace after deflateInit2=%p\n",
-		       pstream->workspace);
 	}
 
 	compress->handler = wcn_gzip_compressor;
@@ -717,8 +713,6 @@ P_WCN_COMPRESSOR_T wcn_compressor_init(PUINT8 name, INT32 L1_buf_sz, INT32 L2_bu
 	}
 
 	STP_DBG_INFO_FUNC("create compressor OK! L1 %d bytes, L2 %d bytes\n", L1_buf_sz, L2_buf_sz);
-	pr_err("biscuit-coredump-debug: wcn_compressor_init -> cprs=%p L1_buf=%p L2_buf=%p worker=%p\n",
-	       compress, compress->L1_buf, compress->L2_buf, compress->worker);
 	return compress;
 
 fail:
@@ -766,10 +760,6 @@ INT32 wcn_compressor_deinit(P_WCN_COMPRESSOR_T cprs)
 {
 	z_stream *pstream = NULL;
 
-	pr_err("biscuit-coredump-debug: wcn_compressor_deinit(cprs=%p) L1_buf=%p L2_buf=%p worker=%p\n",
-	       cprs, cprs ? cprs->L1_buf : NULL, cprs ? cprs->L2_buf : NULL,
-	       cprs ? cprs->worker : NULL);
-
 	/*
 	 * Confirmed on real hardware: this deinit path (only ever reached
 	 * from the connsys whole-chip-reset recovery kthread, _stp_btm_proc)
@@ -804,12 +794,8 @@ INT32 wcn_compressor_deinit(P_WCN_COMPRESSOR_T cprs)
 
 		if (cprs->worker) {
 			pstream = (z_stream *) cprs->worker;
-			pr_err("biscuit-coredump-debug: deinit worker=%p workspace=%p (before deflateEnd)\n",
-			       cprs->worker, pstream->workspace);
 			if ((cprs->compress_type == GZIP) && pstream->workspace) {
 				zlib_deflateEnd(pstream);
-				pr_err("biscuit-coredump-debug: workspace=%p (after deflateEnd)\n",
-				       pstream->workspace);
 				if (is_vmalloc_addr(pstream->workspace))
 					osal_free(pstream->workspace);
 			}

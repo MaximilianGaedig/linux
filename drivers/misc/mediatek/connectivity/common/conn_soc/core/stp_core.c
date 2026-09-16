@@ -2170,18 +2170,6 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 				stp_change_rx_state(MTKSTP_SYNC);
 				*(stp_core_ctx.rx_buf + stp_core_ctx.rx_counter) = '\0';
 				/* STP_ERR_FUNC("%s [%d]\n", stp_core_ctx.rx_buf, stp_core_ctx.rx_counter); */
-				/*
-				 * osal_dbg_assert_aee() below formats this same text through
-				 * a fixed 256-byte buffer (DBG_LOG_STR_SIZE), with rx_buf
-				 * passed in TWICE (module + detail_description) - the actual
-				 * connsys f/w assert/coredump text is len<=2048 and gets
-				 * silently truncated away there. Print it here, full and
-				 * unconditionally, so we can actually read why the chip
-				 * firmware crashed.
-				 */
-				pr_err("biscuit-connsys-msg: type=%d len=%u full text follows:\n%s\n",
-				       stp_core_ctx.parser.type, stp_core_ctx.rx_counter,
-				       stp_core_ctx.rx_buf);
 #if 0
 				if ((stp_core_ctx.rx_counter == 1) && (stp_core_ctx.rx_buf[0] == 0xFF)) {
 					/* For MT6620, enable/disable coredump function is controlled by
@@ -2207,7 +2195,7 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 				 */
 				if (stp_core_ctx.parser.type == STP_TASK_INDX && stp_core_ctx.rx_counter) {
 					stp_core_ctx.rx_buf[MTKSTP_BUFFER_SIZE - 1] = 0;
-					STP_ERR_FUNC("biscuit-fwassert: len=%d type=%d text=\"%s\"\n",
+					STP_ERR_FUNC("f/w assert: len=%d type=%d text=\"%s\"\n",
 						     stp_core_ctx.rx_counter, stp_core_ctx.parser.type,
 						     stp_core_ctx.rx_buf);
 
@@ -2216,20 +2204,7 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					 * mandatory-mode parser does at the matching
 					 * point (see MTKSTP_FW_MSG above).
 					 *
-					 * Full mode never had this call: the block
-					 * below that used to do it is gated behind
-					 * STP_IS_ENABLE_DBG and, on top of that, had
-					 * its ctx-save + dump/trace handling replaced
-					 * by an info message during an earlier
-					 * bring-up bisect.  That bisect was chasing
-					 * kernel heap corruption which turned out to
-					 * be the chip DMA-ing outside its reserved
-					 * window because the EMI aperture register
-					 * was misprogrammed - that bug is fixed, and
-					 * btm_core.c's paged-dump handler has already
-					 * been re-enabled on the same reasoning.
-					 *
-					 * Do it here, unconditionally, so it does not
+					 * Done here unconditionally so it does not
 					 * depend on the STP debug level: this dump is
 					 * the only channel the firmware has to say why
 					 * it asserted.
@@ -2243,24 +2218,7 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					(stp_core_ctx.parser.type == STP_TASK_INDX)) {
 					if (0 != stp_core_ctx.rx_counter) {
 						STP_SET_READY(stp_core_ctx, 0);
-						/*
-						 * BRING-UP BISECT: the ctx-save +
-						 * paged dump/trace workqueues are
-						 * skipped here. A chip-side f/w
-						 * assert is reliably followed a
-						 * few seconds later by kernel heap
-						 * corruption (slab metadata, freed
-						 * from unrelated paths like
-						 * __fput). Skipping the paged-dump
-						 * handler alone was not enough, so
-						 * cut the whole assert-handling
-						 * block to establish whether the
-						 * corruption originates in this
-						 * code or in DMA the chip performs
-						 * on its own (CONSYS_EMI_MPU_SETTING
-						 * is 0, so nothing fences it).
-						 */
-						STP_INFO_FUNC("f/w assert: dump/trace handling skipped (bring-up bisect)\n");
+						STP_INFO_FUNC("f/w assert: dump/trace handled by the paged dump\n");
 					}
 					STP_INFO_FUNC("[len=%d][type=%d]\n%s\n", stp_core_ctx.rx_counter,
 					       stp_core_ctx.parser.type, stp_core_ctx.rx_buf);
@@ -2283,10 +2241,8 @@ static INT32 stp_parser_data_in_full_mode(UINT32 length, UINT8 *p_data)
 					osal_dbg_assert_aee(stp_core_ctx.rx_buf, stp_core_ctx.rx_buf);
 					/*Whole Chip Reset Procedure Invoke */
 					if (STP_IS_ENABLE_RST(stp_core_ctx)) {
-						pr_err("biscuit-connsys-msg: f_autorst_en set, queuing whole-chip reset now\n");
 						STP_SET_READY(stp_core_ctx, 0);
 						stp_btm_notify_wmt_rst_wq(STP_BTM_CORE(stp_core_ctx));
-						pr_err("biscuit-connsys-msg: stp_btm_notify_wmt_rst_wq() returned\n");
 					} else {
 						STP_INFO_FUNC
 						    ("No to launch whole chip reset! for debugging purpose\n");

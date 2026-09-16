@@ -2067,13 +2067,6 @@ WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN ENUM_NETWORK_TYPE_INDEX_T 
 	else
 		rCmdSetBssInfo.ucStaRecIdxOfAP = STA_REC_INDEX_NOT_FOUND;
 
-	DBGLOG(BSS, ERROR,
-	       "biscuit-bssinfo: net=%u connState=%u opMode=%u band=%u ch=%u phy=0x%x op=0x%x basic=0x%x nonHTbasicPhy=%u staIdxOfAP=%u\n",
-	       rCmdSetBssInfo.ucNetTypeIndex, rCmdSetBssInfo.ucConnectionState,
-	       rCmdSetBssInfo.ucCurrentOPMode, prBssInfo->eBand, prBssInfo->ucPrimaryChannel,
-	       rCmdSetBssInfo.ucPhyTypeSet, rCmdSetBssInfo.u2OperationalRateSet,
-	       rCmdSetBssInfo.u2BSSBasicRateSet, rCmdSetBssInfo.ucNonHTBasicPhyType,
-	       rCmdSetBssInfo.ucStaRecIdxOfAP);
 
 	/*
 	 * biscuit: match the stock Amazon driver (vendor nic.c:2069-2081), which

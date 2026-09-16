@@ -3472,7 +3472,7 @@ bailout:
 	} while (FALSE);
 
 	if (i4Status != WLAN_STATUS_SUCCESS) {
-		pr_err("biscuit-wlanProbe: FAILED i4Status=%d eFailReason=%d\n",
+		pr_err("wlanProbe: failed i4Status=%d eFailReason=%d\n",
 		       (int)i4Status, (int)eFailReason);
 		switch (eFailReason) {
 		case PROC_INIT_FAIL:

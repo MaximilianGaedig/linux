@@ -604,7 +604,7 @@ WLAN_STATUS nicTxAcquireResource(IN P_ADAPTER_T prAdapter, IN UINT_8 ucTC, IN BO
 			 * recoverable stall into a full re-download.
 			 */
 			DBGLOG(TX, ERROR,
-			       "biscuit: TC4 starved for %d ms -- stock would NOT chip-reset here, continuing\n",
+			       "TC4 starved for %d ms -- stock would NOT chip-reset here, continuing\n",
 			       TC4_NO_RESOURCE_DELAY_MS);
 			u4CurrTick = 0;
 		}

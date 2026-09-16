@@ -383,7 +383,7 @@ BOOLEAN nicpmSetDriverOwn(IN P_ADAPTER_T prAdapter)
 				 * do not reset the chip.
 				 */
 				DBGLOG(NIC, ERROR,
-				       "biscuit: driver-own failed -- stock would NOT chip-reset here, continuing\n");
+				       "driver-own failed -- stock would NOT chip-reset here, continuing\n");
 			}
 			break;
 		}
