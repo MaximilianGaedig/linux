@@ -36,42 +36,23 @@ static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	SND_SOC_DAPM_SPK("Ext Spk", NULL),
 	SND_SOC_DAPM_MIC("Mic Array", NULL),
 	/*
-	 * The external amplifier's enable line (GPIO 122), as a supply widget
-	 * so DAPM turns it on with the speaker path and off again after.
-	 * Holding it on continuously makes the speaker hiss; stock enables it
-	 * only while a speaker stream is open and refcounts it.
+	 * External amplifier enable (GPIO 122), as a supply so DAPM enables it
+	 * only while the speaker path is powered; keeping it on makes the
+	 * speaker hiss.
 	 */
 	SND_SOC_DAPM_REGULATOR_SUPPLY("ext-spk-amp", 0, 0),
 	/*
-	 * Second amplifier enable, GPIO 124 - the pin the shipped OTA device
-	 * tree actually uses for extamp (see ext_spk_amp2 in the DTS). Driven
-	 * the same DAPM-gated way as ext-spk-amp so whichever pin really gates
-	 * the amp on this board is asserted during playback.
+	 * Second amplifier enable (GPIO 124, the extamp pin in the vendor
+	 * device tree), gated the same way.
 	 */
 	SND_SOC_DAPM_REGULATOR_SUPPLY("ext-spk-amp2", 0, 0),
 };
 
-/* The aic32x4's line outputs drive the on-board amplifier. */
 /*
- * Feed every ADC input from the mic-array widget.
- *
- * The card is fully_routed, so a widget with no route to an endpoint stays
- * powered down forever - which is what kept the ADCs silent even once they
- * were bound to the right driver and their PLL locked. Inside each ADC the
- * path is IN_xL -> "IN_xL Capture Switch" -> Left Input -> Left PGA ->
- * Left ADC, and those mixer switches default to off, so userspace still has
- * to close one; declaring every input on each part lets DAPM complete a
- * path for whichever one this board actually wires without needing the
- * schematic first.
- *
- * The differential inputs are separate widgets from the single-ended ones -
- * "DIF_1L_1R Capture Switch" is fed by DIFL_1L_1R and DIFR_1L_1R, not by
- * IN_1L/IN_1R - so listing only IN_* left the differential pins with no
- * source. Amazon's audio_init.sh selects exactly the differential pair
- * (DIF1), which meant the one input this board actually uses was the one
- * input DAPM could not power: the switch closed, the path still dead-ended,
- * and ADC_DIGITAL stayed 0x00 with both ADCs off, no PLL, and no I2S clock
- * for the FPGA to count frames from.
+ * Feed every ADC input from the mic-array widget. The card is fully
+ * routed, so an input without a route to an endpoint is never powered.
+ * The differential inputs are separate widgets from the single-ended
+ * ones and need their own routes.
  */
 #define BISCUIT_MIC_ROUTES(prefix)					\
 	{ prefix " IN_1L", NULL, "Mic Array" },				\
@@ -89,19 +70,9 @@ static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 
 static const struct snd_soc_dapm_route biscuit_routes[] = {
 	/*
-	 * The speaker hangs off the HEADPHONE outputs, not the line outputs.
-	 *
-	 * Amazon's own /etc/audio_init.sh closes exactly two playback
-	 * switches - "HPL Output Mixer L_DAC Switch" and "HPR Output Mixer
-	 * R_DAC Switch" - and nothing on the LO path, so HPL/HPR is what
-	 * reaches the amplifier on this board. Without a route from them to
-	 * an endpoint the HP drivers can never power up (OUTPWRCTL keeps its
-	 * HP bits clear and the widgets read "Off in 1 out 0"), which is why
-	 * driving the LO path produced a perfectly configured, completely
-	 * silent codec.
-	 *
-	 * The LO routes stay as well: they cost nothing, and keeping both
-	 * described means whichever pair is populated can be driven.
+	 * The amplifier is driven from the HPL/HPR outputs (the vendor
+	 * configuration only enables the HP output mixers). The LOL/LOR routes
+	 * are kept so the line outputs can be driven as well.
 	 */
 	{ "Ext Spk", NULL, "ext-spk-amp" },
 	{ "Ext Spk", NULL, "ext-spk-amp2" },
@@ -127,14 +98,9 @@ SND_SOC_DAILINK_DEFS(playback_fe,
 				 0x1 << (2 * (i)) : 0x3 << (2 * (i)))
 
 /*
- * All four ADCs are named, not just the clock master.
- *
- * Naming only the master (which is what Amazon's own link does) makes ASoC
- * intersect the CPU DAI's 9 channels with one ADC's 2, producing an empty
- * range and -EINVAL from the very open() - snd_soc_runtime_calc_hw() only
- * defers to the CPU side once a link has more than one CODEC. Listing all
- * four is also simply truthful: they all sit on this TDM bus and they all
- * need configuring.
+ * All four ADCs sit on the TDM bus and are part of the link. With a single
+ * CODEC, ASoC would also intersect the CPU DAI's 9 channels with the ADC's
+ * 2 and reject every configuration.
  */
 SND_SOC_DAILINK_DEFS(mic_capture,
 	DAILINK_COMP_ARRAY(COMP_EMPTY()),
@@ -143,19 +109,12 @@ SND_SOC_DAILINK_DEFS(mic_capture,
 	DAILINK_COMP_ARRAY(COMP_EMPTY()));
 
 /*
- * Mic-array clocking, straight from Amazon's tlv3101_hw_params().
- *
- * The ADC is the bit- and frame-clock master and the bus is TDM (DSP_B),
- * not plain I2S - so the codec, not the FPGA, generates the clocks the
- * FPGA is waiting for. Until this ran, the FPGA sat with i2s_inactive=1.
- *
- * Note mainline's ADC3101 driver only accepts DSP_B together with IB_NF,
- * while Amazon passes NB_NF; the two drivers program the bit-clock
- * polarity bit from opposite defaults, so IB_NF here is the same wire
- * behaviour their NB_NF produced.
+ * The mic ADCs are clocked from the 9.6MHz CMMCLK pad. The first ADC is
+ * the bit- and frame-clock master of the DSP_B TDM bus, which also clocks
+ * the FPGA's I2S input. The tlv320adc3xxx driver only accepts DSP_B with
+ * IB_NF, which gives the wire polarity the vendor driver's NB_NF does.
  */
 #define BISCUIT_MIC_MCLK_HZ	9600000
-
 
 static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params)
@@ -165,14 +124,9 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 	int i, ret;
 
 	/*
-	 * Exactly one ADC drives the bus.
-	 *
-	 * The link cannot express this through .dai_fmt, which is applied
-	 * identically to every CODEC on it - and four bit-clock masters on one
-	 * TDM bus is a short, not an audio path. So set the format per CODEC
-	 * here: the first is the bit- and frame-clock provider, the rest are
-	 * consumers, which is how Amazon wires the array (only
-	 * tlv320aic3101.0-0018 is named in their link, as the master).
+	 * Exactly one ADC may drive the bus clocks, which .dai_fmt cannot
+	 * express since it applies to every CODEC on the link, so set the
+	 * format per CODEC: the first is clock provider, the rest consume.
 	 */
 	for_each_rtd_codec_dais(rtd, i, codec_dai) {
 		unsigned int fmt = SND_SOC_DAIFMT_DSP_B |
@@ -197,33 +151,11 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 		}
 
 		/*
-		 * Give each ADC its own pair of slots on the shared bus.
-		 *
-		 * This is not optional bookkeeping: on a multi-CODEC link ASoC
-		 * narrows the params it hands each CODEC with
-		 * soc_pcm_codec_params_fixup(), driven by that DAI's rx_mask.
-		 * With no mask set the mask is zero, the fixup asks the ADC for
-		 * a zero-channel stream and hw_params comes straight back as
-		 * -EINVAL - which is what the capture tool saw while the
-		 * machine-level hw_params above appeared to succeed.
-		 *
-		 * snd_soc_dai_set_tdm_slot() stores the masks in the DAI before
-		 * it dispatches to the CODEC op, so this does its job even
-		 * though mainline's ADC3101 driver implements no .set_tdm_slot
-		 * and answers -ENOTSUPP.
-		 */
-		/*
-		 * Seven microphones across four stereo parts, so the last one
-		 * supplies a single channel. Amazon expresses this as one
-		 * global rx_mask of 0x7f handed to every codec, each of which
-		 * knows its own index; mainline's driver has no such index, so
-		 * the same thing is said per-codec here - 0x03, 0x0c, 0x30,
-		 * 0x40 - and the driver derives both its slot offset and which
-		 * of its own two channels to leave alone from that.
-		 *
-		 * The eighth channel matters: the FPGA puts its DAC loopback
-		 * reference there, so an ADC that keeps driving it collides
-		 * with the reference.
+		 * Give each ADC its slots on the shared bus. Seven microphones
+		 * across four stereo parts: 0x03, 0x0c, 0x30, 0x40. The eighth
+		 * slot carries the FPGA's DAC loopback reference and must not be
+		 * driven by an ADC. The masks also drive ASoC's per-CODEC
+		 * channel fixup on this multi-CODEC link.
 		 */
 		ret = snd_soc_dai_set_tdm_slot(codec_dai, 0,
 					       BISCUIT_MIC_RX_MASK(i),
@@ -237,16 +169,9 @@ static int biscuit_mic_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	/*
-	 * The ADC input routing and PGA gain are deliberately NOT set here.
-	 *
-	 * They are DAPM controls, and calling a DAPM control's .put from
-	 * inside hw_params deadlocks: the put ends up in
-	 * snd_soc_dpcm_runtime_update(), which wants the card mutex that this
-	 * callback is already holding. The process wedges in D state and the
-	 * whole card follows, because every later snd_pcm_open() blocks behind
-	 * it. Amazon sets these from userspace instead, in audio_init.sh, once
-	 * at boot and outside any stream - see the equivalent script in the
-	 * initrd, which is where this belongs.
+	 * Input routing and PGA gain are DAPM controls and cannot be changed
+	 * from hw_params (the card mutex is already held); userspace sets
+	 * them.
 	 */
 	return 0;
 }
@@ -261,50 +186,8 @@ SND_SOC_DAILINK_DEFS(playback_be,
 	DAILINK_COMP_ARRAY(COMP_DUMMY()));
 
 /*
- * Give the codec a master clock.
- *
- * Nothing was doing this, and the omission is silent in the worst way: the
- * AFE only remembers an MCLK rate if somebody calls set_sysclk on the I2S
- * DAI (mtk_dai_i2s_set_sysclk() is the sole writer of i2s_priv->mclk_rate).
- * With no caller the rate stays 0, so mtk_mclk_en_event() asks for
- * mt8163_mck_enable(afe, id, 0) and the MCLK widget's connect check -
- * "return (i2s_priv->mclk_rate > 0) ? 1 : 0" - reports the path as
- * disconnected.  The result is an I2S port that clocks BCK and LRCK and
- * shifts data out perfectly while pin 15 (I2S1_MCK) stays dead.
- *
- * The aic32x4 needs that pin: it has no crystal of its own on this board,
- * it derives everything from MCLK, and its own device node in the device
- * tree claims MCLK is a fixed 26MHz from clk26m - which is not what the
- * pin is wired to since the AFE took it over.  So the codec was being told
- * one rate and handed none at all, which is consistent with a chain that
- * verifies correct end to end and still makes no sound.
- *
- * 256 * fs is the conventional MTK/aic32x4 ratio and divides both APLLs
- * exactly, which mtk_dai_i2s_set_sysclk() insists on (it rejects any freq
- * that does not divide the APLL rate).
- */
-/*
- * Close every mixer the playback chain needs, once.
- *
- * These cannot be set from the card's late_probe: a CODEC's DAPM mixer
- * controls are only created later, in snd_soc_dapm_new_widgets(), so the
- * lookups there fail with "no control" for exactly the ones that matter.
- * By the time a stream configures its back end they all exist.
- *
- * All of them default to off, and each one silently breaks the chain:
- *  - the AFE's DL1 -> I2S1 routing mixers: without them there is no DAPM
- *    path from the front end to the back end at all, so dpcm_path_get()
- *    finds no back end and opening the PCM fails with a bare -EINVAL and
- *    no kernel message whatsoever.
- *  - the CODEC's DAC -> output-mixer switches: with these open the DAC has
- *    no outgoing path, DAPM leaves the chain powered down, and because the
- *    I2S port is only enabled as part of that power-up AFE_I2S_CON1 keeps
- *    its enable bit clear (0xa08 instead of 0xa09) - a perfectly
- *    configured codec that never receives a single clock edge.
- *
- * The speaker is on the HEADPHONE outputs: Amazon's own /etc/audio_init.sh
- * closes "HPL/HPR Output Mixer L_DAC/R_DAC Switch" and nothing on the LO
- * path. The LO switches are closed too, harmlessly, so either wiring works.
+ * Switch on the given card mixer controls (both channels) and resync
+ * DAPM.
  */
 static void biscuit_close_mixers(struct snd_soc_card *card,
 				 const char * const *mixers, int n)
@@ -334,41 +217,20 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
 	/*
-	 * 9.6MHz, not rate*256: the codec's clock is the CMMCLK pad shared
-	 * with the mic ADCs, which the SENINF divider drives at a fixed
-	 * 9.6MHz. Amazon passes the same constant (AIC31XX_FREQ_9600000) to
-	 * this codec and to the ADCs.
-	 */
-	/*
-	 * 9.6MHz - the rate stock actually uses (AIC31XX_FREQ_9600000), from
-	 * the CMMCLK pad shared with the mic ADCs. An earlier -EINVAL here was
-	 * misattributed to the codec being unable to use 9.6MHz; it came from
-	 * asking the AFE to *generate* that rate, which it cannot because
-	 * mtk_dai_i2s_set_sysclk() requires an exact APLL divisor. That call
-	 * is gone, and the codec's own PLL handles 9.6MHz fine.
+	 * The codec's MCLK is the 9.6MHz CMMCLK pad shared with the mic ADCs.
 	 */
 	unsigned int mclk = 9600000;
 	int ret;
 
 	/*
-	 * Deliberately no set_sysclk on the AFE side.
-	 *
-	 * The codec's master clock does not come from the AFE at all - it is
-	 * the CMMCLK pad, driven by the camera SENINF divider (the same clock
-	 * the mic ADCs and the FPGA use). Asking the AFE for it fails anyway:
-	 * mtk_dai_i2s_set_sysclk() rejects any rate that does not divide the
-	 * APLL exactly, so 12MHz returns -EINVAL and takes hw_params, and
-	 * therefore the whole stream, down with it. The AFE still supplies
-	 * BCK and LRCK as the I2S clock provider; only MCLK is external.
+	 * No set_sysclk on the AFE side: MCLK does not come from the AFE, which
+	 * only provides BCK and LRCK, and mtk_dai_i2s_set_sysclk() rejects rates
+	 * that are not an exact APLL divisor.
 	 */
 
 	/*
-	 * The codec side is best-effort on purpose.  aic32x4_set_dai_sysclk()
-	 * resolves its "pll" clock and calls clk_set_rate() on that clock's
-	 * parent; with the parent declared as clk26m - a fixed-rate clock -
-	 * that call cannot succeed.  The codec still works out its PLL
-	 * dividers from the rate it believes MCLK to be, so a failure here is
-	 * worth reporting but must not take the stream down with it.
+	 * Best-effort: aic32x4_set_dai_sysclk() tries to set the rate of the
+	 * codec's MCLK parent, which may be a fixed-rate clock.
 	 */
 	ret = snd_soc_dai_set_sysclk(codec_dai, 0, mclk, SND_SOC_CLOCK_IN);
 	if (ret && ret != -ENOTSUPP)
@@ -376,15 +238,8 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 			 mclk, ret);
 
 	/*
-	 * Unmute the external amplifier.
-	 *
-	 * Its mute line is not a SoC GPIO - it hangs off the CODEC's MFP2 pin,
-	 * driven through AIC32X4_DOUTCTL (register 53). Amazon's own aic32x4
-	 * driver writes MFP2_GPIO_ENABLE|MFP2_GPIO_HI (0x05) at probe to mute
-	 * the amp, and MFP2_GPIO_ENABLE alone (0x04) to unmute it. Mainline's
-	 * driver never touches that register at all, so nothing ever unmutes
-	 * the amplifier and the board stays silent no matter how correct the
-	 * digital path is.
+	 * Unmute the external amplifier. Its mute line is the codec's MFP2
+	 * pin, used as a GPIO output (register 53): 0x05 mutes, 0x04 unmutes.
 	 */
 	snd_soc_component_write(codec_dai->component, 53, 0x04);
 
@@ -392,37 +247,15 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 }
 
 /*
- * Dump the AFE's I2S1 control registers once the port should be live.
+ * Codec clocking and output stage setup, done in prepare so it overrides
+ * what the codec driver programmed in hw_params:
  *
- * hw_params is too early - DAPM only enables the port at trigger - so a
- * zero here is meaningful where a zero in hw_params is not. If playback is
- * inaudible while AFE_I2S_CON1 reads 0, no clock or data is leaving the SoC
- * and the codec is not the problem.
- */
-/*
- * Make the aic32x4 actually produce analog output.
+ *  - PLL input is BCLK: P=1, R=1, J=30, D=0, so a 3.072MHz BCLK gives the
+ *    92.16MHz CODEC_CLKIN the codec's dividers are computed for.
+ *  - Power the LOL/LOR and HPL/HPR drivers, route both DACs to them and
+ *    unmute them.
  *
- * Two board realities that the generic codec setup gets wrong here:
- *
- *  1. Clock. The codec's master clock is supposed to be the ~9.6MHz CMMCLK
- *     pad, but on this board that clock never physically reaches the aic32x4
- *     (only the mic ADCs are wired to it). Its PLL therefore never locks off
- *     MCLK and the DAC is dead - the amp just pops. The I2S bit clock, on the
- *     other hand, is right there on the same pins the codec already listens
- *     to. So run the PLL from BCLK: at 48kHz the BE clocks BCLK at 3.072MHz,
- *     and 3.072MHz x J=30 / P=1 = 92.16MHz, exactly the CODEC_CLKIN the DAC
- *     divider setup (NDAC/MDAC/DOSR from aic32x4_setup_clocks) already targets,
- *     so nothing downstream of the PLL has to change.
- *
- *  2. Output. The line outputs drive the external amplifier, but DAPM leaves
- *     the LOL/LOR (and HPL/HPR) mixers unrouted and the output stages muted by
- *     default, so even a locked DAC reaches nothing. Route both DACs to the
- *     outputs and lift the analog mutes.
- *
- * Do it in prepare(): it runs after the codec's own hw_params (which programs
- * the MCLK-based PLL) and before trigger, so these writes win. Register
- * numbers are the flat aic32x4 map (page*128 + offset), matching the reg-53
- * amp-unmute write above.
+ * Register numbers are the flat aic32x4 map (page * 128 + offset).
  */
 static int biscuit_be_prepare(struct snd_pcm_substream *substream)
 {
@@ -477,19 +310,8 @@ static struct snd_soc_dai_link biscuit_dai_links[] = {
 		SND_SOC_DAILINK_REG(playback_be),
 	},
 	/*
-	 * Mic array. This one does not touch the AFE at all.
-	 *
-	 * The four aic3x mic codecs feed I2S into the "dough" FPGA rather than
-	 * into the SoC; the FPGA packs all channels and hands finished frames
-	 * back over SPI0, so the capture path is a single self-contained
-	 * component that is CPU DAI and PCM platform at once - which is
-	 * exactly how Amazon's own machine driver wires it ("AMZN_SPI_Capture",
-	 * cpu_dai_name = platform_name = AMZN_MT_SPI_PCM).
-	 *
-	 * This link used to be absent because the FPGA never configured and
-	 * would have registered a capture device that could only ever return
-	 * silence.  It configures now (it reports revision 34), so the link
-	 * comes back.
+	 * Mic array. The ADCs feed the FPGA rather than the AFE; the FPGA
+	 * driver is both CPU DAI and PCM platform of this link.
 	 */
 	{
 		.name = "MIC_SPI",
@@ -501,30 +323,16 @@ static struct snd_soc_dai_link biscuit_dai_links[] = {
 };
 
 /*
- * Force the mic-array capture chain on once the card exists.
- *
- * The register readback proved the four ADCs get correctly configured
- * (mic0 becomes TDM master, the PLL divider is written) but their PLL and
- * ADC-digital blocks never power up - power on this codec is entirely
- * DAPM-gated, and the capture stream was not pulling the AIF_OUT ->
- * ADC -> PGA -> Input chain up. The mic array is an always-listening
- * device with no user-facing routing choice, so pin every input and every
- * ADC path on explicitly and sync, which powers PLL_CLK/ADC_CLK and the
- * ADCs and gets the codec clocking the FPGA.
+ * The mic array is always listening and has no routing choice, so force
+ * its input pins on; this powers the ADC clocks and the ADCs, which in
+ * turn clock the FPGA.
  */
 static int biscuit_late_probe(struct snd_soc_card *card)
 {
 	struct snd_soc_dapm_context *dapm = card->dapm;
 	/*
-	 * The differential input widgets, not the single-ended IN_2 pins.
-	 *
-	 * Amazon selects what it calls DIF1, which is page 1 register 52 bit 7
-	 * on the left and register 55 bit 7 on the right. Mainline names those
-	 * same two bits after the pins they actually connect - DIF_2L_3L and
-	 * DIF_2R_3R - and uses the name DIF_1L_1R for a different register
-	 * entirely. Forcing IN_2L/IN_2R on instead left the differential
-	 * widgets unpowered, so the switch could be closed and still carry
-	 * nothing.
+	 * The vendor "DIF1" input is page 1 register 52/55 bit 7, which the
+	 * tlv320adc3xxx driver names DIF_2L_3L / DIF_2R_3R.
 	 */
 	static const char * const pins[] = {
 		"Mic Array",
@@ -540,24 +348,9 @@ static int biscuit_late_probe(struct snd_soc_card *card)
 	snd_soc_dapm_sync(dapm);
 
 	/*
-	 * Close the AFE's DL1 -> I2S1 routing mixers.
-	 *
-	 * MediaTek's AFE connects a memif to an I2S port through DAPM mixer
-	 * controls ("I2S1_CH1 DL1_CH1"), and they default to off. With them
-	 * open there is no DAPM path from the DL1 front end to the I2S1 back
-	 * end at all, so dpcm_path_get() finds no back end and opening the
-	 * playback device fails with a bare -EINVAL and no kernel message -
-	 * which is exactly how this presented. There is only one playback
-	 * route on this board, so close them here rather than making every
-	 * user discover the mixer names.
-	 */
-
-	/*
-	 * The AFE routing mixers have to be closed here, not at hw_params:
-	 * dpcm_path_get() walks DAPM at open() time, so without them the very
-	 * first open fails with -EINVAL and hw_params never runs at all.
-	 * These controls exist by now; the CODEC's own DAPM mixers do not,
-	 * which is why they are handled later.
+	 * Close the AFE's DL1 -> I2S1 routing mixers. They default to off,
+	 * and without them dpcm_path_get() finds no back end when the
+	 * playback PCM is opened.
 	 */
 	{
 		static const char * const afe_routes[] = {
@@ -616,16 +409,8 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 	card->dev = &pdev->dev;
 
 	/*
-	 * No amplifier gain-select pins are driven here.
-	 *
-	 * biscuit.dtsi does define aud_pins_extamp_gain0..3 on GPIO 28/29, but
-	 * the &audgpio node's pinctrl-names never lists those states - not in
-	 * biscuit.dtsi and not in either EVT override - so stock's
-	 * pinctrl_lookup_state() fails for them, gpio_prepare stays false and
-	 * AudDrv_GPIO_EXTAMP_Gain_Set() is a no-op returning -1 on this board.
-	 * They are MediaTek reference-board leftovers. Worse, stock uses
-	 * <&pio 29 0> as the enable-gpio of the lp55231 LED controller
-	 * (biscuit.dtsi:180), so driving it from here fights the LED ring.
+	 * The amplifier gain-select pins of the vendor device tree are unused
+	 * on this board; GPIO 29 is the LED controller's enable line.
 	 */
 
 	platform = of_parse_phandle(pdev->dev.of_node, "mediatek,platform", 0);
@@ -639,12 +424,8 @@ static int biscuit_snd_probe(struct platform_device *pdev)
 				     "need mediatek,audio-codec\n");
 
 	/*
-	 * Bind the AFE DAIs by name rather than by a "<&afe N>" phandle: a
-	 * phandle parsed with of_parse_phandle() drops its argument cell, so
-	 * both links would resolve to the bare AFE node with no DAI selected
-	 * and DPCM would find no back end ("no backend DAIs enabled").
-	 * DL1 is the playback front-end memif; I2S1 is the playback back-end
-	 * (I2S0/I2S2 are capture-only on this SoC).
+	 * Bind the AFE DAIs by name: DL1 is the playback front end and I2S1
+	 * the playback back end (I2S0/I2S2 are capture-only on this SoC).
 	 */
 	fe_cpu = platform;
 	be_cpu = platform;
