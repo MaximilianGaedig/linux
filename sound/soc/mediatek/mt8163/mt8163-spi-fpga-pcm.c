@@ -130,10 +130,8 @@ struct biscuit_spi_pcm {
 	struct snd_pcm_substream *substream;
 	struct task_struct *capture_thread;
 	bool running;
-	unsigned int dbg_reads;
 	/* have we armed the FPGA while its I2S input was actually clocking? */
 	bool armed_live;
-	unsigned int dbg_ptr;
 	spinlock_t lock;
 	size_t write_offset;
 	size_t elapsed_since_period;
@@ -219,11 +217,6 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 	/* enable SENINF1 mux + block */
 	seninf_wr_mask(b, SENINF1_MUX_CTRL, (1u << 31), 31, 1);
 	seninf_wr_mask(b, SENINF1_CTRL, 0x1, 0, 1);
-
-	dev_err(&priv->spi->dev,
-		"biscuit-dbg: seninf programmed clkcnt=%u pol=%u edge=%u TG1_PH_CNT=0x%08x SEN_CK=0x%08x\n",
-		clkcnt, clkf_pol, clkf_edge,
-		readl(b + SENINF_TG1_PH_CNT), readl(b + SENINF_TG1_SEN_CK));
 }
 
 static int biscuit_spi_capture_thread(void *data)
@@ -286,64 +279,13 @@ static int biscuit_spi_capture_thread(void *data)
 						       : DOUGH_FW_I2S };
 
 			priv->armed_live = true;
-			dev_err(&priv->spi->dev,
-				"biscuit-dbg: FPGA %s mode armed with I2S live -> %d\n",
-				biscuit_fpga_tpg ? "TPG" : "I2S",
-				dough_spi_txrx(priv->spi, cmd, NULL, sizeof(cmd)));
+			dough_spi_txrx(priv->spi, cmd, NULL, sizeof(cmd));
 			usleep_range(SPI_READ_WAIT_MIN_USEC, SPI_READ_WAIT_MAX_USEC);
 			continue;
 		}
 
 		n_bytes = min_t(u16, le16_to_cpu(priv->rx_buf->dsf.num_audio_frames),
 				 DOUGH_AUDIO_FRAME_BUF) * DOUGH_FRAME_BYTES;
-
-		/*
-		 * Report what the FPGA is handing us for the first few reads of
-		 * each stream. Without this it is impossible to tell apart "the
-		 * reader thread never ran", "the FPGA has no frames" and "the
-		 * frames arrive but never reach ALSA".
-		 */
-		if (priv->dbg_reads < 8) {
-			/*
-			 * Find the last byte the controller actually filled.
-			 * The status header arrives intact while the audio
-			 * payload behind it reads as zeros, which is what a
-			 * silently truncated transfer looks like - so measure
-			 * where the data stops rather than assuming the whole
-			 * buffer came back.
-			 */
-			const u8 *raw = (const u8 *)priv->rx_buf;
-			size_t last_nz = 0, k;
-
-			for (k = 0; k < sizeof(*priv->rx_buf); k++)
-				if (raw[k])
-					last_nz = k;
-
-			priv->dbg_reads++;
-			dev_err(&priv->spi->dev,
-				"biscuit-xfer[%u]: asked %zu bytes, last nonzero at %zu\n",
-				priv->dbg_reads, sizeof(*priv->rx_buf), last_nz);
-			/*
-			 * The status frame's own field comments number its
-			 * bytes backwards - fpga_rev is called byte 0 but sits
-			 * at offset 26 - so the wire order is reversed against
-			 * the struct. If the audio payload does not begin
-			 * where daf[] says it does, a correct header and an
-			 * empty payload is exactly what we would see. Dump the
-			 * bytes either side of the boundary and look.
-			 */
-			print_hex_dump(KERN_ERR, "biscuit-raw 0..63: ",
-				       DUMP_PREFIX_OFFSET, 16, 1,
-				       raw, 64, false);
-			dev_err(&priv->spi->dev,
-				"biscuit-rd[%u]: rev=%u mode=%u nframes=%u i2s_inact=%u dac_inact=%u overrun=%u -> %zu bytes\n",
-				priv->dbg_reads, priv->rx_buf->dsf.fpga_rev,
-				priv->rx_buf->dsf.mode,
-				le16_to_cpu(priv->rx_buf->dsf.num_audio_frames),
-				priv->rx_buf->dsf.i2s_inactive,
-				priv->rx_buf->dsf.dac_inactive,
-				priv->rx_buf->dsf.overrun, n_bytes);
-		}
 
 		while (n_bytes > 0) {
 			size_t bytes = min_t(size_t, ss->runtime->dma_bytes - priv->write_offset,
@@ -400,8 +342,6 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	struct biscuit_spi_pcm *priv = snd_soc_component_get_drvdata(component);
 	int ret;
 
-	dev_err(&priv->spi->dev, "biscuit-dbg: pcm open, stream=%d\n",
-		substream->stream);
 	if (substream->stream != SNDRV_PCM_STREAM_CAPTURE)
 		return -EINVAL;
 
@@ -415,8 +355,6 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	priv->write_offset = 0;
 	priv->elapsed_since_period = 0;
 	priv->running = false;
-	priv->dbg_reads = 0;
-	priv->dbg_ptr = 0;
 	priv->armed_live = false;
 	spin_lock_init(&priv->lock);
 
@@ -445,18 +383,12 @@ static int biscuit_spi_pcm_open(struct snd_soc_component *component,
 	{
 		u8 i2s_cmd[32] = { biscuit_fpga_tpg ? DOUGH_FW_TPG
 						   : DOUGH_FW_I2S };
-		int cret = dough_spi_txrx(priv->spi, i2s_cmd, NULL,
-					  sizeof(i2s_cmd));
 
-		dev_err(&priv->spi->dev,
-			"biscuit-dbg: FPGA %s mode armed at stream start (%d)\n",
-			biscuit_fpga_tpg ? "TPG" : "I2S", cret);
+		dough_spi_txrx(priv->spi, i2s_cmd, NULL, sizeof(i2s_cmd));
 	}
 
 	priv->capture_thread = kthread_run(biscuit_spi_capture_thread, priv,
 					   "biscuit-spi-pcm");
-	dev_err(&priv->spi->dev, "biscuit-dbg: kthread_run -> %ld\n",
-		IS_ERR(priv->capture_thread) ? PTR_ERR(priv->capture_thread) : 0L);
 	if (IS_ERR(priv->capture_thread)) {
 		int ret2 = PTR_ERR(priv->capture_thread);
 
@@ -482,23 +414,12 @@ static int biscuit_spi_pcm_close(struct snd_soc_component *component,
 	return 0;
 }
 
-static int biscuit_spi_pcm_prepare(struct snd_soc_component *component,
-				   struct snd_pcm_substream *substream)
-{
-	struct biscuit_spi_pcm *priv = snd_soc_component_get_drvdata(component);
-
-	dev_err(&priv->spi->dev, "biscuit-dbg: pcm prepare, state=%d\n",
-		(int)substream->runtime->state);
-	return 0;
-}
-
 static int biscuit_spi_pcm_trigger(struct snd_soc_component *component,
 				    struct snd_pcm_substream *substream, int cmd)
 {
 	struct biscuit_spi_pcm *priv = snd_soc_component_get_drvdata(component);
 
 	/* Atomic context: flip a flag and wake the reader, nothing more. */
-	pr_err("biscuit-dbg: trigger cmd=%d thread=%p\n", cmd, priv->capture_thread);
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_RESUME:
@@ -529,16 +450,6 @@ static snd_pcm_uframes_t biscuit_spi_pcm_pointer(struct snd_soc_component *compo
 	frames = bytes_to_frames(substream->runtime, priv->write_offset);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
-	if (priv->dbg_ptr < 6) {
-		priv->dbg_ptr++;
-		dev_err(&priv->spi->dev,
-			"biscuit-ptr[%u]: off=%zu frames=%lu dma_area=%p dma_bytes=%zu state=%d\n",
-			priv->dbg_ptr, priv->write_offset, (unsigned long)frames,
-			substream->runtime->dma_area,
-			(size_t)substream->runtime->dma_bytes,
-			(int)substream->runtime->state);
-	}
-
 	return frames;
 }
 
@@ -566,7 +477,6 @@ static const struct snd_soc_component_driver biscuit_spi_pcm_component = {
 	.name		= "biscuit-spi-pcm",
 	.open		= biscuit_spi_pcm_open,
 	.close		= biscuit_spi_pcm_close,
-	.prepare	= biscuit_spi_pcm_prepare,
 	.trigger	= biscuit_spi_pcm_trigger,
 	.pointer	= biscuit_spi_pcm_pointer,
 	.copy		= biscuit_spi_pcm_copy,
@@ -614,14 +524,10 @@ static int biscuit_spi_pcm_load_firmware(struct biscuit_spi_pcm *priv)
 	}
 
 	memcpy(fw_buf, fw->data, fw->size);
-	dev_err(dev, "biscuit-dbg: fw size=%zu padded=%zu head=%02x %02x %02x %02x\n",
-		fw->size, bytes, ((u8 *)fw_buf)[0], ((u8 *)fw_buf)[1],
-		((u8 *)fw_buf)[2], ((u8 *)fw_buf)[3]);
 	release_firmware(fw);
 
 	ret = dough_spi_txrx(priv->spi, fw_buf, NULL, bytes);
 	kfree(fw_buf);
-	dev_err(dev, "biscuit-dbg: bitstream SPI send ret=%d (%zu bytes)\n", ret, bytes);
 	if (ret < 0)
 		dev_err(dev, "FPGA firmware SPI load failed: %d\n", ret);
 
@@ -737,8 +643,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	 * whose completion releases SS_B once the FPGA has finished clearing
 	 * its configuration memory.
 	 */
-	dev_err(dev, "biscuit-dbg: pre-reset gpio logical=%d\n",
-		gpiod_get_value_cansleep(priv->reset_gpio));
 	{
 		struct spi_message msg;
 		struct spi_transfer assert_cs_then_reset_delay = {
@@ -778,9 +682,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 		}
 
 		spi_bus_unlock(spi->controller);
-
-		dev_err(dev, "biscuit-dbg: slave-SPI entry ret=%d, gpio logical=%d\n",
-			cret, gpiod_get_value_cansleep(priv->reset_gpio));
 	}
 	msleep(FPGA_RESET_MS);
 
@@ -790,12 +691,7 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	 * an external config. Also re-read SENINF to confirm the clock config
 	 * survived the reset.
 	 */
-	ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
-	dev_err(dev, "biscuit-dbg: PRE-config revread ret=%d rev=%u; SENINF TG1_PH_CNT=0x%08x SEN_CK=0x%08x\n",
-		ret, rx_df->dsf.fpga_rev,
-		readl(priv->seninf + SENINF_TG1_PH_CNT),
-		readl(priv->seninf + SENINF_TG1_SEN_CK));
-	print_hex_dump(KERN_ERR, "biscuit-dbg pre raw: ", DUMP_PREFIX_NONE, 16, 1, rx_df, 32, false);
+	dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
 
 	/*
 	 * Firmware-missing must NOT be fatal. This FPGA only carries the
@@ -810,7 +706,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	 * dropped in and the device re-probed.
 	 */
 	ret = biscuit_spi_pcm_load_firmware(priv);
-	dev_err(dev, "biscuit-dbg: load_firmware ret=%d\n", ret);
 	if (ret < 0) {
 		dev_warn(dev,
 			 "FPGA firmware unavailable (%d); registering component anyway - mic-array capture is non-functional until /lib/firmware/%s is present, speaker playback is unaffected\n",
@@ -826,12 +721,7 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 		int att;
 
 		for (att = 0; att < 15; att++) {
-			ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
-			dev_err(dev, "biscuit-dbg: revread att=%d ret=%d rev=%u nframes=%u\n",
-				att, ret, rx_df->dsf.fpga_rev,
-				le16_to_cpu(rx_df->dsf.num_audio_frames));
-			print_hex_dump(KERN_ERR, "biscuit-dbg raw: ", DUMP_PREFIX_NONE,
-				       16, 1, rx_df, 32, false);
+			dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
 			if (dough_rev_ok(rx_df->dsf.fpga_rev))
 				break;
 			msleep(25);
@@ -852,9 +742,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 		dev_warn(dev, "FPGA revision read failed (%d); mic capture non-functional\n", ret);
 		goto register_component;
 	}
-
-	print_hex_dump(KERN_INFO, "biscuit-spi-pcm: rev-read raw: ", DUMP_PREFIX_NONE,
-		       16, 1, rx_df, 32, false);
 
 	if (!dough_rev_ok(rx_df->dsf.fpga_rev)) {
 		dev_warn(dev, "unrecognized FPGA revision %u (mic capture non-functional); speaker unaffected\n",
@@ -912,11 +799,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to enable mclk\n");
 
-	dev_err(dev, "biscuit-dbg: rates mclk=%lu sen_tg=%lu sen_cam=%lu larb2=%lu cam_smi=%lu\n",
-		clk_get_rate(priv->mclk), clk_get_rate(priv->sen_tg),
-		clk_get_rate(priv->sen_cam), clk_get_rate(priv->larb2_smi),
-		clk_get_rate(priv->cam_smi));
-
 	ret = pinctrl_select_state(priv->pinctrl, priv->state_mclk);
 	if (ret) {
 		clk_disable_unprepare(priv->mclk);
@@ -944,12 +826,7 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 
 		for (a = 0; a < 5; a++) {
 			msleep(20);
-			ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
-			dev_err(dev, "biscuit-dbg: POST-mclk revread a=%d ret=%d rev=%u mode=%u nframes=%u\n",
-				a, ret, rx_df->dsf.fpga_rev, rx_df->dsf.mode,
-				le16_to_cpu(rx_df->dsf.num_audio_frames));
-			print_hex_dump(KERN_ERR, "biscuit-dbg post raw: ", DUMP_PREFIX_NONE,
-				       16, 1, rx_df, 32, false);
+			dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
 			if (dough_rev_ok(rx_df->dsf.fpga_rev))
 				break;
 		}
