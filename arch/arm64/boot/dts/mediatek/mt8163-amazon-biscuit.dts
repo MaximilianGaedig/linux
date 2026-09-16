@@ -149,3 +149,28 @@
 &memory {
 	reg = <0 0x40000000 0 0x1f800000>;
 };
+
+/*
+ * Keep the rails the stock kernel keeps.
+ *
+ * Nothing in this devicetree claims these as supplies yet, so
+ * regulator_init_complete() switches them off as "unused" - the log line
+ * "va: disabling / vgp2: disabling / vcamaf: disabling" is the kernel
+ * cutting power to peripherals we are trying to talk to. Once that happens
+ * the IS31FL3236 stops ACKing on i2c0 (write returns -ENXIO) and the
+ * TLV320 codecs report invalid supply voltages.
+ *
+ * biscuit.dtsi in the FireOS 3.18 source marks all of these always-on, so
+ * mirror it rather than guess which peripheral sits on which rail. These
+ * can be narrowed later by giving each consumer a proper *-supply phandle.
+ */
+&mt6323_va_reg        { regulator-always-on; };
+&mt6323_vgp1_reg      { regulator-always-on; };
+&mt6323_vgp2_reg      { regulator-always-on; };
+&mt6323_vcamaf_reg    { regulator-always-on; };
+&mt6323_vmch_reg      { regulator-always-on; };
+&mt6323_vemc3v3_reg   { regulator-always-on; };
+&mt6323_vio18_reg     { regulator-always-on; };
+&mt6323_vio28_reg     { regulator-always-on; };
+&mt6323_vm_reg        { regulator-always-on; };
+&mt6323_vmc_reg       { regulator-always-on; };
