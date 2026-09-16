@@ -2339,55 +2339,80 @@ void wmt_dev_send_cmd_to_daemon(UINT32 cmd)
 }
 
 /*
- * biscuit: in-kernel WiFi bring-up, no userspace launcher needed.
+ * In-kernel replacement for Android's wmt_loader + wmt_launcher.
  *
- * Replicates exactly what stock userspace (6620_launcher) does on /dev/stpwmt to
- * turn WiFi on: SET_STP_MODE(0x23) -> WMT_OPID_HIF_CONF, then FUNC_ONOFF_CTRL
- * wifi-on. This is the tail of the WMT_IOCTL_SET_STP_MODE + WMT_IOCTL_FUNC_ONOFF
- * ioctl handlers, lifted out so the connectivity auto-up kthread can call it.
+ * Nothing here runs from an initcall. The first consumer that actually needs
+ * the combo chip - the WLAN driver registering its probe callback, or the BT
+ * HCI device being opened - calls mtk_wcn_wmt_core_up(). Those consumers are
+ * modules loaded from the root filesystem (or run after it is mounted), so
+ * the request_firmware() calls behind it (WMT_SOC.cfg in WMT_init, the ROM
+ * patches and WIFI_RAM_CODE on function-on) find /lib/firmware without the
+ * files having to be copied into the initrd.
  *
- * MUST be called only AFTER do_connectivity_driver_init() has created the WMT
- * (i.e. /dev/stpwmt exists). Returns 0 once the WiFi function is ON.
+ * It does, once each:
+ *  1. do_connectivity_driver_init(): WMT_init -> wmt_lib_init, which reads
+ *     WMT_SOC.cfg and registers the consys platform driver;
+ *  2. once that platform device has probed, SET_STP_MODE(0x23) +
+ *     WMT_OPID_HIF_CONF - what the launcher does on /dev/stpwmt.
+ * A consumer that finds the consys device not yet probed gets -EPROBE_DEFER
+ * and step 2 is retried by the next caller.
  */
-int wmt_lib_biscuit_wifi_up(void)
-{
-	P_OSAL_OP pOp;
-	MTK_WCN_BOOL bRet;
-	P_WMT_HIF_CONF pHif;
-	INT32 iRet;
+extern int do_connectivity_driver_init(int chip_id);
+extern bool mtk_wcn_consys_hw_probed(void);
 
-	/* SET_STP_MODE(0x23) = STP_BTIF_FULL + FM_COMM, as stock's launcher sends */
-	iRet = wmt_lib_set_hif(0x23);
-	if (0 != iRet) {
-		WMT_ERR_FUNC("wifi auto-up: wmt_lib_set_hif fail (%d)\n", iRet);
-		return -1;
+static bool gWmtLibInitOk;
+
+INT32 mtk_wcn_wmt_core_up(void)
+{
+	static DEFINE_MUTEX(lock);
+	static bool stp_launched;
+	P_OSAL_OP pOp;
+	INT32 iRet = 0;
+
+	mutex_lock(&lock);
+	if (stp_launched)
+		goto out;
+
+	do_connectivity_driver_init(0x6625);
+	if (!gWmtLibInitOk) {
+		WMT_ERR_FUNC("WMT core init failed, not launching STP\n");
+		iRet = -ENODEV;
+		goto out;
+	}
+	if (!mtk_wcn_consys_hw_probed()) {
+		WMT_WARN_FUNC("consys not probed yet, deferring STP launch\n");
+		iRet = -EPROBE_DEFER;
+		goto out;
 	}
 
+	/* SET_STP_MODE(0x23) = STP_BTIF_FULL + FM_COMM, as the launcher sends */
+	if (wmt_lib_set_hif(0x23)) {
+		WMT_ERR_FUNC("wmt_lib_set_hif fail\n");
+		iRet = -EIO;
+		goto out;
+	}
 	pOp = wmt_lib_get_free_op();
 	if (!pOp) {
-		WMT_ERR_FUNC("wifi auto-up: wmt_lib_get_free_op fail\n");
-		return -1;
+		WMT_ERR_FUNC("wmt_lib_get_free_op fail\n");
+		iRet = -ENOMEM;
+		goto out;
 	}
 	pOp->op.opId = WMT_OPID_HIF_CONF;
-	pHif = wmt_lib_get_hif();
-	osal_memcpy(&pOp->op.au4OpData[0], pHif, sizeof(WMT_HIF_CONF));
+	osal_memcpy(&pOp->op.au4OpData[0], wmt_lib_get_hif(), sizeof(WMT_HIF_CONF));
 	pOp->op.u4InfoBit = WMT_OP_HIF_BIT;
 	pOp->signal.timeoutValue = 0;
-	bRet = wmt_lib_put_act_op(pOp);
-	if (MTK_WCN_BOOL_FALSE == bRet) {
-		WMT_ERR_FUNC("wifi auto-up: WMT_OPID_HIF_CONF fail\n");
-		return -1;
+	if (MTK_WCN_BOOL_FALSE == wmt_lib_put_act_op(pOp)) {
+		WMT_ERR_FUNC("WMT_OPID_HIF_CONF fail\n");
+		iRet = -EIO;
+		goto out;
 	}
-
-	/* FUNC_ONOFF_CTRL(0x80000003) = WiFi function ON */
-	bRet = mtk_wcn_wmt_func_on(WMTDRV_TYPE_WIFI);
-	if (MTK_WCN_BOOL_FALSE == bRet) {
-		WMT_ERR_FUNC("wifi auto-up: mtk_wcn_wmt_func_on(WIFI) fail\n");
-		return -1;
-	}
-	WMT_INFO_FUNC("wifi auto-up: WiFi function ON ok\n");
-	return 0;
+	stp_launched = true;
+	WMT_INFO_FUNC("WMT core up, STP launched\n");
+out:
+	mutex_unlock(&lock);
+	return iRet;
 }
+EXPORT_SYMBOL(mtk_wcn_wmt_core_up);
 
 static int WMT_init(void)
 {
@@ -2444,6 +2469,7 @@ static int WMT_init(void)
 	}
 #endif
 	ret = wmt_lib_init();
+	gWmtLibInitOk = !ret;
 	if (ret) {
 		/* Do not abandon the rest of WMT_init: the driver works
 		 * afterwards.
