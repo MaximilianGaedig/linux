@@ -351,6 +351,56 @@
 &mt6323_vm_reg        { regulator-always-on; };
 &mt6323_vmc_reg       { regulator-always-on; };
 
+/*
+ * AFE (audio front end). Disabled by default in mt8163.dtsi since only
+ * boards that actually populate audio codecs should probe it - biscuit has
+ * a full mic array + speaker codec, so turn it on here.
+ */
+&afe {
+	status = "okay";
+	#sound-dai-cells = <1>;
+
+	/* Mux the speaker I2S port (I2S1: pins 46/47/48 + MCLK 15) out to the
+	 * aic32x4; without this the AFE clocks I2S1 internally but the pads
+	 * stay GPIOs and no audio reaches the codec. */
+	pinctrl-names = "default";
+	/*
+	 * No pinctrl here at all.
+	 *
+	 * The I2S1 pads (72/73/74) are owned by the mic-array FPGA driver,
+	 * which muxes them with its own "active" state - two consumers
+	 * claiming the same pins makes pinctrl fail and takes the whole sound
+	 * card down. The amplifier gain pins cannot be driven from pinctrl
+	 * either: mainline's pinctrl-mtk-common implements no
+	 * PIN_CONFIG_OUTPUT, so an "output-high" group fails with
+	 * "pin_config_group_set op failed" and leaves the card in deferred
+	 * probe forever. They are requested as GPIOs by the machine driver.
+	 */
+};
+
+/*
+ * Sound card. MT8163 has no in-tree ASoC machine driver, so wire the AFE's
+ * I2S CPU DAIs to codecs with the generic simple-audio-card binding instead
+ * of writing one.
+ *
+ * Speaker: DL1 (front-end playback memif) -> AFE I2S0 backend -> aic32x4 on
+ * i2c2. Confirmed against Amazon's own stock machine driver: their
+ * "TI_DAC_Playback" dai_link uses cpu_dai_name = MT_SOC_DL1DAI_NAME, i.e.
+ * the same DL1 front-end.
+ *
+ * Mic array: NOT wired through the AFE at all. Reverse-engineering Amazon's
+ * stock dai_link table (mt_soc_machine.c) showed the real capture path is
+ * "AMZN_SPI_Capture": cpu_dai_name = platform_name = AMZN_MT_SPI_PCM, a
+ * fully custom driver (amzn-spi-pcm/) that bit-bangs a "dough" FPGA over
+ * SPI. The four aic3x mic codecs output I2S into that FPGA - not into the
+ * SoC - which mixes/packages all channels and hands finished frames back to
+ * the SoC over SPI0. See mt8163-amazon-biscuit-peripherals.dtsi for the
+ * FPGA node and drivers/spi mt8163-spi-fpga-pcm.c for the driver this
+ * links against. mic0_codec (i2c0@0x18) is kept as the codec side purely
+ * because Amazon's own link pairs it that way (codec_name =
+ * "tlv320aic3101.0-0018") - it is presumably used for control/gain only,
+ * since audio samples never actually cross I2C.
+ */
 / {
 	/*
 	 * The mic array's master clock.
@@ -386,6 +436,65 @@
 		#clock-cells = <0>;
 		clock-frequency = <9600000>;
 		clock-output-names = "mic_mclk";
+	};
+
+	sound: sound {
+		compatible = "amazon,biscuit-audio";
+		mediatek,platform = <&afe>;
+		/*
+		 * Enabled by a DAPM supply widget so the amplifier is powered
+		 * only while a playback stream is up - it hisses audibly when
+		 * held on with nothing driving it, and stock refcounts it the
+		 * same way.
+		 */
+		ext-spk-amp-supply = <&ext_spk_amp>;
+		ext-spk-amp2-supply = <&ext_spk_amp2>;
+		/*
+		 * MT8163's AFE splits playback into a front-end memif (DL1)
+		 * and a separate I2S back-end DAI; only a DPCM card can bind
+		 * them. simple-audio-card built a plain DL1<->codec link, which
+		 * left the I2S port unconfigured so nothing was ever clocked
+		 * out of the SoC pins and the speaker stayed silent.
+		 *
+		 * I2S DAIs here are unidirectional: I2S0/I2S2 capture,
+		 * I2S1/I2S3 playback - so the speaker back-end is I2S1.
+		 * Combined DAI indices: DL1=0 DL2=1 VUL=2 AWB=3
+		 *                       I2S0=4 I2S1=5 I2S2=6 I2S3=7
+		 */
+		mediatek,fe-dai = <&afe 0>;    /* DL1 front-end memif */
+		mediatek,be-dai = <&afe 5>;    /* I2S1 playback back-end */
+		mediatek,audio-codec = <&aic32x4_codec>;
+		/*
+		 * Mic array: a self-contained capture component (CPU DAI and
+		 * PCM platform in one), not an AFE back end - see the comment
+		 * above and mt8163-spi-fpga-pcm.c.
+		 */
+		amazon,mic-fpga = <&spi_pcm_fpga>;
+		/*
+		 * Only the first ADC is named here. It is the TDM bit- and
+		 * frame-clock master for the whole array; the other three are
+		 * slaves on the same bus, exactly as Amazon's own machine
+		 * driver wires it (their "AMZN_SPI_Capture" link names only
+		 * tlv320aic3101.0-0018).
+		 */
+		amazon,mic-codec = <&mic0_codec>, <&mic1_codec>,
+				   <&mic2_codec>, <&mic3_codec>;
+		/*
+		 * 3.5mm line-out insertion detect. Amazon's downstream "accdet"
+		 * is a full MediaTek headset block (mic-bias comparator + 3
+		 * button ADC decode via the MT6323 PMIC), which mainline has no
+		 * mt8163 driver for - but the part that matters on a line-OUT
+		 * jack is just presence, and that is a plain GPIO (their
+		 * accdet-gpio = <&pio 26 0>, EINT4). Wire it as an ASoC jack.
+		 */
+		amazon,hp-det-gpios = <&pio 26 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		/*
+		 * aud_pins_spk_i2s1 routes I2S1 to pins 46/47/48, the pads the
+		 * speaker codec listens on. Without it the AFE clocks I2S1 out
+		 * to the FPGA pads only and the codec never sees a bit clock.
+		 */
+		pinctrl-0 = <&hp_det_pins>, <&aud_pins_spk_i2s1>;
 	};
 };
 
