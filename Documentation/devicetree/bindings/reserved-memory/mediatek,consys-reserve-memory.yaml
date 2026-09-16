@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/reserved-memory/mediatek,consys-reserve-memory.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek CONSYS reserved memory
+
+maintainers:
+  - Maximilian Gaedig <mg@maximiliangaedig.com>
+
+description:
+  Memory reserved for the MediaTek connectivity subsystem (CONSYS). CONSYS
+  uses it to hold firmware, ROM patches and coredumps of the combo chip.
+  The memory is not mapped by the operating system.
+
+allOf:
+  - $ref: reserved-memory.yaml
+
+properties:
+  compatible:
+    const: mediatek,consys-reserve-memory
+
+required:
+  - compatible
+  - no-map
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    reserved-memory {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        consys-reserve-memory {
+            compatible = "mediatek,consys-reserve-memory";
+            no-map;
+            size = <0x200000>;
+            alignment = <0x200000>;
+        };
+    };
