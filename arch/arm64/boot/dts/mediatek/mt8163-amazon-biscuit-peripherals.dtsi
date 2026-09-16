@@ -357,17 +357,18 @@
 
 	aic32x4_codec: tlv320aic32x4@18 {
 		/*
-		 * Analogue power-up flags, the value Amazon's driver hardcodes:
-		 * AVDD_DVDD_WEAK_DISABLE | AIC32X4_LDO_ENABLE |
-		 * CMMODE_LDOIN_RANGE_18_36 | CMMODE_HP_LDOIN_POWERED.
+		 * Analogue power-up configuration, as Amazon's driver hardcodes it.
 		 *
-		 * The last one is what matters here: this board's amplifier is
-		 * fed from the headphone drivers, and those run off LDOIN. With
-		 * power_cfg left at zero the codec produces a flawless
-		 * bitstream into an output stage that was never powered, which
-		 * is audible as nothing at all.
+		 * ti,hp-ldoin-powered is what matters here: this board's
+		 * amplifier is fed from the headphone drivers, and those run off
+		 * LDOIN. Without it the codec produces a flawless bitstream into
+		 * an output stage that was never powered, which is audible as
+		 * nothing at all.
 		 */
-		ti,power-cfg = <0x1e>;
+		ti,avdd-dvdd-weak-disable;
+		ti,avdd-ldo-enable;
+		ti,ldoin-range-1v8-3v6;
+		ti,hp-ldoin-powered;
 		/* Amazon's driver sets the 1.65V headphone common mode. */
 		ti,hp-common-mode-microvolt = <1650000>;
 		#sound-dai-cells = <0>;
