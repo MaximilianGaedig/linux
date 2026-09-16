@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/soc/mediatek/mediatek,mt8163-consys.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek MT8163 connectivity subsystem (CONSYS)
+
+maintainers:
+  - Maximilian Gaedig <mg@maximiliangaedig.com>
+
+description:
+  CONSYS is the connectivity MCU subsystem integrated in the MT8163 SoC. It
+  runs the firmware for an external MT6625L WiFi/Bluetooth/GPS/FM RF combo
+  chip and exchanges control messages with the AP through the WMT/STP
+  protocol. The AP powers the subsystem through the CONN power domain and the
+  PMIC connectivity rails, and releases the MCU from reset through TOPRGU.
+
+properties:
+  compatible:
+    const: mediatek,mt8163-consys
+
+  reg:
+    items:
+      - description: CONN MCU configuration registers
+      - description: AP reset generation unit (TOPRGU) registers
+      - description: TOPCKGEN registers
+
+  interrupts:
+    items:
+      - description: BGF (Bluetooth/GPS/FM) interrupt
+      - description: CONSYS watchdog interrupt
+
+  power-domains:
+    maxItems: 1
+
+  memory-region:
+    maxItems: 1
+    description:
+      Reserved memory used by CONSYS for firmware, ROM patches and coredumps.
+
+  clocks:
+    maxItems: 1
+
+  clock-names:
+    const: consysbus
+
+  resets:
+    maxItems: 1
+
+  reset-names:
+    const: connsys
+
+  pinctrl-0: true
+  pinctrl-1: true
+  pinctrl-2: true
+
+  pinctrl-names:
+    contains:
+      const: consys_pins_default
+    description:
+      The consys_pins_default state muxes the antenna select pins of the
+      combo chip.
+
+  vcn18-supply:
+    description: 1.8 V connectivity supply
+  vcn28-supply:
+    description: 2.8 V connectivity supply
+  vcn33_bt-supply:
+    description: 3.3 V Bluetooth supply
+  vcn33_wifi-supply:
+    description: 3.3 V WiFi supply
+
+required:
+  - compatible
+  - reg
+  - interrupts
+  - power-domains
+  - resets
+  - reset-names
+  - vcn18-supply
+  - vcn28-supply
+  - vcn33_bt-supply
+  - vcn33_wifi-supply
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #include <dt-bindings/interrupt-controller/irq.h>
+
+    soc {
+        #address-cells = <2>;
+        #size-cells = <2>;
+
+        consys@18070000 {
+            compatible = "mediatek,mt8163-consys";
+            reg = <0 0x18070000 0 0x0200>,
+                  <0 0x10007000 0 0x0100>,
+                  <0 0x10001000 0 0x1000>;
+            interrupts = <GIC_SPI 237 IRQ_TYPE_LEVEL_LOW>,
+                         <GIC_SPI 236 IRQ_TYPE_LEVEL_LOW>;
+            power-domains = <&spm 7>;
+            memory-region = <&consys_reserved_memory>;
+            resets = <&watchdog 12>;
+            reset-names = "connsys";
+            pinctrl-names = "default", "consys_pins_default";
+            pinctrl-0 = <&wifi_reset_init>;
+            pinctrl-1 = <&consys_pins_default>;
+            vcn18-supply = <&mt6323_vcn18_reg>;
+            vcn28-supply = <&mt6323_vcn28_reg>;
+            vcn33_bt-supply = <&mt6323_vcn33_bt_reg>;
+            vcn33_wifi-supply = <&mt6323_vcn33_wifi_reg>;
+        };
+    };
