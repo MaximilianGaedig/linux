@@ -110,33 +110,16 @@ phys_addr_t gConEmiPhyBase;
 EXPORT_SYMBOL(gConEmiPhyBase);
 static UINT8 __iomem *pEmibaseaddr;
 
-/* 1 = run the 2MB AP write/readback test at consys power-on (slow) */
-static int biscuit_emitest;
-module_param(biscuit_emitest, int, 0644);
 static struct clk *clk_infra_conn_main;	/*ctrl infra_connmcu_bus clk */
 static struct platform_device *my_pdev;
 static struct reset_control *rstc;
 
 /*
- * Actually drop the four connectivity rails on power-off.
- *
- * Off by default, and deliberately so.  Now that the device tree no longer
- * pins these rails with "regulator-always-on", regulator_disable() in the
- * power-down path really can turn them off - and on this board that resets
- * the whole machine: the cycle test below reboots within one off/on round,
- * coming back with a fresh uptime and no oops or panic text on the console,
- * which is what a hardware reset looks like rather than a kernel crash.
- * Something outside CONNSYS is fed from these rails, or their collapse
- * browns out a domain that is.
- *
- * Everything else in the power-down sequence - stopping the MCU, dropping
- * the bus clock, releasing runtime PM - still runs, so this only controls
- * the very last step.  Set biscuit_pwroff_rails=1 to opt back in when
- * measuring what a genuine chip power cycle does.
+ * The connectivity rails are deliberately left enabled on power-off: on this
+ * board regulator_disable() on them resets the whole machine (something
+ * outside CONNSYS is fed from them, or their collapse browns out a domain
+ * that is). The rest of the power-down sequence still runs.
  */
-static int biscuit_pwroff_rails;
-module_param(biscuit_pwroff_rails, int, 0644);
-MODULE_PARM_DESC(biscuit_pwroff_rails, "drop VCN18/VCN28 on CONNSYS power-off (resets this board)");
 static struct regulator *reg_VCN18;
 static struct regulator *reg_VCN28;
 static struct regulator *reg_VCN33_BT;
@@ -707,54 +690,6 @@ INT32 mtk_wcn_consys_hw_reg_ctrl(UINT32 on, UINT32 co_clock_type)
 			void __iomem *pucAll = ioremap(gConEmiPhyBase, 2 * 1024 * 1024);
 
 			if (pucAll) {
-				/*
-				 * Before zeroing, prove the AP can write and read
-				 * back this DRAM reliably.
-				 *
-				 * The chip's own core-dump text arrives with 32-byte
-				 * holes punched through it, and those holes land in
-				 * DIFFERENT places on every boot (14 of 32 blocks
-				 * differ between two runs) - so writes into this
-				 * region are being lost, not merely unwritten. That
-				 * would also corrupt the firmware's own EMI data
-				 * (it stores to 0xf0063xxx), which is reason enough
-				 * to crash. This says whether the loss is on the AP
-				 * side (DRAM / reservation / mapping) or the chip's.
-				 */
-				UINT32 u4Off, u4Bad = 0, u4FirstBad = 0xffffffff;
-
-				/*
-				 * RESULT (kept for the record): bad=0/524288 words
-				 * over the full 2MB. The AP can write and read this
-				 * DRAM perfectly, so the reservation, the mapping and
-				 * the memory itself are all sound - the 32-byte holes
-				 * in the chip's core dump are on the chip's side.
-				 * They are almost certainly MCU cache lines that were
-				 * never written back rather than lost transactions,
-				 * since the firmware DOWNLOAD - also a chip write to
-				 * EMI, but via the download engine - lands with zero
-				 * holes (sec2: 0/8078 empty blocks).
-				 *
-				 * Off by default; set biscuit_emitest=1 to re-run.
-				 */
-				if (!biscuit_emitest)
-					goto skip_emitest;
-
-				for (u4Off = 0; u4Off < 2 * 1024 * 1024; u4Off += 4)
-					writel(0xA5000000u | u4Off, pucAll + u4Off);
-				/* make sure nothing is sitting in a write buffer */
-				wmb();
-				for (u4Off = 0; u4Off < 2 * 1024 * 1024; u4Off += 4) {
-					if (readl(pucAll + u4Off) != (0xA5000000u | u4Off)) {
-						if (u4FirstBad == 0xffffffff)
-							u4FirstBad = u4Off;
-						u4Bad++;
-					}
-				}
-				WMT_PLAT_INFO_FUNC("biscuit-emitest: AP write/readback bad=%u/%u words, first bad +0x%x\n",
-						   u4Bad, (UINT32)(2 * 1024 * 1024 / 4), u4FirstBad);
-skip_emitest:
-
 				memset_io(pucAll, 0, 2 * 1024 * 1024);
 				iounmap(pucAll);
 			} else {
@@ -850,30 +785,6 @@ skip_emitest:
 		} else {
 			if (pmic_regmap)
 				regmap_update_bits(pmic_regmap, 0x41C, 0x1 << 14, 0x0 << 14);/*V28*/
-			/*turn off VCN28 LDO (with PMIC_WRAP API)" */
-			if (reg_VCN28 && biscuit_pwroff_rails) {
-				if (regulator_disable(reg_VCN28))
-					WMT_PLAT_ERR_FUNC("disable VCN_2V8 fail!\n");
-				else
-					WMT_PLAT_DBG_FUNC("disable VCN_2V8 ok\n");
-			}
-		}
-
-		/*
-		 * AP power off MT6625L VCN_1V8 LDO.
-		 *
-		 * The regulator_set_mode(REGULATOR_MODE_STANDBY) that used to
-		 * sit here is gone.  It dereferenced reg_VCN18 outside the NULL
-		 * check immediately below it, MT6323's regulator driver has no
-		 * .set_mode so the call could only ever fail, and STANDBY is the
-		 * inverse of what the vendor driver does to this rail anyway
-		 * (see the LP-mode comment in the power-up path above).
-		 */
-		if (reg_VCN18 && biscuit_pwroff_rails) {
-			if (regulator_disable(reg_VCN18))
-				WMT_PLAT_ERR_FUNC("disable VCN_1V8 fail!\n");
-			else
-				WMT_PLAT_DBG_FUNC("disable VCN_1V8 ok\n");
 		}
 
 		/* give the rails time to settle before the chip is powered up again */
@@ -1154,50 +1065,6 @@ static const struct reserved_mem_ops consys_rmem_ops = {
 RESERVEDMEM_OF_DECLARE(consys, "mediatek,consys-reserve-memory", &consys_rmem_ops);
 
 
-/*
- * /proc/biscuit_emi - read the CONNSYS EMI window.
- *
- * The WiFi firmware image is encrypted on disk and the chip decrypts it as it
- * places it, so this DRAM holds the only plaintext copy of that firmware that
- * exists anywhere. Reading it back is the difference between guessing what the
- * firmware waits for and looking at it. /dev/mem cannot reach it: this is a
- * no-map reserved region and has no kernel mapping to hand out.
- */
-static ssize_t biscuit_emi_read(struct file *f, char __user *buf, size_t len, loff_t *off)
-{
-	void __iomem *p;
-	void *tmp;
-	size_t n;
-
-	if (!gConEmiPhyBase || *off >= (2 * 1024 * 1024))
-		return 0;
-	n = min(len, (size_t)(2 * 1024 * 1024 - (size_t)*off));
-	n = min(n, (size_t)(64 * 1024));
-
-	p = ioremap(gConEmiPhyBase + *off, n);
-	if (!p)
-		return -EIO;
-	tmp = kmalloc(n, GFP_KERNEL);
-	if (!tmp) {
-		iounmap(p);
-		return -ENOMEM;
-	}
-	memcpy_fromio(tmp, p, n);
-	iounmap(p);
-	if (copy_to_user(buf, tmp, n)) {
-		kfree(tmp);
-		return -EFAULT;
-	}
-	kfree(tmp);
-	*off += n;
-	return n;
-}
-
-static const struct proc_ops biscuit_emi_fops = {
-	.proc_read = biscuit_emi_read,
-	.proc_lseek = default_llseek,
-};
-
 INT32 mtk_wcn_consys_hw_init(void)
 {
 
@@ -1205,9 +1072,6 @@ INT32 mtk_wcn_consys_hw_init(void)
 	UINT32 addrPhy = 0;
 	INT32 i = 0;
 	struct device_node *node = NULL;
-
-	/* create this early - later paths in this function can return first */
-	proc_create("biscuit_emi", 0400, NULL, &biscuit_emi_fops);
 
 	node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-consys");
 	if (node) {
