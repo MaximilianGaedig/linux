@@ -108,7 +108,7 @@ config SND_SOC_MT8163_BISCUIT
 
 config SND_SOC_MT8163_SPI_FPGA
 	tristate "ASoC support for the Amazon Echo Dot 2 (biscuit) mic-array FPGA"
-	depends on SPI_MASTER
+	depends on SND_SOC_MT8163 && SPI_MASTER && OF
 	select GPIOLIB
 	help
 	  This adds a SPI-attached ASoC CPU DAI/platform driver for the
