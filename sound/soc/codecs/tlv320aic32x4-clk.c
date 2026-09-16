@@ -167,19 +167,14 @@ static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 		return -1;
 
 	/*
-	 * Search P rather than deriving it.
+	 * Search P rather than deriving it from the input rate.
 	 *
-	 * P used to be fixed at parent_rate / 20MHz + 1, which is 1 for any
-	 * master clock at or below 20MHz. That leaves exactly one candidate
-	 * multiplier, and if it happens to be fractional there is no fallback
-	 * - on a 9.6MHz clock every rate this driver wants came out fractional
-	 * with a 9.6MHz PLL input, which the part only permits at 10MHz and
-	 * above. Dividing the input down first makes integer-mode solutions
-	 * reachable: 9.6MHz / 5 * 48 is 92.16MHz exactly, which is the setting
-	 * the vendor driver uses on this hardware.
+	 * A fractional multiplier (D != 0) is only allowed with a PLL input of
+	 * at least 10MHz, so for lower master clocks the only usable settings
+	 * are integer-mode ones, and those may need P > 1 to exist at all: a
+	 * 9.6MHz MCLK reaches 92.16MHz only as 9.6MHz / 5 * 48.
 	 *
-	 * Prefer the smallest P that yields D == 0, and only fall back to a
-	 * fractional solution when the input is high enough to allow one.
+	 * The first P, counting up from 1, that gives a legal setting is used.
 	 */
 	for (try_p = 1; try_p <= 8; try_p++) {
 		settings->p = try_p;
@@ -218,11 +213,6 @@ static int clk_aic32x4_pll_calc_muldiv(struct clk_aic32x4_pll_muldiv *settings,
 		if (settings->d && parent_rate / settings->p < 10000000)
 			continue;
 
-		/* Exact hit: no fractional part, nothing better to look for. */
-		if (!settings->d)
-			return 0;
-
-		/* Legal fractional solution - keep it, but keep looking. */
 		return 0;
 	}
 
