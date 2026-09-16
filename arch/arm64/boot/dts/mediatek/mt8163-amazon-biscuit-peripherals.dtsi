@@ -12,6 +12,7 @@
 
 #include <dt-bindings/pinctrl/mt65xx.h>
 #include <dt-bindings/leds/common.h>
+#include <dt-bindings/sound/tlv320adc3xxx.h>
 
 /*
  * A leds-group-multicolor grouping layer (one node per physical LED,
@@ -243,6 +244,109 @@
 	light_sensor: tsl2583@29 {
 		compatible = "amstaos,tsl2583";
 		reg = <0x29>;
+	};
+
+	/*
+	 * Mic array: four TLV320ADC3101 stereo ADCs on a shared TDM bus.
+	 *
+	 * These were previously described as "ti,tlv320aic3x", which binds
+	 * mainline's AIC3x driver - a completely different register map. The
+	 * parts are ADC31xx-family: Amazon's own driver for them
+	 * (tlv320aic3101.c in their GPL kernel) is written entirely against
+	 * AIC31XX_* registers and registers itself with i2c id "tlv320adc3101".
+	 * Every register write the AIC3x driver made therefore landed at the
+	 * wrong address; the codecs "bound" only because their I2C probe ACKed,
+	 * and they never clocked any I2S into the FPGA (which reported
+	 * i2s_inactive=1 forever).
+	 *
+	 * Only the first codec carries the enable line and the clock, matching
+	 * Amazon's biscuit.dtsi exactly - the other three share both.
+	 */
+	mic0_codec: tlv320adc3101@18 {
+		compatible = "ti,tlv320adc3101";
+		reg = <0x18>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic0";
+		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
+		/*
+		 * Amazon calls pin 35 "enable-gpio" active-high; as a reset
+		 * line that is the same pin with inverted sense, so declare it
+		 * ACTIVE_LOW and the driver's "assert reset" drives it low =
+		 * array disabled.
+		 */
+		reset-gpios = <&pio 35 GPIO_ACTIVE_LOW>;
+		clocks = <&mic_mclk>;
+		clock-names = "mclk";
+
+	};
+
+	mic1_codec: tlv320adc3101@19 {
+		compatible = "ti,tlv320adc3101";
+		reg = <0x19>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic1";
+		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
+		clocks = <&mic_mclk>;
+		clock-names = "mclk";
+
+	};
+
+	mic2_codec: tlv320adc3101@1a {
+		compatible = "ti,tlv320adc3101";
+		reg = <0x1a>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic2";
+		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
+		clocks = <&mic_mclk>;
+		clock-names = "mclk";
+
+	};
+
+	mic3_codec: tlv320adc3101@1b {
+		compatible = "ti,tlv320adc3101";
+		reg = <0x1b>;
+		#sound-dai-cells = <0>;
+		sound-name-prefix = "Mic3";
+		/*
+		 * Both MICBIAS pins at 2.5V. The analogue mics are powered
+		 * from these, and mainline defaults them off, so without this
+		 * the ADCs clock and deliver frames perfectly while every
+		 * sample reads zero. Amazon's driver writes the same thing
+		 * unconditionally: AIC3X_MICBIAS_2_5V into both fields of
+		 * MICBIAS_CTRL.
+		 */
+		ti,micbias1-vg = <ADC3XXX_MICBIAS_2_5V>;
+		ti,micbias2-vg = <ADC3XXX_MICBIAS_2_5V>;
+		clocks = <&mic_mclk>;
+		clock-names = "mclk";
+
 	};
 };
 
