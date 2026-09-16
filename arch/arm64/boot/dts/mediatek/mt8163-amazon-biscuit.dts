@@ -350,6 +350,59 @@
 &mt6323_vio28_reg     { regulator-always-on; };
 &mt6323_vm_reg        { regulator-always-on; };
 &mt6323_vmc_reg       { regulator-always-on; };
+/*
+ * MT6625L combo chip power rails - none of mt6323.dtsi's regulator nodes
+ * for these are always-on, and nothing enables them until the WMT
+ * userspace power-on ioctl runs, well after mmc1's own boot-time SDIO
+ * probe has already given up on an unpowered chip. Force them up from
+ * boot so the chip is actually alive by the time mmc core probes it.
+ */
+/*
+ * The four connectivity rails are NOT always-on.
+ *
+ * They used to be, from the very first bring-up commit, on the theory
+ * that the combo chip simply needed power present.  But the WMT platform
+ * driver enable/disable-manages all four itself (reg_VCN18/reg_VCN28 in
+ * mtk_wcn_consys_hw_reg_ctrl(), reg_VCN33_BT/reg_VCN33_WIFI in the BT and
+ * WiFi func paths), so "always-on" added nothing on the way up and broke
+ * the way down: the regulator core refuses to drop an always-on rail, so
+ * regulator_disable() in the power-off path silently did nothing.
+ *
+ * The consequence is that CONSYS was never actually power-cycled - not by
+ * a WMT func off/on, and not by a warm reboot either, since the PMIC keeps
+ * its state across an AP restart.  Only physically unplugging the device
+ * ever dropped these rails.  That is why a soft re-init wedges the chip
+ * after a few cycles (each "power off" leaves the MCU running on live
+ * rails with its clock pulled out from under it) and why cold and warm
+ * boots behave differently at all.
+ *
+ * regulator-boot-on records that the bootloader leaves them enabled, so
+ * the core does not glitch them off before the driver claims them.
+ */
+&mt6323_vcn18_reg      { regulator-boot-on; };
+&mt6323_vcn28_reg      { regulator-boot-on; };
+&mt6323_vcn33_bt_reg   { regulator-boot-on; };
+&mt6323_vcn33_wifi_reg { regulator-boot-on; };
+
+/*
+ * MT6625L combo WiFi/BT/GPS. The CONSYS subsystem block is described in
+ * mt8163.dtsi but left disabled there, since only boards that actually
+ * populate the combo chip should probe it.
+ */
+&consys {
+	/*
+	 * Re-enabled: bisection showed the earlier hang persisted even with
+	 * this node disabled, so it was never actually the cause - the real
+	 * blocker was the missing btif/btif_tx/btif_rx nodes (see mt8163.dtsi).
+	 *
+	 * pinctrl-names/pinctrl-N are already set correctly by
+	 * mt8163-amazon-common.dtsi (default/wifi_reset_init/
+	 * consys_pins_default) - don't repeat them here, an override with a
+	 * shorter pinctrl-names list would drop the "consys_pins_default"
+	 * state mtk_wmt_probe() looks up by name.
+	 */
+	status = "okay";
+};
 
 /*
  * AFE (audio front end). Disabled by default in mt8163.dtsi since only
@@ -554,6 +607,60 @@
  * partitions - request_firmware() will fail until
  * /lib/firmware/i2s_to_spi_v34.bin is populated on the target rootfs.
  */
+
+/*
+ * BTIF (HCI transport for the MT6625L combo chip). See the comment on the
+ * node in mt8163.dtsi for why this specifically was blocking boot.
+ */
+&btif {
+	status = "okay";
+};
+
+&btif_tx {
+	status = "okay";
+};
+&btif_rx {
+	status = "okay";
+};
+
+/*
+ * There is deliberately no "mediatek,connectivity-combo" node here.
+ *
+ * wmt_gpio_init() looks such a node up by of_find_compatible_node() and, if
+ * it finds one, claims gpio_combo_rst_pin / gpio_combo_pmu_en_pin as plain
+ * GPIOs and drives them. On this board those are pins 60 (WB_RSTB) and 65
+ * (WB_SEN), and requesting them as GPIOs muxes both pads out of their WB_*
+ * function and parks them at a static level.
+ *
+ * Amazon never does that. Their whole treatment of the four WB pins is the
+ * wifi_reset_init pinctrl group (biscuit.dtsi:757-765), which sets RSTB,
+ * SCLK, SDATA and SEN to "input-enable; bias-pull-up" - released, pulled up,
+ * never driven - and re-selects that state on every CONSYS power-on. Stock's
+ * DTS contains no connectivity-combo node at all, so stock's wmt_gpio_init()
+ * takes its early return and every gpio_num stays DEFAULT_PIN_ID.
+ *
+ * But the node cannot simply be deleted: on this board it is what powers the
+ * chip at all. _wmt_detect_pwr_on() (wmt_detect_pwr.c:108,153) returns early
+ * unless both gpio_nums are valid, and its _wmt_detect_output_high(PMU_EN) is
+ * the actual chip enable - remove the node and the WMT function-on fails with
+ * EFAULT and no wlan0 appears. Measured, twice.
+ *
+ * So keep the node and drive the sequence, then hand the pads back: the
+ * pinctrl_select_state("wifi_reset_init") added to
+ * mtk_wcn_consys_hw_reg_ctrl() (matching stock mtk_wcn_consys_hw.c:419-433)
+ * re-muxes 60/65 to their WB_* function as pulled-up inputs on every
+ * power-on, so they end in stock's state instead of being pinned low by a
+ * gpiod that never lets go. Holding WB_SEN low is the only board-level
+ * divergence found that could gate the 2.4 GHz front end while leaving BT
+ * (which does not pass through the WiFi FEM) and 5 GHz working.
+ */
+/ {
+	connectivity-combo {
+		compatible = "mediatek,connectivity-combo";
+		gpio_combo_rst_pin-gpios = <&pio 60 GPIO_ACTIVE_HIGH>;
+		gpio_combo_pmu_en_pin-gpios = <&pio 65 GPIO_ACTIVE_HIGH>;
+	};
+};
 
 &auxadc {
 	status = "okay";
