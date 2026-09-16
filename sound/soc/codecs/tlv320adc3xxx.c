@@ -139,6 +139,9 @@
 #define ADC3XXX_MIC_POLARITY_CTRL		ADC3XXX_REG(0, 80)
 #define ADC3XXX_ADC_DIGITAL			ADC3XXX_REG(0, 81)
 #define	ADC3XXX_ADC_FGA				ADC3XXX_REG(0, 82)
+/* ADC_FGA bits */
+#define ADC3XXX_ADC_FGA_LMUTE			BIT(7)
+#define ADC3XXX_ADC_FGA_RMUTE			BIT(3)
 #define ADC3XXX_LADC_VOL			ADC3XXX_REG(0, 83)
 #define ADC3XXX_RADC_VOL			ADC3XXX_REG(0, 84)
 #define ADC3XXX_ADC_PHASE_COMP			ADC3XXX_REG(0, 85)
@@ -1353,13 +1356,6 @@ static int adc3xxx_hw_params(struct snd_pcm_substream *substream,
 	snd_soc_component_update_bits(component, ADC3XXX_ADC_AOSR,
 				      ADC3XXX_AOSR_MASK, adc3xxx_divs[i].aosr);
 	/*
-	 * Clear the digital mute. ADC_FGA resets to 0x88 (both channels
-	 * muted), which would otherwise need a mixer change before any
-	 * capture.
-	 */
-	snd_soc_component_write(component, ADC3XXX_ADC_FGA, 0);
-
-	/*
 	 * BDIV N Value
 	 *
 	 * BCLK is (by default) derived from ADC_CLK and has to clock out the
@@ -1576,7 +1572,28 @@ static struct snd_soc_dai_driver adc3xxx_dai = {
 	.ops = &adc3xxx_dai_ops,
 };
 
+static int adc3xxx_component_probe(struct snd_soc_component *component)
+{
+	int ret;
+
+	/*
+	 * ADC_FGA resets with both channels digitally muted, and the mute is
+	 * only exposed as "PGA Capture Switch", so every part would record
+	 * silence until userspace flips it. Start unmuted, as the vendor
+	 * driver does, but leave the switch to the mixer from then on.
+	 *
+	 * This is done at component probe rather than at I2C probe so it
+	 * happens after every part on a shared reset line has been reset.
+	 */
+	ret = snd_soc_component_update_bits(component, ADC3XXX_ADC_FGA,
+					    ADC3XXX_ADC_FGA_LMUTE |
+					    ADC3XXX_ADC_FGA_RMUTE, 0);
+
+	return ret < 0 ? ret : 0;
+}
+
 static const struct snd_soc_component_driver soc_component_dev_adc3xxx = {
+	.probe			= adc3xxx_component_probe,
 	.controls		= adc3xxx_snd_controls,
 	.num_controls		= ARRAY_SIZE(adc3xxx_snd_controls),
 	.dapm_widgets		= adc3xxx_dapm_widgets,
