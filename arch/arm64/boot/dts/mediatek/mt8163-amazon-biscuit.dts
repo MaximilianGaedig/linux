@@ -101,6 +101,99 @@
 		pulldown-ohm = <0>;
 		io-channels = <&auxadc 15>;
 	};
+	/*
+	 * External speaker amplifier enable. Amazon's stock audio driver
+	 * asserts this by selecting the "extamp-pullhigh" pinctrl state
+	 * (AudDrv_GPIO_EXTAMP_Select(1)); "extamp-pulllow" drives it low to
+	 * mute. Mainline's mt8163 pinctrl (pinctrl-mtk-common) does not
+	 * implement PIN_CONFIG_OUTPUT, so an output-high pinctrl group would be
+	 * silently ignored here - drive the pin through a fixed regulator
+	 * instead, which requests the GPIO after the gpiochip is up (a gpio-hog
+	 * fails with -EPROBE_DEFER during gpiochip_add and takes the whole
+	 * pinctrl driver down with it).
+	 *
+	 * The pin is GPIO 122, not 124. biscuit.dtsi is the pre-EVT board file
+	 * and puts extamp on 124, but both shipping board files override that
+	 * group: biscuit_evt.dts:45-60 and biscuit_min_evt.dts:45-60 redefine
+	 * aud_pins_extamp_high/_low as MT8163_PIN_122_MSDC1_CLK__FUNC_GPIO122,
+	 * and introduce GPIO 124 as a separate signal - the DAC mux, see
+	 * ext_spk_dacmux below. Driving 124 therefore left the amplifier's
+	 * enable line untouched in MSDC1_CLK mode, which is why the aic32x4
+	 * could be register-for-register identical to stock and still silent.
+	 */
+	ext_spk_amp: regulator-ext-spk-amp {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-amp";
+		gpio = <&pio 122 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		/*
+		 * Deliberately not always-on. The amplifier has audible
+		 * self-noise with nothing driving it, so holding it enabled
+		 * makes the speaker hiss continuously. Stock enables it only
+		 * while a speaker stream is open and refcounts it
+		 * (AudioALSACodecDeviceOutExtSpeakerAmp::open/close writes
+		 * Ext_Speaker_Amp_Switch On/Off); the machine driver does the
+		 * same from its DAPM supply widget.
+		 */
+	};
+
+	/*
+	 * DAC output mux (stock: aud_pins_extamp_dacmux_high/_low, added in
+	 * biscuit_evt.dts:62-76, exposed to userspace as the mixer control
+	 * "Audio_DacMux_Setting"). Stock never selects either state at boot and
+	 * initialises its shadow to false, so the pad keeps its reset default;
+	 * mirror that by leaving this regulator off unless something asks for
+	 * it, rather than pinning it high the way the old 124 amp node did.
+	 */
+	/*
+	 * Second amplifier enable, on GPIO 124.
+	 *
+	 * The extracted OTA device tree (amzn0_full.dts) is the authority for
+	 * this exact board: its audio node's "extamp-pullhigh"/"extamp-pulllow"
+	 * pinctrl states drive GPIO 124 (pins = <0x7c00>), and GPIO 122 is never
+	 * referenced anywhere in it. The pre-EVT source files put extamp on 122,
+	 * which is where our first ext_spk_amp came from, but the shipped
+	 * firmware uses 124 - so drive both, DAPM-gated the same way, until a
+	 * listen test says which one actually gates the amp. Named separately so
+	 * the machine driver can pull it up as its own supply widget.
+	 */
+	ext_spk_amp2: regulator-ext-spk-amp2 {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-amp2";
+		gpio = <&pio 124 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	/*
+	 * External amplifier gain select, GPIOs 28 and 29.
+	 *
+	 * Stock's AudDrv_GPIO_EXTAMP_Gain_Set(3) drives both high for gain 3 on
+	 * every speaker-on (audexampgain3: pins <0x1c00>=GPIO28 and <0x1d00>=
+	 * GPIO29, both output-high). Our port drove neither, leaving the pads
+	 * floating - an amplifier gain input left to float can sit anywhere,
+	 * including a mute/shutdown code. Hold both high (gain 3) for the whole
+	 * session via always-on regulators; the gain input is harmless while the
+	 * amp enable is de-asserted, so it does not need DAPM gating. Regulators
+	 * (not gpio-hogs) so the pinctrl gpiochip is fully up before the pad is
+	 * requested - a hog on &pio takes the whole pinctrl driver down.
+	 */
+	ext_spk_gain_a: regulator-ext-spk-gain-a {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-gain-a";
+		gpio = <&pio 28 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	ext_spk_gain_b: regulator-ext-spk-gain-b {
+		compatible = "regulator-fixed";
+		regulator-name = "ext-spk-gain-b";
+		gpio = <&pio 29 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+	};
 
 	gpio-keys {
 		compatible = "gpio-keys";
@@ -257,6 +350,26 @@
 &mt6323_vio28_reg     { regulator-always-on; };
 &mt6323_vm_reg        { regulator-always-on; };
 &mt6323_vmc_reg       { regulator-always-on; };
+
+/ {
+	/*
+	 * The speaker codec's master clock.
+	 *
+	 * The speaker codec and the mic ADCs share ONE master clock: the
+	 * CMMCLK pad (pin 119), driven by the camera SENINF divider at 9.6MHz.
+	 * Amazon's machine driver hands the aic32x4 mt_soc_mclk_freq, which is
+	 * AIC31XX_FREQ_9600000, exactly as it does for the ADCs - and their
+	 * device tree never muxes pin 15 at all, so I2S1_MCK is not involved.
+	 * The node used to claim clk26m, so the codec computed PLL dividers
+	 * for a 26MHz clock it never receives.
+	 */
+	spk_mclk: spk-mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <9600000>;
+		clock-output-names = "spk_mclk";
+	};
+};
 
 &auxadc {
 	status = "okay";
