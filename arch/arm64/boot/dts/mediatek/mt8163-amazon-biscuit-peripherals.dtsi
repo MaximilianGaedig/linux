@@ -246,7 +246,19 @@
 	};
 };
 
+/*
+ * Mute-button privacy LED / mic-mute latch. No mainline driver exists for
+ * amz_priv; needs porting from Amazon's drivers/misc/amz_priv.c. GPIO
+ * numbers cross-referenced from Amazon's DT (amz_privacy node).
+ */
 &pio {
+	amz_privacy: amz-privacy {
+		compatible = "amazon,privacy";
+		gpios = <&pio 87 GPIO_ACTIVE_HIGH>;
+		bright-state-gpio = <&pio 88 GPIO_ACTIVE_HIGH>;
+		hw_latch = <0>;
+	};
+
 	i2c0_pins_default: i2c0-pins {
 		pins {
 			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
