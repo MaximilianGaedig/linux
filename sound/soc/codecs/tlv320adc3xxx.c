@@ -97,6 +97,8 @@
 #define ADC3XXX_INTERFACE_CTRL_1		ADC3XXX_REG(0, 27)
 #define ADC3XXX_CH_OFFSET_1			ADC3XXX_REG(0, 28)
 #define ADC3XXX_INTERFACE_CTRL_2		ADC3XXX_REG(0, 29)
+/* Keep BCLK/WCLK driven while the codec is powered down. */
+#define ADC3XXX_BCLK_WCLK_ACTIVE		BIT(2)
 #define ADC3XXX_BCLK_N_DIV			ADC3XXX_REG(0, 30)
 #define ADC3XXX_INTERFACE_CTRL_3		ADC3XXX_REG(0, 31)
 #define ADC3XXX_INTERFACE_CTRL_4		ADC3XXX_REG(0, 32)
@@ -1487,6 +1489,12 @@ static int adc3xxx_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	else if (!master && adc3xxx->master)
 		snd_soc_dapm_del_routes(dapm, adc3xxx_bclk_out_intercon,
 					ARRAY_SIZE(adc3xxx_bclk_out_intercon));
+	if (master)
+		snd_soc_component_update_bits(component,
+					      ADC3XXX_INTERFACE_CTRL_2,
+					      ADC3XXX_BCLK_WCLK_ACTIVE,
+					      ADC3XXX_BCLK_WCLK_ACTIVE);
+
 	adc3xxx->master = master;
 
 	/* set clock direction and format */
