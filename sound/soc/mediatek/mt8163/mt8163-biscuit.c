@@ -24,6 +24,8 @@
 #include <sound/jack.h>
 #include <linux/gpio/consumer.h>
 
+#include "../../codecs/tlv320aic32x4.h"
+
 static struct snd_soc_jack biscuit_hp_jack;
 static struct snd_soc_jack_gpio biscuit_hp_gpio = {
 	.name = "hp-det",
@@ -211,31 +213,32 @@ static void biscuit_close_mixers(struct snd_soc_card *card,
 	snd_soc_dapm_sync(card->dapm);
 }
 
+/*
+ * The AFE clocks every I2S sample in a 32-bit slot, whatever the sample
+ * width, so BCLK is 64 * fs.
+ */
+#define BISCUIT_SPK_BCLK_FS	64
+
 static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
-	/*
-	 * The codec's MCLK is the 9.6MHz CMMCLK pad shared with the mic ADCs.
-	 */
-	unsigned int mclk = 9600000;
+	unsigned int bclk = params_rate(params) * BISCUIT_SPK_BCLK_FS;
 	int ret;
 
 	/*
-	 * No set_sysclk on the AFE side: MCLK does not come from the AFE, which
-	 * only provides BCK and LRCK, and mtk_dai_i2s_set_sysclk() rejects rates
-	 * that are not an exact APLL divisor.
+	 * The speaker codec has no usable MCLK on this board: run its PLL from
+	 * BCLK. No set_sysclk on the AFE side, which only provides BCK and LRCK
+	 * here.
 	 */
-
-	/*
-	 * Best-effort: aic32x4_set_dai_sysclk() tries to set the rate of the
-	 * codec's MCLK parent, which may be a fixed-rate clock.
-	 */
-	ret = snd_soc_dai_set_sysclk(codec_dai, 0, mclk, SND_SOC_CLOCK_IN);
-	if (ret && ret != -ENOTSUPP)
-		dev_warn(rtd->dev, "biscuit: codec set_sysclk(%u): %d\n",
-			 mclk, ret);
+	ret = snd_soc_dai_set_sysclk(codec_dai, AIC32X4_PLL_CLKIN_BCKL, bclk,
+				     SND_SOC_CLOCK_IN);
+	if (ret) {
+		dev_err(rtd->dev, "biscuit: codec PLL from BCLK (%u Hz): %d\n",
+			bclk, ret);
+		return ret;
+	}
 
 	/*
 	 * Unmute the external amplifier. Its mute line is the codec's MFP2
@@ -247,13 +250,9 @@ static int biscuit_be_hw_params(struct snd_pcm_substream *substream,
 }
 
 /*
- * Codec clocking and output stage setup, done in prepare so it overrides
- * what the codec driver programmed in hw_params:
- *
- *  - PLL input is BCLK: P=1, R=1, J=30, D=0, so a 3.072MHz BCLK gives the
- *    92.16MHz CODEC_CLKIN the codec's dividers are computed for.
- *  - Power the LOL/LOR and HPL/HPR drivers, route both DACs to them and
- *    unmute them.
+ * Codec output stage setup, done in prepare so it overrides what the codec
+ * driver programmed in hw_params: power the HPL/HPR drivers, route both
+ * DACs to them and unmute them.
  *
  * Register numbers are the flat aic32x4 map (page * 128 + offset).
  */
@@ -261,13 +260,6 @@ static int biscuit_be_prepare(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
 	struct snd_soc_component *comp = snd_soc_rtd_to_codec(rtd, 0)->component;
-
-	/* PLL: run from BCLK, P=1 R=1 J=30 -> 92.16MHz CODEC_CLKIN */
-	snd_soc_component_write(comp, 5, 0x91);		/* PLLPR: PLL on, P=1, R=1 */
-	snd_soc_component_write(comp, 6, 30);		/* PLLJ = 30 */
-	snd_soc_component_write(comp, 7, 0);		/* PLLDMSB = 0 */
-	snd_soc_component_write(comp, 8, 0);		/* PLLDLSB = 0 */
-	snd_soc_component_write(comp, 4, 0x07);		/* CLKMUX: PLL<-BCLK, CODEC_CLKIN<-PLL */
 
 	/* Analog output: power the drivers, route both DACs, lift the mutes. */
 	snd_soc_component_write(comp, 128 + 9, 0x33);	/* OUTPWRCTL: LOL/LOR + HPL/HPR on */
