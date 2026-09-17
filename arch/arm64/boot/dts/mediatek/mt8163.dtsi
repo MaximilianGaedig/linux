@@ -1068,6 +1068,21 @@
 			power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
 		};
 
+		seninf: clock-controller@15008000 {
+			compatible = "mediatek,mt8163-seninf";
+			reg = <0 0x15008000 0 0x1000>;
+			clocks = <&topckgen CLK_TOP_CAMTG_SEL>,
+				 <&imgsys CLK_IMG_SEN_TG>,
+				 <&imgsys CLK_IMG_SEN_CAM>,
+				 <&imgsys CLK_IMG_LARB2_SMI>,
+				 <&imgsys CLK_IMG_CAM_SMI>;
+			clock-names = "camtg", "sen-tg", "sen-cam", "larb2-smi",
+				      "cam-smi";
+			power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
+			#clock-cells = <0>;
+			status = "disabled";
+		};
+
 		vdecsys: clock-controller@16000000 {
 			compatible = "mediatek,mt8163-vdecsys", "syscon";
 			reg = <0 0x16000000 0 0x1000>;
