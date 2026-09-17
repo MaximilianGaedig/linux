@@ -111,7 +111,7 @@ allOf:
         - av-supply
         - dv-supply
 
-additionalProperties: false
+unevaluatedProperties: false
 
 examples:
   - |
