@@ -196,24 +196,6 @@
 	 * mirror that by leaving this regulator off unless something asks for
 	 * it, rather than pinning it high the way the old 124 amp node did.
 	 */
-	/*
-	 * Second amplifier enable, on GPIO 124.
-	 *
-	 * The extracted OTA device tree (amzn0_full.dts) is the authority for
-	 * this exact board: its audio node's "extamp-pullhigh"/"extamp-pulllow"
-	 * pinctrl states drive GPIO 124 (pins = <0x7c00>), and GPIO 122 is never
-	 * referenced anywhere in it. The pre-EVT source files put extamp on 122,
-	 * which is where our first ext_spk_amp came from, but the shipped
-	 * firmware uses 124 - so drive both, DAPM-gated the same way, until a
-	 * listen test says which one actually gates the amp. Named separately so
-	 * the machine driver can pull it up as its own supply widget.
-	 */
-	ext_spk_amp2: regulator-ext-spk-amp2 {
-		compatible = "regulator-fixed";
-		regulator-name = "ext-spk-amp2";
-		gpio = <&pio 124 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-	};
 
 	/*
 	 * External amplifier gain select, GPIOs 28 and 29.
@@ -548,7 +530,6 @@
 		 * same way.
 		 */
 		ext-spk-amp-supply = <&ext_spk_amp>;
-		ext-spk-amp2-supply = <&ext_spk_amp2>;
 		mediatek,audio-codec = <&aic32x4_codec>;
 		/*
 		 * Mic array: a self-contained capture component (CPU DAI and
