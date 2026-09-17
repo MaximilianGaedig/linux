@@ -14,18 +14,6 @@
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/sound/tlv320adc3xxx.h>
 
-/*
- * A leds-group-multicolor grouping layer (one node per physical LED,
- * referencing its 3 raw PWM channel children below via phandles) was
- * tried here and removed - it never took effect at runtime (the DTB
- * change never reached the kernel at all, root-caused to a bootloader-
- * side IDME/FDT-injection size limit silently discarding oversized
- * appended DTBs rather than anything wrong with the grouping itself),
- * and its ~12 extra nodes were a meaningful chunk of that oversized
- * DTB's bulk. The flat per-channel interface below remains the
- * confirmed-working LED control path.
- */
-
 &i2c0 {
 	clock-frequency = <100000>;
 	pinctrl-names = "default";
