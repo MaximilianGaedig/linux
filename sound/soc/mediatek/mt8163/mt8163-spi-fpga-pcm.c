@@ -660,12 +660,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	msleep(FPGA_RESET_MS);
 
 	/*
-	 * Status read ahead of the bitstream load. The result is not used; the
-	 * transfer is part of the configuration sequence as tested on hardware.
-	 */
-	dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
-
-	/*
 	 * A missing bitstream is not fatal: the FPGA only carries mic-array
 	 * capture, while speaker playback is independent of it. Register the
 	 * component anyway so the sound card still forms.
@@ -680,21 +674,10 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 
 	msleep(FPGA_RESET_MS);
 
-	/* Poll the status frame until the loaded design reports its revision. */
-	{
-		int att;
-
-		for (att = 0; att < 15; att++) {
-			dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
-			if (dough_rev_ok(rx_df->dsf.fpga_rev))
-				break;
-			msleep(25);
-		}
-	}
-
 	/*
-	 * The remaining FPGA bring-up is best-effort for the same reason: a
-	 * failure only costs mic-array capture.
+	 * Read one status frame to verify the loaded design. The remaining FPGA
+	 * bring-up is best-effort for the same reason as above: a failure only
+	 * costs mic-array capture.
 	 */
 	ret = dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
 	if (ret < 0) {
@@ -770,18 +753,6 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	ret = dough_spi_txrx(spi, i2s_cmd, NULL, sizeof(i2s_cmd));
 	if (ret < 0)
 		dev_warn(dev, "failed to put FPGA in I2S mode (%d); mic capture non-functional\n", ret);
-
-	/* Wait for the FPGA to answer with the clocks and I2S mode active. */
-	{
-		int a;
-
-		for (a = 0; a < 5; a++) {
-			msleep(20);
-			dough_spi_txrx(spi, tx_df, rx_df, sizeof(*rx_df));
-			if (dough_rev_ok(rx_df->dsf.fpga_rev))
-				break;
-		}
-	}
 
 register_component:
 	ret = devm_snd_soc_register_component(dev, &biscuit_spi_pcm_component,
