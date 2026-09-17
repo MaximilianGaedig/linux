@@ -277,10 +277,9 @@ INT32 wmt_gpio_init(struct platform_device *pdev)
 		 * known low, and without a prior direction set the pads sit as
 		 * inputs and the chip never enables.
 		 *
-		 * They are undone later - mtk_wcn_consys_hw_reg_ctrl() selects
-		 * the wifi_reset_init pinctrl state on every power-on, which
-		 * puts both pads back into their WB_* function as pulled-up
-		 * inputs, the state stock leaves them in.
+		 * The CONSYS default pinctrl state, applied when that device
+		 * probes, puts both pads back into their WB_* function as
+		 * pulled-up inputs, the state stock leaves them in.
 		 */
 
 		if (gpio_ctrl_info.gpio_ctrl_state[GPIO_COMBO_PMU_EN_PIN].gpiod) {
