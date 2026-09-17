@@ -17,7 +17,6 @@
  * protocol on real silicon, not something the OS gets to redesign.
  */
 
-#include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -27,7 +26,6 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/pm_runtime.h>
 #include <linux/sched.h>
 #include <linux/spi/spi.h>
 #include <sound/pcm.h>
@@ -49,53 +47,6 @@
  */
 #define FPGA_CRESET_DELAY_US		1
 #define FPGA_HOUSEKEEPING_DELAY_US	1200
-
-/*
- * FPGA and mic ADC master clock (the CMMCLK pad).
- *
- * The pad is driven by the timing generator (TG1) of the camera sensor
- * interface (SENINF), ported from Amazon's mt_amzn_mclk.c, whose register
- * and field names are used below. SENINF lives in the ISP register space:
- * the vendor "mediatek,mt8163-ispsys" node has reg[0] = 0x15004000 and the
- * SENINF registers start at +0x4000 from it. mt8163.dtsi describes no ISP
- * or SENINF node to take this from, so the address is fixed here.
- *
- * TG1 is clocked from CAMTG_SEL, which the driver sets to UNIVPLL_D26
- * (48MHz). TG1 divides that by CLKCNT + 1, so 48MHz / 9.6MHz = 5 gives
- * CLKCNT = 4. Within each period the output rises at count CLKRS = 0 and
- * falls at count CLKFL = (CLKCNT + 1) / 2 = 2. For an odd division ratio
- * (even CLKCNT) the vendor driver also sets CLKFL_POL, which by its name
- * takes the falling edge on the opposite source-clock edge, i.e. half a
- * source period later, for a duty cycle of 2.5/5 = 50%. TGCLK_SEL = 1
- * selects CAMTG as the TG1 clock, PADCLK_INV = CLK_POL = 0 leave the pad
- * clock uninverted, MCLK_EN gates the output onto the pad and PCEN enables
- * the timing generator.
- */
-#define SENINF_PHYS_BASE		0x15008000
-#define SENINF_MAP_SIZE			0x210
-
-#define SENINF_TOP_CTRL			0x000
-#define   SENINF12_PCLK_MASK		0xc00
-#define   SENINF12_PCLK_VAL		0x300
-#define SENINF1_CTRL			0x100
-#define   SENINF1_EN			BIT(0)
-#define SENINF1_MUX_CTRL		0x120
-#define   SENINF1_MUX_EN		BIT(31)
-#define SENINF_TG1_PH_CNT		0x200
-#define   SENINF_TG1_TGCLK_SEL		GENMASK(1, 0)
-#define   SENINF_TG1_TGCLK_SEL_CAMTG	1
-#define   SENINF_TG1_CLKFL_POL		BIT(2)
-#define   SENINF_TG1_PADCLK_INV		BIT(6)
-#define   SENINF_TG1_CLK_POL		BIT(28)
-#define   SENINF_TG1_MCLK_EN		BIT(29)
-#define   SENINF_TG1_PCEN		BIT(31)
-#define SENINF_TG1_SEN_CK		0x204
-#define   SENINF_TG1_CLKFL		GENMASK(5, 0)
-#define   SENINF_TG1_CLKRS		GENMASK(13, 8)
-#define   SENINF_TG1_CLKCNT		GENMASK(21, 16)
-
-#define FPGA_MCLK_SRC_HZ		48000000	/* CAMTG_SEL = UNIVPLL_D26 */
-#define FPGA_MCLK_OUT_HZ		9600000		/* CMMCLK pad rate */
 
 #define SAMPLING_RATE		16000
 #define DOUGH_N_CHANNELS	9
@@ -138,15 +89,9 @@ struct biscuit_spi_pcm {
 	struct spi_device *spi;
 	struct gpio_desc *reset_gpio;
 	struct clk *mclk;
-	struct clk *sen_tg;
-	struct clk *sen_cam;
-	struct clk *larb2_smi;
-	struct clk *cam_smi;
-	void __iomem *seninf;
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *state_idle;
 	struct pinctrl_state *state_active;
-	struct pinctrl_state *state_mclk;
 
 	struct snd_pcm_substream *substream;
 	struct task_struct *capture_thread;
@@ -176,60 +121,6 @@ static int dough_spi_txrx(struct spi_device *spi, void *tx, void *rx, size_t len
 	};
 
 	return spi_sync_transfer(spi, &xfer, 1);
-}
-
-/* Clear @clr, then set @set, in a SENINF register (vendor isp_wr32_mask). */
-static void seninf_clrset(void __iomem *base, u32 off, u32 clr, u32 set)
-{
-	u32 t = readl(base + off);
-
-	t &= ~clr;
-	t |= set;
-	writel(t, base + off);
-}
-
-/*
- * Program the SENINF timing generator to emit FPGA_MCLK_OUT_HZ on the CMMCLK
- * pad (vendor mclk_divider_reg() + mclk_enable_reg()). Requires the ISP power
- * domain on and the imgsys clocks enabled (register space is otherwise
- * inaccessible), and CAMTG_SEL at FPGA_MCLK_SRC_HZ.
- */
-static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
-{
-	void __iomem *b = priv->seninf;
-	u32 clkcnt, clkf_pol, clkf_edge;
-
-	clkcnt = (FPGA_MCLK_SRC_HZ / FPGA_MCLK_OUT_HZ) - 1;
-	clkf_pol = !(clkcnt & 0x1);
-	clkf_edge = clkcnt > 1 ? ((clkcnt + 1) >> 1) : 1;
-
-	/*
-	 * Program the divider before enabling the timing generator: a divider
-	 * written while it is running only takes effect once TG1_PH_CNT is
-	 * written again.
-	 */
-	seninf_clrset(b, SENINF_TOP_CTRL, SENINF12_PCLK_MASK, SENINF12_PCLK_VAL);
-
-	seninf_clrset(b, SENINF_TG1_SEN_CK, SENINF_TG1_CLKFL,
-		      FIELD_PREP(SENINF_TG1_CLKFL, clkf_edge));
-	seninf_clrset(b, SENINF_TG1_SEN_CK, SENINF_TG1_CLKRS,
-		      FIELD_PREP(SENINF_TG1_CLKRS, 0));
-	seninf_clrset(b, SENINF_TG1_SEN_CK, SENINF_TG1_CLKCNT,
-		      FIELD_PREP(SENINF_TG1_CLKCNT, clkcnt));
-
-	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_TGCLK_SEL,
-		      FIELD_PREP(SENINF_TG1_TGCLK_SEL, SENINF_TG1_TGCLK_SEL_CAMTG));
-	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_CLKFL_POL,
-		      clkf_pol ? SENINF_TG1_CLKFL_POL : 0);
-	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_PADCLK_INV, 0);
-	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_CLK_POL, 0);
-
-	/* Gate the clock onto the pad and enable PCEN last. */
-	seninf_clrset(b, SENINF_TG1_PH_CNT, 0,
-		      SENINF_TG1_MCLK_EN | SENINF_TG1_PCEN);
-
-	seninf_clrset(b, SENINF1_MUX_CTRL, SENINF1_MUX_EN, SENINF1_MUX_EN);
-	seninf_clrset(b, SENINF1_CTRL, SENINF1_EN, SENINF1_EN);
 }
 
 static int biscuit_spi_capture_thread(void *data)
@@ -525,6 +416,11 @@ static int biscuit_spi_pcm_load_firmware(struct biscuit_spi_pcm *priv)
 	return ret;
 }
 
+static void biscuit_spi_pcm_mclk_off(void *mclk)
+{
+	clk_disable_unprepare(mclk);
+}
+
 static int biscuit_spi_pcm_probe(struct spi_device *spi)
 {
 	struct device *dev = &spi->dev;
@@ -566,29 +462,12 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 
 	priv->state_idle = pinctrl_lookup_state(priv->pinctrl, "idle");
 	priv->state_active = pinctrl_lookup_state(priv->pinctrl, "active");
-	priv->state_mclk = pinctrl_lookup_state(priv->pinctrl, "mclk");
-	if (IS_ERR(priv->state_idle) || IS_ERR(priv->state_active) || IS_ERR(priv->state_mclk))
-		return dev_err_probe(dev, -EINVAL, "missing idle/active/mclk pinctrl state\n");
+	if (IS_ERR(priv->state_idle) || IS_ERR(priv->state_active))
+		return dev_err_probe(dev, -EINVAL, "missing idle/active pinctrl state\n");
 
 	priv->mclk = devm_clk_get(dev, "mclk");
 	if (IS_ERR(priv->mclk))
 		return dev_err_probe(dev, PTR_ERR(priv->mclk), "failed to get mclk\n");
-	priv->sen_tg = devm_clk_get(dev, "sen_tg");
-	if (IS_ERR(priv->sen_tg))
-		return dev_err_probe(dev, PTR_ERR(priv->sen_tg), "failed to get sen_tg\n");
-	priv->sen_cam = devm_clk_get(dev, "sen_cam");
-	if (IS_ERR(priv->sen_cam))
-		return dev_err_probe(dev, PTR_ERR(priv->sen_cam), "failed to get sen_cam\n");
-	priv->larb2_smi = devm_clk_get(dev, "larb2_smi");
-	if (IS_ERR(priv->larb2_smi))
-		return dev_err_probe(dev, PTR_ERR(priv->larb2_smi), "failed to get larb2_smi\n");
-	priv->cam_smi = devm_clk_get(dev, "cam_smi");
-	if (IS_ERR(priv->cam_smi))
-		return dev_err_probe(dev, PTR_ERR(priv->cam_smi), "failed to get cam_smi\n");
-
-	priv->seninf = devm_ioremap(dev, SENINF_PHYS_BASE, SENINF_MAP_SIZE);
-	if (!priv->seninf)
-		return dev_err_probe(dev, -ENOMEM, "failed to map SENINF\n");
 
 	spi->mode = SPI_MODE_3;
 	spi->bits_per_word = 8;
@@ -698,50 +577,12 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 	 * access, so bring it up after the revision has been verified, in the
 	 * same order as the vendor driver.
 	 */
-	/*
-	 * Power on the ISP power domain so the imgsys/SENINF register space is
-	 * accessible (power-domains = ISP in DT; the SPI core attached genpd).
-	 */
-	pm_runtime_enable(dev);
-	ret = pm_runtime_get_sync(dev);
-	if (ret < 0) {
-		pm_runtime_disable(dev);
-		return dev_err_probe(dev, ret, "failed to power on ISP domain\n");
-	}
-
-	/*
-	 * The CMMCLK pad is driven by the camera SENINF timing generator: enable
-	 * the imgsys sensor clocks, set CAMTG_SEL to 48MHz (UNIVPLL_D26), then
-	 * program the SENINF divider to emit 9.6MHz.
-	 */
-	ret = clk_prepare_enable(priv->sen_tg);
-	if (ret)
-		dev_warn(dev, "enable sen_tg failed: %d\n", ret);
-	ret = clk_prepare_enable(priv->sen_cam);
-	if (ret)
-		dev_warn(dev, "enable sen_cam failed: %d\n", ret);
-	ret = clk_prepare_enable(priv->larb2_smi);
-	if (ret)
-		dev_warn(dev, "enable larb2_smi failed: %d\n", ret);
-	ret = clk_prepare_enable(priv->cam_smi);
-	if (ret)
-		dev_warn(dev, "enable cam_smi failed: %d\n", ret);
-
-	ret = clk_set_rate(priv->mclk, FPGA_MCLK_SRC_HZ);
-	if (ret)
-		dev_warn(dev, "failed to set mclk to 48MHz: %d\n", ret);
 	ret = clk_prepare_enable(priv->mclk);
 	if (ret)
 		return dev_err_probe(dev, ret, "failed to enable mclk\n");
-
-	ret = pinctrl_select_state(priv->pinctrl, priv->state_mclk);
-	if (ret) {
-		clk_disable_unprepare(priv->mclk);
-		return dev_err_probe(dev, ret, "failed to select mclk pinctrl state\n");
-	}
-
-	/* Route/divide the 48 MHz reference to 9.6 MHz out the CMMCLK pad. */
-	biscuit_fpga_seninf_program(priv);
+	ret = devm_add_action_or_reset(dev, biscuit_spi_pcm_mclk_off, priv->mclk);
+	if (ret)
+		return ret;
 
 	/* Restore I2S1 to its FPGA-facing function now the codecs can drive it. */
 	ret = pinctrl_select_state(priv->pinctrl, priv->state_active);
@@ -757,19 +598,10 @@ static int biscuit_spi_pcm_probe(struct spi_device *spi)
 register_component:
 	ret = devm_snd_soc_register_component(dev, &biscuit_spi_pcm_component,
 					       &biscuit_spi_pcm_dai, 1);
-	if (ret) {
-		clk_disable_unprepare(priv->mclk);
+	if (ret)
 		return dev_err_probe(dev, ret, "failed to register ASoC component\n");
-	}
 
 	return 0;
-}
-
-static void biscuit_spi_pcm_remove(struct spi_device *spi)
-{
-	struct biscuit_spi_pcm *priv = spi_get_drvdata(spi);
-
-	clk_disable_unprepare(priv->mclk);
 }
 
 static const struct of_device_id biscuit_spi_pcm_of_match[] = {
@@ -791,7 +623,6 @@ static struct spi_driver biscuit_spi_pcm_driver = {
 	},
 	.id_table = biscuit_spi_pcm_id,
 	.probe = biscuit_spi_pcm_probe,
-	.remove = biscuit_spi_pcm_remove,
 };
 module_spi_driver(biscuit_spi_pcm_driver);
 

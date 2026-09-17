@@ -477,49 +477,13 @@
  * SPI. The four aic3x mic codecs output I2S into that FPGA - not into the
  * SoC - which mixes/packages all channels and hands finished frames back to
  * the SoC over SPI0. See mt8163-amazon-biscuit-peripherals.dtsi for the
- * FPGA node and drivers/spi mt8163-spi-fpga-pcm.c for the driver this
+ * FPGA node and sound/soc/mediatek/mt8163/mt8163-spi-fpga-pcm.c for the driver this
  * links against. mic0_codec (i2c0@0x18) is kept as the codec side purely
  * because Amazon's own link pairs it that way (codec_name =
  * "tlv320aic3101.0-0018") - it is presumably used for control/gain only,
  * since audio samples never actually cross I2C.
  */
 / {
-	/*
-	 * The mic array's master clock.
-	 *
-	 * Physically this is the CMMCLK pad, driven by the camera SENINF timing
-	 * generator and divided down to 9.6MHz (see mt8163-spi-fpga-pcm.c,
-	 * which programs SENINF_TG1_*). There is no Linux clock provider for
-	 * it, so model it as a fixed clock at the frequency that block is
-	 * programmed to produce - the ADC3101s need a truthful rate to compute
-	 * their PLL dividers from. The old nodes claimed clk26m, which is not
-	 * what the pin carries.
-	 */
-	/*
-	 * The speaker codec's master clock.
-	 *
-	 * The speaker codec and the mic ADCs share ONE master clock: the
-	 * CMMCLK pad (pin 119), driven by the camera SENINF divider at 9.6MHz.
-	 * Amazon's machine driver hands the aic32x4 mt_soc_mclk_freq, which is
-	 * AIC31XX_FREQ_9600000, exactly as it does for the ADCs - and their
-	 * device tree never muxes pin 15 at all, so I2S1_MCK is not involved.
-	 * The node used to claim clk26m, so the codec computed PLL dividers
-	 * for a 26MHz clock it never receives.
-	 */
-	spk_mclk: spk-mclk {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		clock-frequency = <9600000>;
-		clock-output-names = "spk_mclk";
-	};
-
-	mic_mclk: mic-mclk {
-		compatible = "fixed-clock";
-		#clock-cells = <0>;
-		clock-frequency = <9600000>;
-		clock-output-names = "mic_mclk";
-	};
-
 	sound: sound {
 		compatible = "amazon,biscuit-audio";
 		mediatek,platform = <&afe>;
@@ -584,34 +548,26 @@
 
 		reset-gpios = <&pio 43 GPIO_ACTIVE_LOW>;
 
-		pinctrl-names = "idle", "active", "mclk";
+		pinctrl-names = "idle", "active";
 		pinctrl-0 = <&aud_pins_i2s1_idle>;
 		pinctrl-1 = <&aud_pins_i2s1_active>;
-		pinctrl-2 = <&aud_pins_fpga_mclk>;
-
-		/*
-		 * FPGA reference clock = the CMMCLK pad, which on MT8163 is
-		 * driven by the camera SENINF (sensor interface) timing
-		 * generator, NOT by CAMTG_SEL alone. Matching Amazon's stock
-		 * mt_amzn_mclk.c (GPL kernel source): the driver must power the
-		 * ISP domain, enable the imgsys sensor clocks, set CAMTG_SEL to
-		 * UNIVPLL_D26 (48 MHz), and program the SENINF TG1 divider to
-		 * emit 9.6 MHz on the pad. Without the SENINF programming the
-		 * FPGA gets no clock and reads back revision 0.
-		 *
-		 * mclk      = CAMTG_SEL (set to 48 MHz in the driver)
-		 * sen_tg    = the SENINF timing generator that drives the pad
-		 * sen_cam/larb2_smi/cam_smi = imgsys register-bus/sensor clocks
-		 *             needed to reach the SENINF registers (ISP domain)
-		 */
-		clocks = <&topckgen CLK_TOP_CAMTG_SEL>,
-			 <&imgsys CLK_IMG_SEN_TG>,
-			 <&imgsys CLK_IMG_SEN_CAM>,
-			 <&imgsys CLK_IMG_LARB2_SMI>,
-			 <&imgsys CLK_IMG_CAM_SMI>;
-		clock-names = "mclk", "sen_tg", "sen_cam", "larb2_smi", "cam_smi";
-		power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
+		clocks = <&seninf>;
+		clock-names = "mclk";
 	};
+};
+
+/*
+ * The FPGA, the mic ADCs and the speaker codec share one master clock: the
+ * CMMCLK pad at 9.6MHz. Amazon's machine driver hands every codec
+ * mt_soc_mclk_freq (AIC31XX_FREQ_9600000), and the board has no camera.
+ */
+&seninf {
+	pinctrl-names = "default";
+	pinctrl-0 = <&aud_pins_fpga_mclk>;
+	assigned-clocks = <&topckgen CLK_TOP_CAMTG_SEL>, <&seninf>;
+	assigned-clock-parents = <&topckgen CLK_TOP_UNIV_48M>;
+	assigned-clock-rates = <48000000>, <9600000>;
+	status = "okay";
 };
 
 /*
