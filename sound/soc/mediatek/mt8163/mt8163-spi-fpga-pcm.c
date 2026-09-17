@@ -17,6 +17,7 @@
  * protocol on real silicon, not something the OS gets to redesign.
  */
 
+#include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -42,14 +43,6 @@
 #define FPGA_RESET_MS		100
 
 /*
- * FPGA reference-clock (CMMCLK pad) bring-up via the camera SENINF timing
- * generator, ported 1:1 from Amazon's stock mt_amzn_mclk.c. The SENINF block
- * lives in the ISP register space: ispsys reg[0] = 0x15004000, and the SENINF
- * registers are at ISP_ADDR + 0x4000, i.e. physical 0x15008000. Map that.
- */
-#define SENINF_PHYS_BASE	0x15008000
-#define SENINF_MAP_SIZE		0x210
-/*
  * iCE40 configuration timings, from the same source as the sequence in
  * probe(): >200ns with CRESET_B and SS_B both low, then >=1200us for the
  * FPGA to clear its configuration memory before it will accept a bitstream.
@@ -57,14 +50,52 @@
 #define FPGA_CRESET_DELAY_US		1
 #define FPGA_HOUSEKEEPING_DELAY_US	1200
 
-#define SENINF_TOP_CTRL		0x000
-#define SENINF1_CTRL		0x100
-#define SENINF1_MUX_CTRL	0x120
-#define SENINF_TG1_PH_CNT	0x200
-#define SENINF_TG1_SEN_CK	0x204
-#define FPGA_MCLK_SRC_HZ	48000000	/* CAMTG_SEL -> UNIVPLL_D26 */
-#define FPGA_MCLK_OUT_HZ	9600000	/* SENINF divider output, matches stock */
-#define SENINF_TG1_MCLK_EN	0x20000000	/* mclk_enable_reg bit */
+/*
+ * FPGA and mic ADC master clock (the CMMCLK pad).
+ *
+ * The pad is driven by the timing generator (TG1) of the camera sensor
+ * interface (SENINF), ported from Amazon's mt_amzn_mclk.c, whose register
+ * and field names are used below. SENINF lives in the ISP register space:
+ * the vendor "mediatek,mt8163-ispsys" node has reg[0] = 0x15004000 and the
+ * SENINF registers start at +0x4000 from it. mt8163.dtsi describes no ISP
+ * or SENINF node to take this from, so the address is fixed here.
+ *
+ * TG1 is clocked from CAMTG_SEL, which the driver sets to UNIVPLL_D26
+ * (48MHz). TG1 divides that by CLKCNT + 1, so 48MHz / 9.6MHz = 5 gives
+ * CLKCNT = 4. Within each period the output rises at count CLKRS = 0 and
+ * falls at count CLKFL = (CLKCNT + 1) / 2 = 2. For an odd division ratio
+ * (even CLKCNT) the vendor driver also sets CLKFL_POL, which by its name
+ * takes the falling edge on the opposite source-clock edge, i.e. half a
+ * source period later, for a duty cycle of 2.5/5 = 50%. TGCLK_SEL = 1
+ * selects CAMTG as the TG1 clock, PADCLK_INV = CLK_POL = 0 leave the pad
+ * clock uninverted, MCLK_EN gates the output onto the pad and PCEN enables
+ * the timing generator.
+ */
+#define SENINF_PHYS_BASE		0x15008000
+#define SENINF_MAP_SIZE			0x210
+
+#define SENINF_TOP_CTRL			0x000
+#define   SENINF12_PCLK_MASK		0xc00
+#define   SENINF12_PCLK_VAL		0x300
+#define SENINF1_CTRL			0x100
+#define   SENINF1_EN			BIT(0)
+#define SENINF1_MUX_CTRL		0x120
+#define   SENINF1_MUX_EN		BIT(31)
+#define SENINF_TG1_PH_CNT		0x200
+#define   SENINF_TG1_TGCLK_SEL		GENMASK(1, 0)
+#define   SENINF_TG1_TGCLK_SEL_CAMTG	1
+#define   SENINF_TG1_CLKFL_POL		BIT(2)
+#define   SENINF_TG1_PADCLK_INV		BIT(6)
+#define   SENINF_TG1_CLK_POL		BIT(28)
+#define   SENINF_TG1_MCLK_EN		BIT(29)
+#define   SENINF_TG1_PCEN		BIT(31)
+#define SENINF_TG1_SEN_CK		0x204
+#define   SENINF_TG1_CLKFL		GENMASK(5, 0)
+#define   SENINF_TG1_CLKRS		GENMASK(13, 8)
+#define   SENINF_TG1_CLKCNT		GENMASK(21, 16)
+
+#define FPGA_MCLK_SRC_HZ		48000000	/* CAMTG_SEL = UNIVPLL_D26 */
+#define FPGA_MCLK_OUT_HZ		9600000		/* CMMCLK pad rate */
 
 #define SAMPLING_RATE		16000
 #define DOUGH_N_CHANNELS	9
@@ -147,30 +178,27 @@ static int dough_spi_txrx(struct spi_device *spi, void *tx, void *rx, size_t len
 	return spi_sync_transfer(spi, &xfer, 1);
 }
 
-/* val = rd; val &= ~mask; val |= (v << shift); wr  (matches Amazon isp_wr32_mask) */
-static void seninf_wr_mask(void __iomem *base, u32 off, u32 mask, u32 shift, u32 v)
+/* Clear @clr, then set @set, in a SENINF register (vendor isp_wr32_mask). */
+static void seninf_clrset(void __iomem *base, u32 off, u32 clr, u32 set)
 {
 	u32 t = readl(base + off);
 
-	t &= ~mask;
-	t |= (v << shift);
+	t &= ~clr;
+	t |= set;
 	writel(t, base + off);
 }
 
 /*
- * Program the camera SENINF timing generator to emit FPGA_MCLK_OUT_HZ on the
- * CMMCLK pad, ported 1:1 from Amazon's mt_amzn_mclk.c (mclk_enable_reg +
- * mclk_divider_reg). Requires the ISP power domain on and the imgsys clocks
- * enabled (register space is otherwise inaccessible), and CAMTG_SEL at 48 MHz.
+ * Program the SENINF timing generator to emit FPGA_MCLK_OUT_HZ on the CMMCLK
+ * pad (vendor mclk_divider_reg() + mclk_enable_reg()). Requires the ISP power
+ * domain on and the imgsys clocks enabled (register space is otherwise
+ * inaccessible), and CAMTG_SEL at FPGA_MCLK_SRC_HZ.
  */
 static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 {
 	void __iomem *b = priv->seninf;
-	u32 clkcnt, clkf_pol, clkf_edge, v;
+	u32 clkcnt, clkf_pol, clkf_edge;
 
-	/*
-	 * mclk_divider_reg: clkcnt = 48MHz / out - 1.
-	 */
 	clkcnt = (FPGA_MCLK_SRC_HZ / FPGA_MCLK_OUT_HZ) - 1;
 	clkf_pol = !(clkcnt & 0x1);
 	clkf_edge = clkcnt > 1 ? ((clkcnt + 1) >> 1) : 1;
@@ -180,24 +208,28 @@ static void biscuit_fpga_seninf_program(struct biscuit_spi_pcm *priv)
 	 * written while it is running only takes effect once TG1_PH_CNT is
 	 * written again.
 	 */
-	/* clear top clock gating (clear 0xc00, set 0x300) */
-	seninf_wr_mask(b, SENINF_TOP_CTRL, 0xc00, 0, 0x300);
-	/* SEN_CK divider: CLKFL=clkf_edge, CLKRS=0, CLKCNT=clkcnt */
-	seninf_wr_mask(b, SENINF_TG1_SEN_CK, 0x3f, 0, clkf_edge);
-	seninf_wr_mask(b, SENINF_TG1_SEN_CK, 0x3f00, 8, 0);
-	seninf_wr_mask(b, SENINF_TG1_SEN_CK, 0x3f0000, 16, clkcnt);
-	/* PH_CNT: TGCLK_SEL=1, CLKFL_POL, PADCLK_INV=0, CLK_POL=0 */
-	seninf_wr_mask(b, SENINF_TG1_PH_CNT, 0x3, 0, 1);
-	seninf_wr_mask(b, SENINF_TG1_PH_CNT, 0x4, 2, clkf_pol);
-	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 6), 6, 0);
-	seninf_wr_mask(b, SENINF_TG1_PH_CNT, (1u << 28), 28, 0);
-	/* mclk_enable_reg(1) and PCEN last, once the divider is in place */
-	v = readl(b + SENINF_TG1_PH_CNT);
-	v |= SENINF_TG1_MCLK_EN | (1u << 31);
-	writel(v, b + SENINF_TG1_PH_CNT);
-	/* enable SENINF1 mux + block */
-	seninf_wr_mask(b, SENINF1_MUX_CTRL, (1u << 31), 31, 1);
-	seninf_wr_mask(b, SENINF1_CTRL, 0x1, 0, 1);
+	seninf_clrset(b, SENINF_TOP_CTRL, SENINF12_PCLK_MASK, SENINF12_PCLK_VAL);
+
+	seninf_clrset(b, SENINF_TG1_SEN_CK, SENINF_TG1_CLKFL,
+		      FIELD_PREP(SENINF_TG1_CLKFL, clkf_edge));
+	seninf_clrset(b, SENINF_TG1_SEN_CK, SENINF_TG1_CLKRS,
+		      FIELD_PREP(SENINF_TG1_CLKRS, 0));
+	seninf_clrset(b, SENINF_TG1_SEN_CK, SENINF_TG1_CLKCNT,
+		      FIELD_PREP(SENINF_TG1_CLKCNT, clkcnt));
+
+	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_TGCLK_SEL,
+		      FIELD_PREP(SENINF_TG1_TGCLK_SEL, SENINF_TG1_TGCLK_SEL_CAMTG));
+	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_CLKFL_POL,
+		      clkf_pol ? SENINF_TG1_CLKFL_POL : 0);
+	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_PADCLK_INV, 0);
+	seninf_clrset(b, SENINF_TG1_PH_CNT, SENINF_TG1_CLK_POL, 0);
+
+	/* Gate the clock onto the pad and enable PCEN last. */
+	seninf_clrset(b, SENINF_TG1_PH_CNT, 0,
+		      SENINF_TG1_MCLK_EN | SENINF_TG1_PCEN);
+
+	seninf_clrset(b, SENINF1_MUX_CTRL, SENINF1_MUX_EN, SENINF1_MUX_EN);
+	seninf_clrset(b, SENINF1_CTRL, SENINF1_EN, SENINF1_EN);
 }
 
 static int biscuit_spi_capture_thread(void *data)
