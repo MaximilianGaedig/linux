@@ -43,11 +43,6 @@ static const struct snd_soc_dapm_widget biscuit_widgets[] = {
 	 * speaker hiss.
 	 */
 	SND_SOC_DAPM_REGULATOR_SUPPLY("ext-spk-amp", 0, 0),
-	/*
-	 * Second amplifier enable (GPIO 124, the extamp pin in the vendor
-	 * device tree), gated the same way.
-	 */
-	SND_SOC_DAPM_REGULATOR_SUPPLY("ext-spk-amp2", 0, 0),
 };
 
 /*
@@ -77,7 +72,6 @@ static const struct snd_soc_dapm_route biscuit_routes[] = {
 	 * are kept so the line outputs can be driven as well.
 	 */
 	{ "Ext Spk", NULL, "ext-spk-amp" },
-	{ "Ext Spk", NULL, "ext-spk-amp2" },
 	{ "Ext Spk", NULL, "Speaker HPL" },
 	{ "Ext Spk", NULL, "Speaker HPR" },
 	{ "Ext Spk", NULL, "Speaker LOL" },

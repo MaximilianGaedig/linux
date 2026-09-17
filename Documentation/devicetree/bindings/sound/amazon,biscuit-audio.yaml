@@ -49,9 +49,6 @@ properties:
   ext-spk-amp-supply:
     description: Enable of the external speaker amplifier
 
-  ext-spk-amp2-supply:
-    description: Second enable of the external speaker amplifier
-
   pinctrl-0: true
 
   pinctrl-names:
@@ -77,5 +74,4 @@ examples:
                            <&mic2_codec>, <&mic3_codec>;
         amazon,hp-det-gpios = <&pio 26 GPIO_ACTIVE_HIGH>;
         ext-spk-amp-supply = <&ext_spk_amp>;
-        ext-spk-amp2-supply = <&ext_spk_amp2>;
     };
