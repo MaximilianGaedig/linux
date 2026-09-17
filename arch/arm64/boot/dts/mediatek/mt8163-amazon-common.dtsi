@@ -339,26 +339,15 @@
 
 &consys {
 	/*
-	 * Default state stays wifi_reset_init.
-	 *
-	 * Stock uses consys_pins_default here and selects wifi_reset_init
-	 * again on every CONSYS power-on. Swapping the default without also
-	 * adding that per-power-on select leaves the MT6625L
-	 * WB_RSTB/SCLK/SDATA/SEN lines unconfigured entirely, and the WiFi
-	 * function-on then fails with no wlan0 - measured. ANT_SEL is muxed by
-	 * the driver's own register write instead, which reaches the same end
-	 * state. Change both halves together or neither.
-	 *
-	 * The per-power-on select is now in place (mtk_wcn_consys_hw_reg_ctrl,
-	 * right after regulator_enable(reg_VCN18)), so flipping pinctrl-0 to
-	 * consys_pins_default is safe to try - but keep it here for now, so
-	 * that the WB-pin ownership fix lands as a single change with nothing
-	 * else moving underneath it.
+	 * The default state releases the MT6625L WB_RSTB/SCLK/SDATA/SEN pads
+	 * as pulled-up inputs, which the WiFi function-on needs; with the
+	 * default switched to consys_pins_default the pads stay unconfigured
+	 * and no wlan0 appears. ANT_SEL is muxed by the driver's own register
+	 * write. consys_pins_default is looked up by name in mtk_wmt_probe().
 	 */
-	pinctrl-names = "default", "wifi_reset_init", "consys_pins_default";
+	pinctrl-names = "default", "consys_pins_default";
 	pinctrl-0 = <&wifi_reset_init>;
-	pinctrl-1 = <&wifi_reset_init>;
-	pinctrl-2 = <&consys_pins_default>;
+	pinctrl-1 = <&consys_pins_default>;
 	vcn18-supply = <&mt6323_vcn18_reg>;
 	vcn28-supply = <&mt6323_vcn28_reg>;
 	vcn33_bt-supply = <&mt6323_vcn33_bt_reg>;
