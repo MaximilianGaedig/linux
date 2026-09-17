@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/clock/mediatek,mt8163-seninf.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: MediaTek MT8163 camera sensor interface master clock
+
+maintainers:
+  - Maximilian Gaedig <mg@maximiliangaedig.com>
+
+description:
+  Timing generator 1 of the MT8163 camera sensor interface (SENINF) divides
+  the CAMTG clock and drives the result onto the CMMCLK pad. Boards without a
+  camera sensor can use the pad as a general purpose clock output.
+
+properties:
+  compatible:
+    const: mediatek,mt8163-seninf
+
+  reg:
+    maxItems: 1
+
+  clocks:
+    items:
+      - description: CAMTG clock, the source of the divider
+      - description: imgsys timing generator gate
+      - description: imgsys sensor interface gate
+      - description: imgsys LARB2 SMI gate
+      - description: imgsys camera SMI gate
+
+  clock-names:
+    items:
+      - const: camtg
+      - const: sen-tg
+      - const: sen-cam
+      - const: larb2-smi
+      - const: cam-smi
+
+  power-domains:
+    maxItems: 1
+
+  '#clock-cells':
+    const: 0
+
+  clock-output-names:
+    maxItems: 1
+
+required:
+  - compatible
+  - reg
+  - clocks
+  - clock-names
+  - power-domains
+  - '#clock-cells'
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/clock/mediatek,mt8163-imgsys.h>
+    #include <dt-bindings/clock/mediatek,mt8163-topckgen.h>
+    #include <dt-bindings/power/mediatek,mt8163-power-controller.h>
+
+    clock-controller@15008000 {
+        compatible = "mediatek,mt8163-seninf";
+        reg = <0x15008000 0x1000>;
+        clocks = <&topckgen CLK_TOP_CAMTG_SEL>,
+                 <&imgsys CLK_IMG_SEN_TG>,
+                 <&imgsys CLK_IMG_SEN_CAM>,
+                 <&imgsys CLK_IMG_LARB2_SMI>,
+                 <&imgsys CLK_IMG_CAM_SMI>;
+        clock-names = "camtg", "sen-tg", "sen-cam", "larb2-smi", "cam-smi";
+        power-domains = <&spm MT8163_POWER_DOMAIN_ISP>;
+        #clock-cells = <0>;
+    };
