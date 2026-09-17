@@ -499,6 +499,14 @@ config COMMON_CLK_MT8163_IMGSYS
 	help
 	  This driver supports MediaTek MT8163 imgsys clocks.
 
+config COMMON_CLK_MT8163_SENINF
+	tristate "Clock driver for MediaTek MT8163 SENINF master clock"
+	depends on COMMON_CLK_MT8163_IMGSYS
+	default COMMON_CLK_MT8163_IMGSYS
+	help
+	  This driver supports the master clock output of the MediaTek MT8163
+	  camera sensor interface, which drives the CMMCLK pad.
+
 config COMMON_CLK_MT8163_MFGCFG
 	tristate "Clock driver for MediaTek MT8163 mfgcfg"
 	depends on COMMON_CLK_MT8163
