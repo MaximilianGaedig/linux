@@ -55,12 +55,12 @@ static int __do_connectivity_driver_init(int chip_id)
 	tmp_ret = do_bluetooth_drv_init(chip_id);
 	i_ret += tmp_ret;
 	if (tmp_ret)
-		WMT_DETECT_ERR_FUNC("do common driver init failed, ret:%d\n", tmp_ret);
+		WMT_DETECT_ERR_FUNC("do bluetooth driver init failed, ret:%d\n", tmp_ret);
 
 	tmp_ret = do_gps_drv_init(chip_id);
 	i_ret += tmp_ret;
 	if (tmp_ret)
-		WMT_DETECT_ERR_FUNC("do common driver init failed, ret:%d\n", tmp_ret);
+		WMT_DETECT_ERR_FUNC("do gps driver init failed, ret:%d\n", tmp_ret);
 
 	tmp_ret = do_fm_drv_init(chip_id);
 	i_ret += tmp_ret;
