@@ -57,6 +57,9 @@ properties:
   "#clock-cells":
     const: 0
 
+  resets:
+    maxItems: 1
+
   nvmem-cells:
     maxItems: 1
     description: A phandle to the calibration data provided by a nvmem device,
