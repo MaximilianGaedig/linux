@@ -395,11 +395,11 @@
 	 * this node disabled, so it was never actually the cause - the real
 	 * blocker was the missing btif/btif_tx/btif_rx nodes (see mt8163.dtsi).
 	 *
-	 * pinctrl-names/pinctrl-N are already set correctly by
-	 * mt8163-amazon-common.dtsi (default/wifi_reset_init/
-	 * consys_pins_default) - don't repeat them here, an override with a
-	 * shorter pinctrl-names list would drop the "consys_pins_default"
-	 * state mtk_wmt_probe() looks up by name.
+	 * pinctrl-names/pinctrl-N are already set by
+	 * mt8163-amazon-common.dtsi (default/consys_pins_default) - don't
+	 * repeat them here, an override with a shorter pinctrl-names list
+	 * would drop the "consys_pins_default" state mtk_wmt_probe() looks up
+	 * by name.
 	 */
 	status = "okay";
 };
@@ -627,14 +627,10 @@
  * the actual chip enable - remove the node and the WMT function-on fails with
  * EFAULT and no wlan0 appears. Measured, twice.
  *
- * So keep the node and drive the sequence, then hand the pads back: the
- * pinctrl_select_state("wifi_reset_init") added to
- * mtk_wcn_consys_hw_reg_ctrl() (matching stock mtk_wcn_consys_hw.c:419-433)
- * re-muxes 60/65 to their WB_* function as pulled-up inputs on every
- * power-on, so they end in stock's state instead of being pinned low by a
- * gpiod that never lets go. Holding WB_SEN low is the only board-level
- * divergence found that could gate the 2.4 GHz front end while leaving BT
- * (which does not pass through the WiFi FEM) and 5 GHz working.
+ * So keep the node. Stock releases the pads again by re-selecting
+ * wifi_reset_init on every CONSYS power-on; this port deliberately does not
+ * (see mtk_wcn_consys_hw_reg_ctrl()), because here PMU_EN has to stay driven
+ * high by the GPIO for the chip to keep running.
  */
 / {
 	connectivity-combo {
