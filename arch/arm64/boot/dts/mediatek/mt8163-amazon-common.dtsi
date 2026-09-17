@@ -298,7 +298,7 @@
 	 * in mtk_wcn_consys_hw.c looks up a pinctrl state by this literal
 	 * name - it is not just a label, the string has to match.
 	 */
-	consys_pins_default: consys-pins-default {
+	consys_pins_default: consys-default-pins {
 		pins {
 			pinmux = <MT8163_PIN_85_MSDC2_CMD__FUNC_ANT_SEL0>,
 				 <MT8163_PIN_86_MSDC2_CLK__FUNC_ANT_SEL1>;
@@ -310,7 +310,7 @@
 	 * be confused with the WB_* pins (wifi_reset_init above), which are
 	 * separate power/handshake control lines, not the SDIO bus itself.
 	 */
-	msdc1_pins_default: msdc1-pins-default {
+	msdc1_pins_default: msdc1-default-pins {
 		pins-cmd-dat {
 			pinmux = <MT8163_PIN_121_MSDC1_CMD__FUNC_MSDC1_CMD>,
 				 <MT8163_PIN_123_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
