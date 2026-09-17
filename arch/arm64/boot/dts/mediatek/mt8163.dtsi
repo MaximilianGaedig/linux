@@ -1034,7 +1034,6 @@
 		larb0: larb@14016000 {
 			compatible = "mediatek,mt8163-smi-larb";
 			reg = <0 0x14016000 0 0x1000>;
-			interrupts = <GIC_SPI 205 IRQ_TYPE_LEVEL_LOW>;
 			mediatek,smi = <&smi_common>;
 			mediatek,larb-id = <0>;
 			clocks = <&mmsys CLK_MM_SMI_LARB0>,
@@ -1061,7 +1060,6 @@
 		larb2: larb@15001000 {
 			compatible = "mediatek,mt8163-smi-larb";
 			reg = <0 0x15001000 0 0x1000>;
-			interrupts = <GIC_SPI 217 IRQ_TYPE_LEVEL_LOW>;
 			mediatek,smi = <&smi_common>;
 			mediatek,larb-id = <2>;
 			clocks = <&imgsys CLK_IMG_LARB2_SMI>,
@@ -1079,7 +1077,6 @@
 		larb1: larb@16010000 {
 			compatible = "mediatek,mt8163-smi-larb";
 			reg = <0 0x16010000 0 0x10000>;
-			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_LOW>;
 			mediatek,smi = <&smi_common>;
 			mediatek,larb-id = <1>;
 			clocks = <&vdecsys CLK_VDEC_CKEN>,
@@ -1097,7 +1094,6 @@
 		larb3: larb@17001000 {
 			compatible = "mediatek,mt8163-smi-larb";
 			reg = <0 0x17001000 0 0x1000>;
-			interrupts = <GIC_SPI 207 IRQ_TYPE_LEVEL_LOW>;
 			mediatek,smi = <&smi_common>;
 			mediatek,larb-id = <3>;
 			clocks = <&vencsys CLK_VENC_CKE1>,
