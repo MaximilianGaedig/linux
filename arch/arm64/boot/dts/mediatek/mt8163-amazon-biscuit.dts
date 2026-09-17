@@ -170,8 +170,7 @@
 	 * aud_pins_extamp_high/_low as MT8163_PIN_122_MSDC1_CLK__FUNC_GPIO122,
 	 * and introduce GPIO 124 as a separate signal - the DAC mux, see
 	 * ext_spk_dacmux below. Driving 124 therefore left the amplifier's
-	 * enable line untouched in MSDC1_CLK mode, which is why the aic32x4
-	 * could be register-for-register identical to stock and still silent.
+	 * enable line untouched in MSDC1_CLK mode.
 	 */
 	ext_spk_amp: regulator-ext-spk-amp {
 		compatible = "regulator-fixed";
