@@ -355,7 +355,7 @@
  * declare the same RAM twice and reintroduce the range we are trying to
  * exclude.
  */
-&{/memory} {
+&memory {
 	reg = <0 0x40000000 0 0x1f800000>;
 };
 
