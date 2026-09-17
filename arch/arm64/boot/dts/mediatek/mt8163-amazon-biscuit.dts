@@ -413,10 +413,6 @@
 	status = "okay";
 	#sound-dai-cells = <1>;
 
-	/* Mux the speaker I2S port (I2S1: pins 46/47/48 + MCLK 15) out to the
-	 * aic32x4; without this the AFE clocks I2S1 internally but the pads
-	 * stay GPIOs and no audio reaches the codec. */
-	pinctrl-names = "default";
 	/*
 	 * No pinctrl here at all.
 	 *
@@ -427,7 +423,7 @@
 	 * either: mainline's pinctrl-mtk-common implements no
 	 * PIN_CONFIG_OUTPUT, so an "output-high" group fails with
 	 * "pin_config_group_set op failed" and leaves the card in deferred
-	 * probe forever. They are requested as GPIOs by the machine driver.
+	 * probe forever. They are driven through fixed regulators instead.
 	 */
 };
 
@@ -502,20 +498,6 @@
 		 */
 		ext-spk-amp-supply = <&ext_spk_amp>;
 		ext-spk-amp2-supply = <&ext_spk_amp2>;
-		/*
-		 * MT8163's AFE splits playback into a front-end memif (DL1)
-		 * and a separate I2S back-end DAI; only a DPCM card can bind
-		 * them. simple-audio-card built a plain DL1<->codec link, which
-		 * left the I2S port unconfigured so nothing was ever clocked
-		 * out of the SoC pins and the speaker stayed silent.
-		 *
-		 * I2S DAIs here are unidirectional: I2S0/I2S2 capture,
-		 * I2S1/I2S3 playback - so the speaker back-end is I2S1.
-		 * Combined DAI indices: DL1=0 DL2=1 VUL=2 AWB=3
-		 *                       I2S0=4 I2S1=5 I2S2=6 I2S3=7
-		 */
-		mediatek,fe-dai = <&afe 0>;    /* DL1 front-end memif */
-		mediatek,be-dai = <&afe 5>;    /* I2S1 playback back-end */
 		mediatek,audio-codec = <&aic32x4_codec>;
 		/*
 		 * Mic array: a self-contained capture component (CPU DAI and
