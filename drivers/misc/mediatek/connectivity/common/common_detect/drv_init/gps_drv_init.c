@@ -28,7 +28,8 @@ int do_gps_drv_init(int chip_id)
 	i_ret = mtk_wcn_stpgps_drv_init();
 	WMT_DETECT_INFO_FUNC("finish gps driver init, i_ret:%d\n", i_ret);
 #else
-	WMT_DETECT_INFO_FUNC("CONFIG_MTK_COMBO_GPS is not defined\n");
+	/* Not built in: nothing to do here (a module registers itself). */
+	i_ret = 0;
 #endif
 	return i_ret;
 
