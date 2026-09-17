@@ -7,7 +7,7 @@
  */
 
 &pwrap {
-	pmic: mt6323 {
+	pmic: pmic {
 		compatible = "mediatek,mt6323";
 		interrupt-controller;
 		#interrupt-cells = <2>;
@@ -19,7 +19,7 @@
 			status = "disabled";
 		};
 
-		mt6323regulator: mt6323regulator {
+		mt6323regulator: regulators {
 			compatible = "mediatek,mt6323-regulator";
 
 			mt6323_vproc_reg: buck_vproc {
@@ -217,7 +217,7 @@
 			};
 		};
 
-		mt6323keys: mt6323keys {
+		mt6323keys: keys {
 			compatible = "mediatek,mt6323-keys";
 			mediatek,long-press-mode = <1>;
 			power-off-time-sec = <0>;
@@ -232,12 +232,13 @@
 			};
 		};
 
-		codec: mt6397codec {
+		codec: audio-codec {
 			compatible = "mediatek,mt6397-codec";
 		};
 
 		power-controller {
 			compatible = "mediatek,mt6323-pwrc";
+			#power-domain-cells = <0>;
 		};
 
 		rtc {
