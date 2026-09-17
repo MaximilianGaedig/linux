@@ -287,7 +287,7 @@
 		ranges;
 
 		topckgen: clock-controller@10000000 {
-			compatible = "mediatek,mt8163-topckgen";
+			compatible = "mediatek,mt8163-topckgen", "syscon";
 			reg = <0 0x10000000 0 0x1000>;
 			#clock-cells = <1>;
 		};
@@ -435,7 +435,7 @@
 		};
 
 		apmixedsys: clock-controller@1000c000 {
-			compatible = "mediatek,mt8163-apmixedsys";
+			compatible = "mediatek,mt8163-apmixedsys", "syscon";
 			reg = <0 0x1000c000 0 0x1000>;
 			#clock-cells = <1>;
 		};
